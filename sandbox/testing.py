@@ -18,26 +18,14 @@ import pyhessio
 
 
 from Histogram import nDHistogram
-edges = [ ]
-labels = [ ]
-edges.append( [.9, 1.1]*u.TeV )
-labels.append( "Energy" )
+from FitGammaLikelihood import FitGammaLikelihood
 
-edges.append( np.arange(0,1000,10)*u.m )
-labels.append("d" )
-               
-edges.append( np.arange(0,.5,.01) )
-labels.append( "cos(delta)" )
+filenamelist = []
+filenamelist += glob("/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/gamma_20deg_180deg_run10*")
+filenamelist += glob("/home/ichanmich/software/cta/datafiles/*")
 
-edges.append( np.arange(.5,1,.01) )
-labels.append( "cos(rho)" )
+filename = filenamelist[0]
 
-edges.append( np.arange(-1,1,.1) )
-labels.append( "cos(gamma)" )
-histo = nDHistogram( edges, labels )
-
-
-filename = glob("/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/gamma_20deg_180deg_run10*")[0]
 
 tel_phi   = 0*u.rad
 tel_theta = 0*u.rad
@@ -61,30 +49,41 @@ if __name__ == '__main__':
     parser.add_argument('--calibrate', action='store_true',
                         help='apply calibration coeffs from MC')
     args = parser.parse_args()
-
+    
     source = hessio_event_source(filename,
                                  #allowed_tels=[args.tel],
-                                 #allowed_tels=[1,2,3,4],
+                                 allowed_tels=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
                                  max_events=args.max_events)
 
 
     pix_dirs = dict()
     
-    Energy  = 0 * u.eV   # MC energy of the shower
-    npe_p_a = 0 / u.m**2 # number of photo electrons generated per PMT area
-    d       = 0 * u.m    # distance of the telescope to the shower's core
-    delta   = 0 * u.rad  # angle between the pixel direction and the shower direction 
-    rho     = 0 * u.rad  # angle between the pixel direction and the direction to the interaction vertex
-    gamma   = 0 * u.rad  # angle between shower direction and the connecting vector between pixel-direction and vertex-direction
-    ####angle between the pixel direction and the closest direction on the shower axis
+    Energy  = 0 * u.eV    # MC energy of the shower
+    d       = 0 * u.m     # distance of the telescope to the shower's core
+    delta   = 0 * u.rad   # angle between the pixel direction and the shower direction 
+    rho     = 0 * u.rad   # angle between the pixel direction and the direction to the interaction vertex
+    gamma   = 0 * u.rad   # angle between shower direction and the connecting vector between pixel-direction and vertex-direction
+    npe_p_a = 0 * u.m**-2 # number of photo electrons generated per PMT area
     
-
+    fit = FitGammaLikelihood()
+    print(fit.hits)
+    exit()
+    
     
     for event in source:
 
         print('Scanning input file... count = {}'.format(event.count))
         #if args.tel not in event.dl0.tels_with_data: continue
 
+        fit.fill_pdf(event=event)
+
+    #fit.write_raw("test_raw.npz")
+    #fit.write_pdf("test.npz")
+
+    #test = FitGammaLikelihood([], [])
+    #test.read_pdf("test.npz")
+
+    if 0:
         Energy = event.mc.energy
 
         shower_dir  = SetPhiThetaR(event.mc.alt, event.mc.az)
@@ -148,19 +147,18 @@ if __name__ == '__main__':
                 #temp_dir  = normalise(pixel_dir - vertex_dir)      # connecting vector between the pixel direction and the vertex direction
                 #rho1   = Angle(pixel_dir, vertex_dir)              # angle between the pixel direction and the direction to the interaction vertex
                 #gamma1 = Angle(shower_dir - tel_dir * shower_dir.dot(tel_dir), # component of the shower direction perpendicular to the telescope direction
-                                 #temp_dir - tel_dir *   temp_dir.dot(tel_dir)) # component of the connecting vector between pixel-direction and vertex-direction perpendicular to the telescope direction
+                                 #temp_dir - tel_dir *   temp_dir.dot(tel_dir)) # component of the connecting vector between pixel-direction and 
+                                                                                # vertex-direction perpendicular to the telescope direction
 
 
                 """ defining angle with respect to shower maximum """
                 temp_dir  = normalise(pixel_dir - shower_max_dir)      # connecting vector between the pixel direction and the shower-max direction
                 rho2   = Angle(pixel_dir, shower_max_dir)              # angle between the pixel direction and the direction to the shower maximum
                 gamma2 = Angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
-                                 temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and shower-max direction perpendicular to the telescope direction
-                rho     = rho2
-                gamma   = gamma2
+                                 temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and 
+                                                                                   # shower-max direction perpendicular to the telescope direction
 
 
-                histo.fill( npe_p_a, [Energy, d, delta, rho, gamma] )
 
                 
 
@@ -176,7 +174,7 @@ if __name__ == '__main__':
                             #GetPhiTheta(shower_max_dir).to(u.deg), 
                             #rho2.to(u.degree), gamma2.to(u.deg) ,
                     #)
-                
+    #for event in source:                
         while True:
             response = get_input()
             print()

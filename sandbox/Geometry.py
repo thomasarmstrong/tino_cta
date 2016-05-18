@@ -182,7 +182,11 @@ def normalise(vec):
     -------
     numpy array with the same direction but length of 1
     """
-    return vec / Length(vec)
+    length = Length(vec)
+    if length > 0.:
+        return vec / Length(vec)
+    else:
+        return vec
 
 def Angle(v1, v2):
     """ takes two numpy arrays and returns the angle between them
@@ -197,9 +201,8 @@ def Angle(v1, v2):
     -------
     the angle between vec1 and vec2 as a dimensioned astropy quantity
     """
-    v1_u = normalise(v1)
-    v2_u = normalise(v2)
-    return acos(np.clip(v1_u.dot(v2_u), -1.0, 1.0))
+    
+    return acos(np.clip(v1.dot(v2)/(Length(v1)*Length(v2)), -1.0, 1.0))
 
 def SetPhiThetaR(phi, theta, r=1):
     """
