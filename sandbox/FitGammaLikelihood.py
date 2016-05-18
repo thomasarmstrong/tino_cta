@@ -11,51 +11,53 @@ u.dimless = u.dimensionless_unscaled
 
 import copy
 
+
+__all__ = ["FitGammaLikelihood"]
+
 tel_phi   = 0*u.rad
 tel_theta = 0*u.rad
 
-debug = None
-debug = print
+debug = lambda x : {}
+#debug = print
 
+
+"""
+Energy  = 0 * u.eV    # MC energy of the shower
+d       = 0 * u.m     # distance of the telescope to the shower's core
+delta   = 0 * u.rad   # angle between the pixel direction and the shower direction 
+rho     = 0 * u.rad   # angle between the pixel direction and the direction to the shower maximum
+gamma   = 0 * u.rad   # angle between shower direction and the connecting vector between pixel-direction and shower maximum
+npe_p_a = 0 * u.m**-2 # number of photo electrons generated per PMT area
+"""
+edges = []
+labels = []
+
+labels.append( "Energy" )
+edges.append( [.9, 1.1]*u.TeV )
+
+labels.append("d" )
+edges.append( np.linspace(0.,1000,101)*u.m )
+
+labels.append( "delta" )
+edges.append( np.linspace(140.,180.,41)*u.degree )
+
+labels.append( "rho" )
+edges.append( np.linspace(0.,6.,61)*u.degree )
+
+labels.append( "gamma" )
+edges.append( np.concatenate( (np.linspace(0.,1.,10,False),
+                                np.linspace(1.,10.,18,False),
+                                np.linspace(10.,170.,40,False),
+                                np.linspace(170.,180.,6,True)
+                                )
+                            )*u.degree
+            )
 
 class FitGammaLikelihood:
-    def __init__(self, edges=None, labels=None):
+    def __init__(self, edges=edges, labels=labels):
         self.seed       = None
         self.fit_result = None
         
-
-        """
-        Energy  = 0 * u.eV    # MC energy of the shower
-        d       = 0 * u.m     # distance of the telescope to the shower's core
-        delta   = 0 * u.rad   # angle between the pixel direction and the shower direction 
-        rho     = 0 * u.rad   # angle between the pixel direction and the direction to the shower maximum
-        gamma   = 0 * u.rad   # angle between shower direction and the connecting vector between pixel-direction and shower maximum
-        npe_p_a = 0 * u.m**-2 # number of photo electrons generated per PMT area
-        """
-        if edges == None and labels == None:
-            edges = []
-            labels = []
-
-            labels.append( "Energy" )
-            edges.append( [.9, 1.1]*u.TeV )
-
-            labels.append("d" )
-            edges.append( np.linspace(0.,1000,101)*u.m )
-
-            labels.append( "delta" )
-            edges.append( np.linspace(140.,180.,41)*u.degree )
-
-            labels.append( "rho" )
-            edges.append( np.linspace(0.,6.,61)*u.degree )
-
-            labels.append( "gamma" )
-            edges.append( np.concatenate( (np.linspace(0.,1.,10,False),
-                                           np.linspace(1.,10.,18,False),
-                                           np.linspace(10.,170.,40,False),
-                                           np.linspace(170.,180.,6,True)
-                                           )
-                                        )*u.degree
-                        )
 
         self.hits = nDHistogram( edges, labels )
         self.norm = nDHistogram( edges, labels )
@@ -77,7 +79,6 @@ class FitGammaLikelihood:
             for tel_id in  event.dl0.tels_with_data:
                 
                 debug("\tfilling telescope {}".format(tel_id))
-                debug("\tphotons out of bound = {}".format(self.hits.out_of_bound))
                 
                 # assuming all pixels on one telescope have the same size...
                 # TODO should not be here...
@@ -106,7 +107,7 @@ class FitGammaLikelihood:
                     if  max_npe < npe:
                         max_npe = npe
                         shower_max_dir = pix_dir
-                #debug("shower_max_dir = {}".format(shower_max_dir))
+
                 for pix_id, npe in enumerate( event.mc.tel[tel_id].photo_electrons ):
                     
                     npe_p_a = npe / pixel_area
@@ -116,24 +117,15 @@ class FitGammaLikelihood:
                     # angle between the pixel direction and the shower direction
                     delta  = Angle(pixel_dir, shower_dir)
 
-
-                    
-                    """ defining angles w.r.t. shower vertex """
-                    #temp_dir  = normalise(pixel_dir - vertex_dir)      # connecting vector between the pixel direction and the vertex direction
-                    #rho1   = Angle(pixel_dir, vertex_dir)              # angle between the pixel direction and the direction to the interaction vertex
-                    #gamma1 = Angle(shower_dir - tel_dir * shower_dir.dot(tel_dir), # component of the shower direction perpendicular to the telescope direction
-                                    #temp_dir - tel_dir *   temp_dir.dot(tel_dir)) # component of the connecting vector between pixel-direction and
-                                                                                   # vertex-direction perpendicular to the telescope direction
-
-
                     """ defining angle with respect to shower maximum """
                     rho   = Angle(pixel_dir, shower_max_dir)              # angle between the pixel direction and the direction to the shower maximum
                     
                     temp_dir  = normalise(pixel_dir - shower_max_dir)     # connecting vector between the pixel direction and the shower-max direction
+
                     # if the current pixel is the maximum pixel, there is no angle to be defined
                     # set it to zero
                     if Length(temp_dir) == 0:
-                        gamma = 0.
+                        gamma = 0.*u.degree
                     else:
                         gamma = Angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
                                         temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and

@@ -13,9 +13,8 @@ class nDHistogram:
         self.dimension = len(bin_edges)
         self.bin_edges = bin_edges
         self.labels    = labels
-        self.out_of_bound = 0.
         
-        self.data = np.zeros( [ len(x)-1 for x in bin_edges ] )
+        self.data = np.zeros( [ len(x)+1 for x in bin_edges ] )
         
     def __str__(self):
         string = "bin edges:\n"
@@ -27,65 +26,30 @@ class nDHistogram:
         return string
     
     def find_bin(self, value, axis):
-        for nbin, edge in enumerate(axis):
-            if edge > value:
-                return nbin-1
-        return float('Inf')
+        return np.digitize(value, axis)
+        
+    def find_bins(self, args):
+        bins = ()
+        for ij, (arg, axis) in enumerate( zip(args,self.bin_edges)):
+            bins += ( np.digitize(arg, axis), )
+        return bins
+    
+    def fill(self, value, args):
+        self.data[ self.find_bins(args) ] += value
+        return 1
+    
+    def evaluate(self, args):
+        return self.data[ self.find_bins(args) ]
     
     def fill_bin(self, value, args):
-        """
-        if len(args) != self.dimension:
-            print("inconsistent dimensions while filling histogram")
-            exit(-1)
-        """
         self.data[ args ] += value
         
         
-    def evaluate(self, args):
-        """
-        if len(args) != self.dimension:
-            print("inconsistent dimensions while filling histogram")
-            exit(-1)
-        """
-            
-        bins = ()
-        for ij, arg in enumerate(args):
-            bins += ( self.find_bin(arg, self.bin_edges[ij]), )
-        if -1 in bins or float('Inf') in bins:
-            self.out_of_bound += value
-            return
-        return self.data[ bins ]
-        
-        
     def get_bin_content( self, args):
-        """
-        if len(args) != self.dimension:
-            print("inconsistent dimensions while filling histogram")
-            exit(-1)
-        """
         data = self.data
         for arg in args:
             data = data[arg]
         return data
-    
-    def fill(self, value, args):
-        """
-        if len(args) != self.dimension:
-            print("inconsistent dimensions while filling histogram")
-            exit(-1)
-        """
-        bins = ()
-        for ij, arg in enumerate(args):
-            bins += ( self.find_bin(arg, self.bin_edges[ij]), )
-        if -1 in bins or float('Inf') in bins:
-            #print(bins)
-            #print(args)
-            #print()
-            self.out_of_bound += value
-            return -1
-
-        self.data[ bins ] += value
-        return 1
     
     
     def write(self, filename):
