@@ -14,7 +14,11 @@ class nDHistogram:
         self.bin_edges = bin_edges
         self.labels    = labels
         
-        self.data = np.zeros( [ len(x)+1 for x in bin_edges ] )
+        """ 
+        for some reason len(x)+1 does not work -- it crashes write function
+        len(x+[0]) is fine though....
+        """
+        self.data = np.zeros( [ len(x+[0]) for x in bin_edges ] )
         
     def __str__(self):
         string = "bin edges:\n"

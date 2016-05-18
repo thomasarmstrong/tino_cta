@@ -153,7 +153,8 @@ class FitGammaLikelihood:
         np.savez_compressed(filename, hits=self.hits.data,
                                       norm=self.norm.data,
                                       axes=self.hits.bin_edges,
-                                      labels=self.hits.labels)
+                                      labels=self.hits.labels
+                            )
     def read_raw(self, filename):
         with np.load(filename) as data:
             self.hits = nDHistogram( data['axes'], data['labels'] )
