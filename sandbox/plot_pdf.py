@@ -20,7 +20,11 @@ def get_subplot(x, y):
         b[b == 0] = 0.001
         c = a / b
         c[b == 0] = 0.
-        return c
+        c = c[1:-1]
+        if True in c[c>0]:
+            return c
+        else: 
+            return c + 0.01
     else:
         
         for i in range(min(x,y)):
@@ -35,7 +39,7 @@ def get_subplot(x, y):
         b[b == 0] = 0.001
         c = a / b
         c[b == 0] = 0.
-            
+        c = c[1:-1,1:-1]
         if x < y:
             return c
         else:
@@ -85,6 +89,8 @@ fit.read_raw("test_raw.npz")
 fit.normalise()
 dim = fit.pdf.dimension
 
+from astropy import units as u
+
 fig, axes = plt.subplots(dim,dim,figsize=(12, 8))
 for i in range(dim):
     for j in range(dim):
@@ -92,7 +98,6 @@ for i in range(dim):
         if i != j:
             ax.pcolormesh(get_subplot(i,j), cmap=cm.hot )
         else:
-            ax.semilogy( fit.hits.bin_edges[i][:-1], get_subplot(i,j))
-
+            ax.semilogy( fit.hits.bin_edges[i][:-1], get_subplot(i,j)) 
 
 plt.show()
