@@ -1,5 +1,4 @@
 import numpy as np
-from numpy import cos
 import pyhessio
 from ctapipe.io import CameraGeometry
 
@@ -8,9 +7,6 @@ from Geometry import *
 from guessPixDirection import *
 from astropy import units as u
 u.dimless = u.dimensionless_unscaled
-
-import copy
-
 
 __all__ = ["FitGammaLikelihood"]
 
@@ -36,7 +32,7 @@ labels.append( "Energy" )
 edges.append( [.9, 1.1]*u.TeV )
 
 labels.append("d" )
-edges.append( np.linspace(0.,1000,101)*u.m )
+edges.append( np.linspace(0.,750,76)*u.m )
 
 labels.append( "delta" )
 edges.append( np.linspace(140.,180.,41)*u.degree )
@@ -46,10 +42,10 @@ edges.append( np.linspace(0.,6.,61)*u.degree )
 
 labels.append( "gamma" )
 edges.append( np.concatenate( (np.linspace(0.,1.,10,False),
-                                np.linspace(1.,10.,18,False),
-                                np.linspace(10.,170.,40,False),
-                                np.linspace(170.,180.,6,True)
-                                )
+                               np.linspace(1.,10.,18,False),
+                               np.linspace(10.,170.,40,False),
+                               np.linspace(170.,180.,6,True)
+                              )
                             )*u.degree
             )
 
@@ -122,10 +118,10 @@ class FitGammaLikelihood:
                     
                     temp_dir  = normalise(pixel_dir - shower_max_dir)     # connecting vector between the pixel direction and the shower-max direction
 
-                    # if the current pixel is the maximum pixel, there is no angle to be defined
-                    # set it to zero
-                    if Length(temp_dir) == 0:
-                        gamma = 0.*u.degree
+                    # if the current pixel contains the shower-max direction, defining an angle makes little sense
+                    # put the info in the underflow bin
+                    if Length(temp_dir)**2 < pixel_area:
+                        gamma = -1.*u.degree
                     else:
                         gamma = Angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
                                         temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and
@@ -147,6 +143,11 @@ class FitGammaLikelihood:
         self.pdf.data[self.norm.data == 0] = 0.
         # revert?
         self.norm.data[self.norm.data == 0.001] = 0.
+
+
+
+    def evaluate_pdf(self, args):
+        return self.pdf.interpolate_linear(args)
 
 
     def write_raw(self,filename):

@@ -135,7 +135,7 @@ if __name__ == '__main__':
     source = hessio_event_source(filename,
                                  #allowed_tels=[args.tel],
                                  #allowed_tels=[1,2,3,4,5],
-                                 allowed_tels=[17,18,16],
+                                 allowed_tels=[31,32,33],
                                  max_events=args.max_events)
 
     for event in source:

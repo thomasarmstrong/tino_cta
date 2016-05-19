@@ -52,7 +52,13 @@ if __name__ == '__main__':
     
     source = hessio_event_source(filename,
                                  #allowed_tels=[args.tel],
-                                 allowed_tels=[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
+                                 #allowed_tels=range(1,17),    # LST           PE -> ADC about *40
+                                 allowed_tels=range(17,29),    # MST NectarCam PE -> ADC about *60
+                                 #allowed_tels=range(29,53),   # MST FlashCam  PE -> ADC about *55
+                                 #allowed_tels=range(53,66),   # SST GCT       PE -> ADC ?
+                                 #allowed_tels=range(66,77),   # SST GCT-S     PE -> ADC ?
+                                 #allowed_tels=range(77,102),  # SST DC        PE -> ADC ?
+                                 #allowed_tels=range(102,126), # SCT           PE -> ADC ?
                                  max_events=args.max_events-1)
 
 
