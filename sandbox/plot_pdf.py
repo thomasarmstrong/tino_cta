@@ -109,6 +109,10 @@ gamma_rho   = fit.pdf.data.sum(axis=0).sum(axis=0).sum(axis=0).T()
 
 
 filelist = glob("{}/{}_{}_raw.npz".format(args.indir,args.teltype,args.run))
+if len(filelist) == 0:
+    print("no files found: {}".format(args.indir))
+    from sys import exit
+    exit()
 
 fit = FitGammaLikelihood([],[])
 
@@ -120,17 +124,17 @@ for i, filename in enumerate(filelist):
         fit_t.read_raw(filename)
         fit.hits.data += fit_t.hits.data
         fit.norm.data += fit_t.norm.data
-        
-dim = fit.pdf.dimension
+
+dim = fit.hits.dimension
 
 fig, axes = plt.subplots(dim,dim,figsize=(12, 8))
 for i in range(dim):
     for j in range(dim):
         ax = axes[i][j]
         img = get_subplot(i,j)
-        ax.set_xlabel(fit.pdf.labels[j])
+        ax.set_xlabel("{} / {}".format(fit.hits.labels[j], fit.hits.bin_edges[j].unit))
         if i != j:
-            ax.set_ylabel(fit.pdf.labels[i])
+            ax.set_ylabel("{} / {}".format(fit.hits.labels[i], fit.hits.bin_edges[i].unit))
             im = ax.pcolor(img, norm=LogNorm(vmin=1), cmap=cm.hot )
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="10%", pad=0.05)
