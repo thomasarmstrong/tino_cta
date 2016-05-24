@@ -1,3 +1,4 @@
+from sys import exit
 from glob import glob
 import argparse
 from ctapipe.io.hessio import hessio_event_source
@@ -8,36 +9,36 @@ from Telescope_Mask import TelDict
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='show single telescope')
-    parser.add_argument('-m', '--max-events', type=int, default=10000)
+    parser.add_argument('-m', '--max-events', type=int, default=None)
     parser.add_argument('-i', '--indir',   type=str, 
                         default="/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/gamma_20deg_180deg_run")
-    parser.add_argument('-r', '--token',   type=str, default="20")
+    parser.add_argument('-r', '--runnr',   type=str, default="*")
     parser.add_argument('-t', '--teltype', type=str, default="LST")
     args = parser.parse_args()
     
-    filenamelist = glob( "{}*{}*gz".format(args.indir,args.token ))
-    
-    source = hessio_event_source(filenamelist[0],
-                                 # for now use only identical telescopes...
-                                 allowed_tels=TelDict[args.teltype],
-                                 max_events=args.max_events-1)
-    """
-    Energy  = 0 * u.eV    # MC energy of the shower
-    d       = 0 * u.m     # distance of the telescope to the shower's core
-    delta   = 0 * u.rad   # angle between the pixel direction and the shower direction 
-    rho     = 0 * u.rad   # angle between the pixel direction and the direction to the interaction vertex
-    gamma   = 0 * u.rad   # angle between shower direction and the connecting vector between pixel-direction and vertex-direction
-    npe_p_a = 0 * u.m**-2 # number of photo electrons generated per PMT area
-    """
-    
+    filenamelist = glob( "{}*run{}*gz".format(args.indir,args.runnr ))
+    if len(filenamelist) == 0: 
+        print("no files found; check indir: {}".format(args.indir))
+        exit(-1)
+        
     fit = FitGammaLikelihood()
-    
-    for event in source:
 
-        print('Scanning input file... count = {}'.format(event.count))
-        print('available telscopes: {}'.format(event.dl0.tels_with_data))
+    for filename in filenamelist:
+        print("filename = {}".format(filename))
+        
+        source = hessio_event_source(filename,
+                                    # for now use only identical telescopes...
+                                    allowed_tels=TelDict[args.teltype],
+                                    max_events=args.max_events)
 
-        fit.fill_pdf(event=event)
+        for event in source:
 
-    fit.write_raw("{}_{}_raw.npz".format(args.teltype, args.token))
-    fit.write_pdf("{}_{}_pdf.npz".format(args.teltype, args.token))
+            print('Scanning input file... count = {}'.format(event.count))
+            print('available telscopes: {}'.format(event.dl0.tels_with_data))
+
+            fit.fill_pdf(event=event)
+    if args.runnr == '*':
+        fit.write_raw("pdf/{}_raw.npz".format(args.teltype))
+    else:
+        fit.write_raw("pdf/{}_{}_raw.npz".format(args.teltype, args.runnr))
+        

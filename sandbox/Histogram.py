@@ -45,35 +45,40 @@ class nDHistogram:
             bins += ( np.digitize(arg.to(unit), axis), )
         return bins
     
-    def fill(self, value, args):
+    def fill(self, args, value=1):
         self.data[ self.find_bins(args) ] += value
         return 1
     
     def evaluate(self, args):
         return self.data[ self.find_bins(args) ]
     
-    def interpolate_linear(self, args):
-        # TODO safeguard against edge querries
+    def interpolate_linear(self, args, out_of_bounds_value=0.):
+        # TODO safeguard against edge querries (see next comment)
         bin_centres = []
         bins = []
         for axis, arg in zip(self.bin_edges,args):
-            bin = self.find_bin(arg, axis)
-            bins.append(bin)
-            bin_centre = (axis[bin] + axis[bin-1])/2.
-            bin_centres_t = [ (bin_centre,0) ]
-            if arg > bin_centre:
-                bin_centres_t.append( ((axis[bin] + axis[bin+1])/2.,1) )
-            else:
-                bin_centres_t.append( ((axis[bin-2] + axis[bin-1])/2.,-1) )
+            bin_ = self.find_bin(arg, axis)
+            # for now, ignore pixel in under-/overflow bins; return default value
+            #if bin_ == len(axis) or bin_ == 0: return out_of_bounds_value
+            try:
+                bin_s.append(bin_)
+                bin_centre = (axis[bin_] + axis[bin_-1])/2.
+                bin_centres_t = [ (bin_centre,0) ]
+                if arg > bin_centre:
+                    bin_centres_t.append( ((axis[bin_] + axis[bin_+1])/2.,1) )
+                else:
+                    bin_centres_t.append( ((axis[bin_-2] + axis[bin_-1])/2.,-1) )
+            except IndexError:
+                return out_of_bounds_value
             bin_centres.append(bin_centres_t)
         
         result = 0.
         for seq in self.permutations:
             result_temp = 1
             data = self.data
-            for digit, centre, bin, arg in zip(seq, bin_centres,bins,args):
+            for digit, centre, bin_, arg in zip(seq, bin_centres,bin_s,args):
                 result_temp *= abs((arg-centre[digit^1][0])/(centre[1][0]-centre[0][0]))
-                data = data[(bin)+centre[digit][1]]
+                data = data[(bin_)+centre[digit][1]]
             result += result_temp * data
         return result
     

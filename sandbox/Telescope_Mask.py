@@ -8,6 +8,3 @@ TelDict["SST_GCT"]      = range(53,66)   # SST GCT       PE -> ADC ?
 TelDict["SST_GCT-S"]    = range(66,77)   # SST GCT-S     PE -> ADC ?
 TelDict["SST_DC"]       = range(77,102)  # SST DC        PE -> ADC ?
 TelDict["SCT"]          = range(102,126) # SCT           PE -> ADC ?
-
-
-TelDict["MST"]          = range(17,53)   # MST NectarCam and FlashCam  

@@ -13,8 +13,9 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from argparse import ArgumentParser
 
 parser = ArgumentParser(description='show single telescope')
-parser.add_argument('-i','--indir',   type=str, default=".")
+parser.add_argument('-i','--indir',   type=str, default="./pdf")
 parser.add_argument('-t','--teltype', type=str, default="LST")
+parser.add_argument('-r','--run', type=str, default="*")
 args = parser.parse_args()
     
     
@@ -107,7 +108,7 @@ gamma_rho   = fit.pdf.data.sum(axis=0).sum(axis=0).sum(axis=0).T()
 
 
 
-filelist = glob("{}/{}_*_raw.npz".format(args.indir,args.teltype))
+filelist = glob("{}/{}_{}_raw.npz".format(args.indir,args.teltype,args.run))
 
 fit = FitGammaLikelihood([],[])
 
@@ -120,10 +121,7 @@ for i, filename in enumerate(filelist):
         fit.hits.data += fit_t.hits.data
         fit.norm.data += fit_t.norm.data
         
-fit.normalise()
 dim = fit.pdf.dimension
-
-from astropy import units as u
 
 fig, axes = plt.subplots(dim,dim,figsize=(12, 8))
 for i in range(dim):
