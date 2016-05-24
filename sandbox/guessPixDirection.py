@@ -71,6 +71,7 @@ def guessPixDirectionFocLength(pix_x, pix_y, tel_phi, tel_theta, tel_foclen = 4 
     #  - the pixel direction is set to the telescope direction
     #  - offset by beta towards up
     #  - rotated around the telescope direction by the angle alpha
+    
     pix_alpha = np.array([ atan2(x, y)/u.rad for x,y in zip(pix_x, pix_y) ]) * u.rad
     pix_beta  = np.array([ ( (x**2 + y**2)**.5)/u.m for x,y in zip(pix_x, pix_y) ]) * u.m
     pix_beta  = pix_beta / tel_foclen * u.rad 

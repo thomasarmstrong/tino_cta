@@ -2,10 +2,10 @@ import numpy as np
 import pyhessio
 from ctapipe.io import CameraGeometry
 from ctapipe.io.containers import MCShowerData as MCShower
+from ctapipe.utils.linalg import *
 from math import pi
 
 from Histogram import nDHistogram
-from Geometry import *
 from guessPixDirection import *
 from astropy import units as u
 u.dimless = u.dimensionless_unscaled
@@ -60,50 +60,54 @@ class FitGammaLikelihood:
         self.seed       = None
         self.iteration=0
 
+        self.pix_dirs = {}
+
         self.hits = nDHistogram( edges, labels )
         self.norm = nDHistogram( edges, labels )
-        self.pdf = None
+        self.pdf  = None
         
-        self.pix_dirs = dict()
 
-
-    def get_parametrisation(self, event, shower=None, tel_data=None):
-        # possibility to give another data container, not used now
-        # so just prepare the photo_electrons container for more convenient loop
-        if not tel_data: tel_data = dict( [ (tel_id, camera.photo_electrons) for tel_id, camera in event.mc.tel.items() ] )
+    def set_instrument_description(self, telescopes, cameras, optics):
+        self.Ver = 'Feb2016'
+        self.TelVer = 'TelescopeTable_Version{}'.format(self.Ver)
+        self.CamVer = 'CameraTable_Version{}_TelID'.format(self.Ver)
+        self.OptVer = 'OpticsTable_Version{}_TelID'.format(self.Ver)
         
-        # if no external shower hypothesis is given, use the MC shower
-        if not shower: shower = event.mc
-
+        self.telescopes = telescopes[self.TelVer]
+        self.cameras    = lambda tel_id : cameras[self.CamVer+str(tel_id)]
+        self.optics     = lambda tel_id : optics [self.OptVer+str(tel_id)]
+        
+        
+    def get_parametrisation(self, shower, tel_data):
+        
         Energy = shower.energy
 
         shower_dir  = SetPhiThetaR(shower.az, 90.*u.deg+shower.alt, 1*u.dimless)
-        shower_core = np.array([ shower.core_x/u.m, event.mc.core_y/u.m, 0. ]) *u.m
+        shower_core = np.array([ shower.core_x/u.m, shower.core_y/u.m, 0. ]) *u.m
         
 
         for tel_id, photo_electrons in tel_data.items():
             
-            #print("entering telescope {}".format(tel_id))
+            print("entering telescope {}".format(tel_id))
             
-            # assuming all pixels on one telescope have the same size...
-            # TODO should not be here...
-            pixel_area = pyhessio.get_pixel_area(tel_id)[0]
+            tel_idx = np.searchsorted( self.telescopes['TelID'], tel_id )
+            
 
             # the position of the telescope in the local reference frame
-            tel_pos = event.tel_pos[tel_id]
+            #tel_pos = self.event.meta.tel_pos[tel_id]
+            tel_pos = [  self.telescopes['TelX'][tel_idx],  self.telescopes['TelY'][tel_idx],  self.telescopes['TelZ'][tel_idx] ] * u.m
 
             # the direction the telescope is facing
             # TODO use actual telescope directions
-            tel_dir = SetPhiThetaR(tel_phi, tel_theta, 1*u.dimless)
+            tel_dir = set_phi_theta_r(tel_phi, tel_theta, 1*u.dimless)
             
             d = Distance(shower_core, tel_pos)
-        
+
+            # TODO replace with actual pixel direction when they become available
             if tel_id not in self.pix_dirs:
-                x, y = event.meta.pixel_pos[tel_id]
-                geom = CameraGeometry.guess(x, y, event.meta.optical_foclen[tel_id])
-                # TODO replace with actual pixel direction when they become available
-                self.pix_dirs[tel_id] = guessPixDirectionFocLength(geom.pix_x, geom.pix_y, tel_phi, tel_theta, event.meta.optical_foclen[tel_id])
-                
+                geom = CameraGeometry.guess(self.cameras(tel_id)['PixX'].to(u.m), self.cameras(tel_id)['PixY'].to(u.m), self.telescopes['FL'][tel_idx] * u.m)
+                self.pix_dirs[tel_id] = guessPixDirectionFocLength(geom.pix_x, geom.pix_y, tel_phi, tel_theta, self.telescopes['FL'][tel_idx] * u.m)
+
             
             # TODO use a physical estimate for the shower-max in the atmosphere, 
             # not just the direction of the pixel with the most hits...
@@ -116,6 +120,8 @@ class FitGammaLikelihood:
 
             for pix_id, npe in enumerate( photo_electrons ):
                 
+                pixel_area = self.cameras(tel_id)['PixA'][pix_id]
+                
                 # the direction the pixel is looking in
                 pixel_dir = normalise(self.pix_dirs[tel_id][pix_id] *u.m)
 
@@ -123,17 +129,17 @@ class FitGammaLikelihood:
                 #delta  = Angle(pixel_dir, shower_dir)
 
                 # angle between the pixel direction and the direction to the shower maximum
-                rho   = Angle(pixel_dir, shower_max_dir)
+                rho   = angle(pixel_dir, shower_max_dir)
                 
                 # connecting vector between the pixel direction and the shower-max direction
                 temp_dir  = normalise(pixel_dir - shower_max_dir)
 
                 # if the current pixel contains the shower-max direction, defining an angle makes little sense
                 # put the info in the underflow bin
-                if Length(temp_dir)**2 < pixel_area:
+                if length(temp_dir)**2 < pixel_area:
                     gamma = -1.*u.degree
                 else:
-                    gamma = Angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
+                    gamma = angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
                                     temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and
                                                                                       # shower-max direction perpendicular to the telescope direction
                 yield ([Energy, d, shower.alt, rho, gamma], npe, pixel_area)
@@ -144,7 +150,8 @@ class FitGammaLikelihood:
     
         if event:
             # TODO add shower "max_height" to event.mc here
-            for (coordinates, value, pixel_area) in self.get_parametrisation(event):
+            data = dict( [ (tel_id, tel.photo_electrons) for tel_id, tel in event.mc.tel.items() ] )
+            for (coordinates, value, pixel_area) in self.get_parametrisation( event.mc, data ):
                 self.hits.fill(coordinates, value/pixel_area)
                 self.norm.fill(coordinates)
         else:
@@ -158,7 +165,6 @@ class FitGammaLikelihood:
         self.norm.data[self.norm.data == 0] = 0.001
         self.pdf = nDHistogram(self.hits.bin_edges, self.hits.labels)
         self.pdf.data = np.divide(self.hits.data, self.norm.data)
-        #self.pdf.data[self.norm.data == 0.001] = 0. # should be zero anyway
         # revert?
         self.norm.data[self.norm.data == 0.001] = 0.
 
@@ -209,15 +215,17 @@ class FitGammaLikelihood:
             shower_pars[4] = self.seed.core_y.to(u.m  ).value
 
 
+        data = dict( [ (tel_id, tel.photo_electrons) for tel_id, tel in event.mc.tel.items() ] )
+
         # shower_pars = np.arra([ E / TeV, alt / rad, az / rad, core_x / m, core_y / m, max_height / m]) 
-        fit_result = minimize( lambda x : self.get_nlog_likelihood(event, x), shower_pars, 
+        fit_result = minimize( lambda x : self.get_nlog_likelihood(x, data), shower_pars, 
                               #method='nelder-mead', options={'xtol': 1e-8, 'disp': True}
                               method='BFGS', options={'disp': True}
                               )
         return fit_result
     
 
-    def get_nlog_likelihood(self, event, shower_pars):
+    def get_nlog_likelihood(self, shower_pars):
         self.iteration += 1
         print("get_nlog_likelihood called {}. time".format(self.iteration))
         shower = MCShower()
@@ -229,7 +237,7 @@ class FitGammaLikelihood:
         #shower.max_height = shower_pars[5] * u.m
 
         log_likelihood = 0.
-        for (coordinates, measured, pixel_area) in self.get_parametrisation(event, shower):
+        for (coordinates, measured, pixel_area) in self.get_parametrisation(shower, self.data):
             expected = self.evaluate_pdf(coordinates)*pixel_area
             log_likelihood += max(-5.,poisson.logpmf(measured, expected))
         return -log_likelihood
