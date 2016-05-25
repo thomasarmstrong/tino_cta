@@ -102,7 +102,7 @@ class FitGammaLikelihood:
             # TODO use actual telescope directions
             tel_dir = set_phi_theta_r(tel_phi, tel_theta, 1*u.dimless)
             
-            d = distance(shower_core, tel_pos)
+            d = length(shower_core - tel_pos)
 
             # TODO replace with actual pixel direction when they become available
             if tel_id not in self.pix_dirs:
@@ -124,7 +124,7 @@ class FitGammaLikelihood:
                 pixel_area = self.cameras(tel_id)['PixA'][pix_id]
                 
                 # the direction the pixel is looking in
-                pixel_dir = normalise(self.pix_dirs[tel_id][pix_id] *u.m)
+                pixel_dir = self.pix_dirs[tel_id][pix_id]
 
                 # angle between the pixel direction and the shower direction
                 delta  = angle(pixel_dir, shower_dir)
@@ -143,6 +143,7 @@ class FitGammaLikelihood:
                     gamma = angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
                                     temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and
                                                                                       # shower-max direction perpendicular to the telescope direction
+                #print ([Energy, d, delta, shower.alt, rho, gamma], npe, pixel_area)
                 yield ([Energy, d, delta, shower.alt, rho, gamma], npe, pixel_area)
 
         
