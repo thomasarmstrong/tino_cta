@@ -24,10 +24,10 @@ tel_theta =  20.*u.deg
 Energy  = 0 * u.eV    # MC energy of the shower
 d       = 0 * u.m     # distance of the telescope to the shower's core
 delta   = 0 * u.rad   # angle between the pixel direction and the shower direction 
+azimuth = 0 * u.deg   # angle between shower and local horizon
 rho     = 0 * u.rad   # angle between the pixel direction and the direction to the shower maximum
 gamma   = 0 * u.rad   # angle between shower direction and the connecting vector between pixel-direction and shower maximum
-npe_p_a = 0           # number of photo electrons generated per PMT area
-probably TODO: add shower altitude (angle) as parameter
+npe     = 0           # number of photo electrons generated on a PMT
 """
 edges = []
 labels = []
@@ -36,21 +36,22 @@ labels.append( "Energy" )
 edges.append( [.9, 1.1]*u.TeV )
 
 labels.append("d" )
-edges.append( np.linspace(0.,750,76)*u.m )
+edges.append( np.linspace(0,800,41)*u.m )
 
-#labels.append( "delta" )
-#edges.append( np.linspace(140.,180.,41)*u.degree )
+labels.append( "delta" )
+edges.append( np.linspace(140,180,41)*u.degree )
+
 labels.append( "azimuth" )
-edges.append( np.linspace(50.,90.,41)*u.degree )
+edges.append( np.linspace(50,90,41)*u.degree )
 
 labels.append( "rho" )
-edges.append( np.linspace(0.,6.,61)*u.degree )
+edges.append( np.linspace(0,6,31)*u.degree )
 
-labels.append( "gamma" ) # cos(gamma)?
-edges.append( np.concatenate( (np.linspace(0.,1.,10,False),
-                               np.linspace(1.,10.,18,False),
-                               np.linspace(10.,170.,40,False),
-                               np.linspace(170.,180.,6,True)
+labels.append( "gamma" )
+edges.append( np.concatenate( (
+                               np.linspace(  0, 10, 10,False),
+                               np.linspace( 10,160, 30,False),
+                               np.linspace(170,180,  6,True)
                               )
                             )*u.degree
             )
@@ -82,7 +83,7 @@ class FitGammaLikelihood:
         
         Energy = shower.energy
 
-        shower_dir  = SetPhiThetaR(shower.az, 90.*u.deg+shower.alt, 1*u.dimless)
+        shower_dir  = set_phi_theta_r(shower.az, 90.*u.deg+shower.alt, 1*u.dimless)
         shower_core = np.array([ shower.core_x/u.m, shower.core_y/u.m, 0. ]) *u.m
         
 
@@ -90,18 +91,18 @@ class FitGammaLikelihood:
             
             print("entering telescope {}".format(tel_id))
             
+            # in most cases, idx should be id-1, but to be sure
             tel_idx = np.searchsorted( self.telescopes['TelID'], tel_id )
             
 
             # the position of the telescope in the local reference frame
-            #tel_pos = self.event.meta.tel_pos[tel_id]
-            tel_pos = [  self.telescopes['TelX'][tel_idx],  self.telescopes['TelY'][tel_idx],  self.telescopes['TelZ'][tel_idx] ] * u.m
+            tel_pos = np.array([  self.telescopes['TelX'][tel_idx],  self.telescopes['TelY'][tel_idx],  self.telescopes['TelZ'][tel_idx] ]) * u.m
 
             # the direction the telescope is facing
             # TODO use actual telescope directions
             tel_dir = set_phi_theta_r(tel_phi, tel_theta, 1*u.dimless)
             
-            d = Distance(shower_core, tel_pos)
+            d = distance(shower_core, tel_pos)
 
             # TODO replace with actual pixel direction when they become available
             if tel_id not in self.pix_dirs:
@@ -126,7 +127,7 @@ class FitGammaLikelihood:
                 pixel_dir = normalise(self.pix_dirs[tel_id][pix_id] *u.m)
 
                 # angle between the pixel direction and the shower direction
-                #delta  = Angle(pixel_dir, shower_dir)
+                delta  = angle(pixel_dir, shower_dir)
 
                 # angle between the pixel direction and the direction to the shower maximum
                 rho   = angle(pixel_dir, shower_max_dir)
@@ -142,8 +143,7 @@ class FitGammaLikelihood:
                     gamma = angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
                                     temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and
                                                                                       # shower-max direction perpendicular to the telescope direction
-                yield ([Energy, d, shower.alt, rho, gamma], npe, pixel_area)
-                #yield ([Energy, d, delta, rho, gamma], npe, pixel_area)
+                yield ([Energy, d, delta, shower.alt, rho, gamma], npe, pixel_area)
 
         
     def fill_pdf( self, event=None, coordinates=None, value=None ):
@@ -176,11 +176,12 @@ class FitGammaLikelihood:
 
 
     def write_raw(self,filename):
-        np.savez_compressed(filename, hits=self.hits.data,
-                                      norm=self.norm.data,
-                                      axes=self.hits.bin_edges,
-                                      labels=self.hits.labels
+        np.savez_compressed(filename+"_raw.npz", axes   = self.hits.bin_edges,
+                                                 hits   = self.hits.data,
+                                                 norm   = self.norm.data,
+                                                 labels = self.hits.labels
                             )
+
     def read_raw(self, filename):
         with np.load(filename) as data:
             self.hits = nDHistogram( data['axes'], data['labels'] )
@@ -191,9 +192,9 @@ class FitGammaLikelihood:
     def write_pdf(self,filename):
         if self.pdf == None:
             self.normalise()
-        np.savez_compressed(filename, pdf=self.pdf.data,
-                                      axes=self.hits.bin_edges,
-                                      labels=self.hits.labels)
+        np.savez_compressed(filename+"_pdf.npz", pdf    = self.pdf.data,
+                                                 axes   = self.hits.bin_edges,
+                                                 labels = self.hits.labels)
     def read_pdf(self,filename):
         with np.load(filename) as data:
             self.pdf = nDHistogram( data['axes'], data['labels'] )
@@ -225,7 +226,7 @@ class FitGammaLikelihood:
         return fit_result
     
 
-    def get_nlog_likelihood(self, shower_pars):
+    def get_nlog_likelihood(self, shower_pars, data):
         self.iteration += 1
         print("get_nlog_likelihood called {}. time".format(self.iteration))
         shower = MCShower()
@@ -237,7 +238,7 @@ class FitGammaLikelihood:
         #shower.max_height = shower_pars[5] * u.m
 
         log_likelihood = 0.
-        for (coordinates, measured, pixel_area) in self.get_parametrisation(shower, self.data):
+        for (coordinates, measured, pixel_area) in self.get_parametrisation(shower, data):
             expected = self.evaluate_pdf(coordinates)*pixel_area
             log_likelihood += max(-5.,poisson.logpmf(measured, expected))
         return -log_likelihood

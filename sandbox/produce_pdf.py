@@ -31,7 +31,8 @@ if __name__ == '__main__':
         
         source = hessio_event_source(filename,
                                     # for now use only identical telescopes...
-                                    allowed_tels=TelDict[args.teltype],
+                                    allowed_tels=[1],
+                                    #allowed_tels=TelDict[args.teltype],
                                     max_events=args.max_events)
 
         for event in source:
@@ -41,7 +42,7 @@ if __name__ == '__main__':
 
             fit.fill_pdf(event=event)
     if args.runnr == '*':
-        fit.write_raw("pdf/{}_raw.npz".format(args.teltype))
+        fit.write_raw("pdf/{}".format(args.teltype))
     else:
-        fit.write_raw("pdf/{}_{}_raw.npz".format(args.teltype, args.runnr))
+        fit.write_raw("pdf/{}_{}".format(args.teltype, args.runnr))
         

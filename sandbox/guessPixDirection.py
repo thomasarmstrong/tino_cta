@@ -4,7 +4,7 @@
 import numpy as np
 from numpy import arctan2 as atan2
 from astropy import units as u
-from Geometry import *
+from ctapipe.utils.linalg import *
 
 
 
@@ -51,14 +51,14 @@ def guessPixDirectionFieldView(pix_x, pix_y, tel_phi, tel_theta, tel_view = 4 * 
     pix_beta  = np.array([ ( (x**2 + y**2)**.5)/u.m for x,y in zip(pix_x, pix_y) ]) * u.m
     pix_beta  = pix_beta * (tel_view)/(maxR)
     
-    tel_dir = SetPhiTheta(tel_phi,tel_theta)
+    tel_dir = set_phi_theta_r(tel_phi,tel_theta, 1*u.dimless)
 
     pix_dirs = []
     
     for a, b in zip(pix_alpha,pix_beta):
-        pix_dir = SetPhiTheta( tel_phi, tel_theta + b )
+        pix_dir = set_phi_theta_r( tel_phi, tel_theta + b, 1*u.dimless )
         
-        pix_dir = rotateAroundAxis(pix_dir, tel_dir, a)
+        pix_dir = rotate_around_axis(pix_dir, tel_dir, a)
         pix_dirs.append(pix_dir)
         
     return np.array( pix_dirs )
@@ -72,19 +72,23 @@ def guessPixDirectionFocLength(pix_x, pix_y, tel_phi, tel_theta, tel_foclen = 4 
     #  - offset by beta towards up
     #  - rotated around the telescope direction by the angle alpha
     
-    pix_alpha = np.array([ atan2(x, y)/u.rad for x,y in zip(pix_x, pix_y) ]) * u.rad
-    pix_beta  = np.array([ ( (x**2 + y**2)**.5)/u.m for x,y in zip(pix_x, pix_y) ]) * u.m
+    #pix_alpha = np.array([ atan2(x, y)/u.rad for x,y in zip(pix_x, pix_y) ]) * u.rad
+    #pix_beta  = np.array([ ( (x**2 + y**2)**.5)/u.m for x,y in zip(pix_x, pix_y) ]) * u.m
+
+    pix_alpha = atan2(pix_x, pix_y)
+    pix_beta  = (pix_x**2 + pix_y**2)**.5
+
     pix_beta  = pix_beta / tel_foclen * u.rad 
     
-    tel_dir = SetPhiTheta(tel_phi,tel_theta)
+    tel_dir = set_phi_theta_r(tel_phi,tel_theta, 1*u.dimless)
 
     pix_dirs = []
     
     
     for a, b in zip(pix_alpha,pix_beta):
-        pix_dir = SetPhiTheta( tel_phi, tel_theta + b )
+        pix_dir = set_phi_theta_r( tel_phi, tel_theta + b, 1*u.dimless )
         
-        pix_dir = rotateAroundAxis(pix_dir, tel_dir, a)
+        pix_dir = rotate_around_axis(pix_dir, tel_dir, a)
         pix_dirs.append(pix_dir)
         
     return np.array( pix_dirs )
