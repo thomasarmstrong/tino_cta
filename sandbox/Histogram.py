@@ -34,15 +34,19 @@ class nDHistogram:
     
     def find_bin(self, value, axis):
         # np.digitize seems to ignore units... convert arg to unit of axis as workaround
-        unit = axis.unit
-        return np.digitize(value.to(unit), axis)
+        try:
+            return np.digitize(value.to(axis.unit), axis)
+        except AttributeError:
+            return np.digitize(value, axis)
         
     def find_bins(self, args):
         bins = ()
         for ij, (arg, axis) in enumerate( zip(args,self.bin_edges)):
             # np.digitize seems to ignore units... convert arg to unit of axis as workaround
-            unit = axis.unit
-            bins += ( np.digitize(arg.to(unit), axis), )
+            try:
+                bins += ( np.digitize(arg.to(axis.unit), axis), )
+            except AttributeError:
+                bins += ( np.digitize(arg, axis), )
         return bins
     
     def fill(self, args, value=1):

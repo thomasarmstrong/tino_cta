@@ -26,13 +26,12 @@ if __name__ == '__main__':
     fit = FitGammaLikelihood()
     fit.set_instrument_description( *load_hessio(filenamelist[0]) )
     
-    for filename in filenamelist:
+    for filename in filenamelist.sort():
         print("filename = {}".format(filename))
         
         source = hessio_event_source(filename,
                                     # for now use only identical telescopes...
-                                    allowed_tels=[1],
-                                    #allowed_tels=TelDict[args.teltype],
+                                    allowed_tels=TelDict[args.teltype],
                                     max_events=args.max_events)
 
         for event in source:
