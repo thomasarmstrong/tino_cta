@@ -8,13 +8,27 @@ from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from Telescope_Mask import TelDict
 
+
+
+import signal
+def signal_handler(signal, frame):
+        print('You pressed Ctrl+C!')   
+        if args.runnr == '*':
+            fit.write_raw("pdf/{}".format(args.teltype))
+        else:
+            fit.write_raw("pdf/{}_{}".format(args.teltype, args.runnr))
+
+signal.signal(signal.SIGINT, signal_handler)
+
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='show single telescope')
     parser.add_argument('-m', '--max-events', type=int, default=None)
     parser.add_argument('-i', '--indir',   type=str, 
                         default="/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/")
-    parser.add_argument('-r', '--runnr',   type=str, default="*")
+    parser.add_argument('-r', '--runnr',   type=str, default="2?")
     parser.add_argument('-t', '--teltype', type=str, default="LST")
     args = parser.parse_args()
     
@@ -26,7 +40,7 @@ if __name__ == '__main__':
     fit = FitGammaLikelihood()
     fit.set_instrument_description( *load_hessio(filenamelist[0]) )
     
-    for filename in filenamelist.sort():
+    for filename in sorted(filenamelist):
         print("filename = {}".format(filename))
         
         source = hessio_event_source(filename,
@@ -44,4 +58,3 @@ if __name__ == '__main__':
         fit.write_raw("pdf/{}".format(args.teltype))
     else:
         fit.write_raw("pdf/{}_{}".format(args.teltype, args.runnr))
-        
