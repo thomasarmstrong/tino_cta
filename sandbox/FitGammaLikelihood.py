@@ -16,18 +16,18 @@ from scipy.optimize import minimize
 
 __all__ = ["FitGammaLikelihood"]
 
-tel_phi   = 180.*u.rad
+tel_phi   =   0.*u.rad
 tel_theta =  20.*u.deg
 
 
 """
-Energy  = 0 * u.eV    # MC energy of the shower
-d       = 0 * u.m     # distance of the telescope to the shower's core
-delta   = 0 * u.rad   # angle between the pixel direction and the shower direction 
-azimuth = 0 * u.deg   # angle between shower and local horizon
-rho     = 0 * u.rad   # angle between the pixel direction and the direction to the shower maximum
-gamma   = 0 * u.rad   # angle between shower direction and the connecting vector between pixel-direction and shower maximum
-npe     = 0           # number of photo electrons generated on a PMT
+Energy   = 0 * u.eV    # MC energy of the shower
+d        = 0 * u.m     # distance of the telescope to the shower's core
+delta    = 0 * u.rad   # angle between the pixel direction and the shower direction 
+altitude = 0 * u.deg   # angle between shower and local horizon
+rho      = 0 * u.rad   # angle between the pixel direction and the direction to the shower maximum
+gamma    = 0 * u.rad   # angle between shower direction and the connecting vector between pixel-direction and shower maximum
+npe      = 0           # number of photo electrons generated on a PMT
 """
 edges = []
 labels = []
@@ -39,9 +39,9 @@ labels.append("d" )
 edges.append( np.linspace(0,800,41)*u.m )
 
 labels.append( "delta" )
-edges.append( np.linspace(140,180,41)*u.degree )
+edges.append( np.linspace(155,180,26)*u.degree )
 
-labels.append( "azimuth" )
+labels.append( "altitude" )
 edges.append( np.linspace(50,90,41)*u.degree )
 
 labels.append( "rho" )
@@ -55,7 +55,7 @@ edges.append( np.concatenate( (
                               )
                             )*u.degree
             )
-
+from numba import jit
 class FitGammaLikelihood:
     def __init__(self, edges=edges, labels=labels):
         self.seed       = None
@@ -78,7 +78,7 @@ class FitGammaLikelihood:
         self.cameras    = lambda tel_id : cameras[self.CamVer+str(tel_id)]
         self.optics     = lambda tel_id : optics [self.OptVer+str(tel_id)]
         
-        
+    #@jit    
     def get_parametrisation(self, shower, tel_data):
         
         Energy = shower.energy

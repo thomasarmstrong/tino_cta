@@ -12,14 +12,6 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from argparse import ArgumentParser
 
-parser = ArgumentParser(description='show single telescope')
-parser.add_argument('-i','--indir',   type=str, default="./pdf")
-parser.add_argument('-t','--teltype', type=str, default="LST")
-parser.add_argument('-r','--run', type=str, default="*")
-args = parser.parse_args()
-    
-    
-
 def get_subplot(x, y):
     a = fit.hits.data
     b = fit.norm.data
@@ -40,8 +32,8 @@ def get_subplot(x, y):
     b = b.astype(np.float)        
     # add a small number to every 0 to prevent division by 0
     b[b == 0] = 0.001
-    # normalise: total number of PE by total number of hit pixels
     
+    # normalise: total number of PE by total number of hit pixels
     c = a / b
     
     # if all elements are zero or smaller, log-scaling will fail
@@ -52,6 +44,14 @@ def get_subplot(x, y):
     elif x < y: return c[1:-1,1:-1]
     else:       return c[1:-1,1:-1].T
 
+
+    
+parser = ArgumentParser(description='show single telescope')
+parser.add_argument('-i','--indir',   type=str, default="./pdf")
+parser.add_argument('-t','--teltype', type=str, default="LST")
+parser.add_argument('-r','--run', type=str, default="*")
+args = parser.parse_args()
+    
 
 filelist = glob("{}/{}_{}_raw.npz".format(args.indir,args.teltype,args.run))
 if len(filelist) == 0:
@@ -73,8 +73,8 @@ for i, filename in enumerate(filelist):
 dim = fit.hits.dimension
 
 fig, axes = plt.subplots(dim,dim,figsize=(12, 8))
-for i in range(dim):
-    for j in range(dim):
+for i in range(1,dim):
+    for j in range(1,dim):
         ax = axes[i][j]
         img = get_subplot(i,j)
         ax.set_xlabel("{} / {}".format(fit.hits.labels[j], fit.hits.bin_edges[j].unit))
@@ -82,7 +82,7 @@ for i in range(dim):
             ax.semilogy( fit.hits.bin_edges[i][:-1], img) 
         else:
             ax.set_ylabel("{} / {}".format(fit.hits.labels[i], fit.hits.bin_edges[i].unit))
-            im = ax.pcolor(img, norm=LogNorm(vmin=1), cmap=cm.hot )
+            im = ax.pcolor(fit.hits.bin_edges[j][:-1].value, fit.hits.bin_edges[i][:-1].value, img, norm=LogNorm(vmin=1), cmap=cm.hot )
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="10%", pad=0.05)
             plt.colorbar(im, cax=cax)

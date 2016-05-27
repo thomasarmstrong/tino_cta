@@ -4,6 +4,14 @@ import argparse
 from ctapipe.io.hessio import hessio_event_source
 from FitGammaLikelihood import FitGammaLikelihood
 
+
+#from astropy import units as u
+#from ctapipe.io import CameraGeometry
+#from guessPixDirection import *
+#tel_phi   =   0.*u.rad
+#tel_theta =  20.*u.deg
+
+
 from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from Telescope_Mask import TelDict
@@ -11,16 +19,15 @@ from Telescope_Mask import TelDict
 
 
 import signal
+stop = None
 def signal_handler(signal, frame):
-        print('You pressed Ctrl+C!')   
-        if args.runnr == '*':
-            fit.write_raw("pdf/{}".format(args.teltype))
-        else:
-            fit.write_raw("pdf/{}_{}".format(args.teltype, args.runnr))
-
-signal.signal(signal.SIGINT, signal_handler)
-
-
+    global stop
+    if stop:
+        print('you pressed Ctrl+C again -- exiting NOW')
+        exit(-1)
+    print('you pressed Ctrl+C!')
+    print('exiting after current event')
+    stop = True
 
 if __name__ == '__main__':
 
@@ -30,6 +37,7 @@ if __name__ == '__main__':
                         default="/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/")
     parser.add_argument('-r', '--runnr',   type=str, default="2?")
     parser.add_argument('-t', '--teltype', type=str, default="LST")
+    parser.add_argument('-o', '--outtoken', type=str, default=None)
     args = parser.parse_args()
     
     filenamelist = glob( "{}*run{}*gz".format(args.indir,args.runnr ))
@@ -40,6 +48,7 @@ if __name__ == '__main__':
     fit = FitGammaLikelihood()
     fit.set_instrument_description( *load_hessio(filenamelist[0]) )
     
+    signal.signal(signal.SIGINT, signal_handler)
     for filename in sorted(filenamelist):
         print("filename = {}".format(filename))
         
@@ -49,12 +58,21 @@ if __name__ == '__main__':
                                     max_events=args.max_events)
 
         for event in source:
+            ## TODO replace with actual pixel direction when they become available
+            #for tel_id in event.dl0.tels_with_data:
+                #if tel_id not in fit.pix_dirs:
+                    #geom = CameraGeometry.guess(fit.cameras(tel_id)['PixX'].to(u.m), fit.cameras(tel_id)['PixY'].to(u.m), fit.telescopes['FL'][tel_id-1] * u.m)
+                    #fit.pix_dirs[tel_id] = guessPixDirectionFocLength(geom.pix_x, geom.pix_y, tel_phi, tel_theta, fit.telescopes['FL'][tel_id-1] * u.m)
+
 
             print('Scanning input file... count = {}'.format(event.count))
             print('available telscopes: {}'.format(event.dl0.tels_with_data))
 
             fit.fill_pdf(event=event)
-    if args.runnr == '*':
-        fit.write_raw("pdf/{}".format(args.teltype))
-    else:
-        fit.write_raw("pdf/{}_{}".format(args.teltype, args.runnr))
+            
+            
+            if stop: break
+        if stop: break
+    
+    print("writing file now")
+    fit.write_raw("pdf/{}_{}".format(args.teltype,args.outtoken))
