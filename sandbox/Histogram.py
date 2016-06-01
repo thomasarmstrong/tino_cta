@@ -1,5 +1,6 @@
 import numpy as np
 
+from numba import jit
 
 class nDHistogram:
     def __init__(self, bin_edges, labels=[""]):
@@ -15,14 +16,16 @@ class nDHistogram:
         
         self.data = np.zeros( [ len(x)+1 for x in bin_edges ] )
         
-        
+        """ prepare some arrays needed for the interpolation """
+        self.bins          = [0]*self.dimension
+        self.bin_centres   = [0]*self.dimension
+        self.bin_centres_t = [0]*2
         self.permutations = [ ]
         for i in range(2**self.dimension):
             seq = [0]*self.dimension
             for j, t in enumerate(seq):
                 seq[j] = 1 if i & 2**j else 0
             self.permutations.append( seq )
-        
     def __str__(self):
         string = "bin edges:\n"
         for label, edge in zip(self.labels, self.bin_edges):
@@ -56,35 +59,40 @@ class nDHistogram:
     def evaluate(self, args):
         return self.data[ self.find_bins(args) ]
     
+    @jit
     def interpolate_linear(self, args, out_of_bounds_value=0.):
         # TODO safeguard against edge querries (see next comment)
-        bin_centres = []
-        bins = []
-        for axis, arg in zip(self.bin_edges,args):
+        for ii, (axis, arg) in enumerate(zip(self.bin_edges,args)):
             bin_ = self.find_bin(arg, axis)
+            self.bins[ii] = bin_
             # for now, ignore pixel in under-/overflow bins; return default value
-            #if bin_ == len(axis) or bin_ == 0: return out_of_bounds_value
-            try:
-                bin_s.append(bin_)
-                bin_centre = (axis[bin_] + axis[bin_-1])/2.
-                bin_centres_t = [ (bin_centre,0) ]
-                if arg > bin_centre:
-                    bin_centres_t.append( ((axis[bin_] + axis[bin_+1])/2.,1) )
-                else:
-                    bin_centres_t.append( ((axis[bin_-2] + axis[bin_-1])/2.,-1) )
-            except IndexError:
-                return out_of_bounds_value
-            bin_centres.append(bin_centres_t)
+            if len(axis) > 2:
+                if bin_ >= len(axis)-1 or bin_ <= 1: return out_of_bounds_value
+            
+            bin_centre = (axis[bin_] + axis[bin_-1])/2.
+            self.bin_centres_t[0] = (bin_centre,0)
+
+            if arg > bin_centre:
+                self.bin_centres_t[1] = ((axis[bin_] + axis[bin_+1])/2.,1)
+            else:
+                self.bin_centres_t[1] = ((axis[bin_-2] + axis[bin_-1])/2.,-1)
+            
+            
+            if len(axis) == 2:
+                self.bin_centres_t[1] = ((3*axis[0] - axis[1])/2.,0)
+
+
+            self.bin_centres[ii] = self.bin_centres_t[:]
         
         result = 0.
         for seq in self.permutations:
             result_temp = 1
             data = self.data
-            for digit, centre, bin_, arg in zip(seq, bin_centres,bin_s,args):
+            for digit, centre, bin_, arg in zip(seq, self.bin_centres,self.bins,args):
+                data = data[bin_+centre[digit][1]]
                 result_temp *= abs((arg-centre[digit^1][0])/(centre[1][0]-centre[0][0]))
-                data = data[(bin_)+centre[digit][1]]
             result += result_temp * data
-        return result
+        return result.value
     
     def fill_bin(self, value, args):
         self.data[ args ] += value

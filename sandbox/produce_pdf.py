@@ -40,12 +40,15 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--outtoken', type=str, default=None)
     args = parser.parse_args()
     
+    if args.outtoken == None: args.outtoken = args.runnr
+    
     filenamelist = glob( "{}*run{}*gz".format(args.indir,args.runnr ))
     if len(filenamelist) == 0: 
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
-        
+    
     fit = FitGammaLikelihood()
+    fit.set_atmosphere("atmprof_paranal.dat")
     fit.set_instrument_description( *load_hessio(filenamelist[0]) )
     
     signal.signal(signal.SIGINT, signal_handler)
@@ -54,7 +57,8 @@ if __name__ == '__main__':
         
         source = hessio_event_source(filename,
                                     # for now use only identical telescopes...
-                                    allowed_tels=TelDict[args.teltype],
+                                    allowed_tels=[1,2,3,4],
+                                    #allowed_tels=TelDict[args.teltype],
                                     max_events=args.max_events)
 
         for event in source:

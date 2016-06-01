@@ -73,8 +73,8 @@ for i, filename in enumerate(filelist):
 dim = fit.hits.dimension
 
 fig, axes = plt.subplots(dim,dim,figsize=(12, 8))
-for i in range(1,dim):
-    for j in range(1,dim):
+for i in range(dim):
+    for j in range(dim):
         ax = axes[i][j]
         img = get_subplot(i,j)
         ax.set_xlabel("{} / {}".format(fit.hits.labels[j], fit.hits.bin_edges[j].unit))
