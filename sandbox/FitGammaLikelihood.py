@@ -1,9 +1,10 @@
 import numpy as np
 import pyhessio
 from ctapipe.io import CameraGeometry
+from ctapipe.io.camera import _guess_camera_type
 from ctapipe.io.containers import MCShowerData as MCShower
 from ctapipe.utils.linalg import *
-from math import pi, log
+from math import pi, log, sin
 
 from Histogram import nDHistogram
 from guessPixDirection import *
@@ -37,14 +38,14 @@ labels = []
 #labels.append( "Energy" )
 #edges.append( [.9, 1.1]*u.TeV )
 
-#labels.append( "alpha" )  # angle between shower-max direction and telescope direction
-#edges.append( np.linspace(0,8,9)*u.deg )
+labels.append( "alpha" )  # angle between pixel-direction direction and telescope-direction
+edges.append( np.linspace(0,4,25)*u.deg )
 
 labels.append("d" )
 edges.append( np.linspace(0,800,41)*u.m )
 
-labels.append( "delta" )
-edges.append( np.linspace(155,180,26)*u.degree )
+#labels.append( "delta" )
+#edges.append( np.linspace(155,180,26)*u.degree )
 
 #labels.append( "altitude" )
 #edges.append( np.linspace(50,90,41)*u.degree )
@@ -89,37 +90,46 @@ class FitGammaLikelihood:
         atm_file = open(filename, "r")
         for line in atm_file:
             if line.startswith("#"): continue
-            altitude .append(line.split()[0])
-            thickness.append(line.split()[2])
-        #self.atmosphere = Table( [altitude, thicknes], names=('altit', 'thick') )
-        #self.atmosphere['altit'] = altitude
-        #self.atmosphere['thick'] = thicknes
+            altitude .append(float(line.split()[0]))
+            thickness.append(float(line.split()[2]))
         
-        #self.atmosphere['altit'].unit = u.km
-        #self.atmosphere['thick'].unit = u.g * u.cm**-2
+        self.atmosphere = nDHistogram( [np.array(altitude)*u.km], ["altitude"] )
+        self.atmosphere.data = (thickness[0:1]+thickness)*u.g * u.cm**-2
+
         
-        self.atmosphere = nDHistogram( [np.array(altitude)], ["altitude"] )
-        self.atmosphere.data = thickness[0:1]+thickness
-        #for alt, thick in zip(altitude, thicknes):
-            #self.atmosphere.fill( [alt], thick )
-        
-    def find_shower_max_offset(self,energy,h_first_int,gamma_alt):
+    def find_shower_max_height(self,energy,h_first_int,gamma_alt):
         # offset of the shower-maximum in radiation lengths
         c = 0.97 * log(energy / (83 * u.MeV)) - 1.32
         # radiation length in dry air at 1 atm = 36,62 g / cm**2 [PDG]
-        c *= 36.62
+        c *= 36.62*u.g * u.cm**-2
         # showers with a more horizontal direction spend more path length in each atm. layer
         # the "effective transverse thickness" they have to pass is reduced
         c *= sin(gamma_alt)
         
-        thick_at_first_int = self.atmosphere.interpolate_linear(h_first_int)
-        height_bin = self.atmosphere.find_bins( [c+thick_at_first_int] )[0]
+        # find the thickness at the height of the first interaction
+        t_first_int = 0.
+        for ii, height1 in enumerate(self.atmosphere.bin_edges[0]):
+            if h_first_int < height1:
+                height2 = self.atmosphere.bin_edges[0][ii-1]
+                thick1  = self.atmosphere.evaluate([height1])
+                thick2  = self.atmosphere.evaluate([height2])
+                
+                t_first_int = (thick2-thick1) / (height2-height1) * (h_first_int.to(u.km) - height1) + thick1
+                break
+
+        # total thickness at shower maximum = thickness at first interaction + thickness traversed to shower maximum
+        t_shower_max = t_first_int + c
         
-        print(self.atmosphere)
-        print(self.atmosphere.data)
-        print(height_bin)
-        exit()
-        
+        # now find the height with the wanted thickness
+        for ii, thick1 in enumerate(self.atmosphere.data):
+            if t_shower_max > thick1:
+                height1 = self.atmosphere.bin_edges[0][ii-1]
+                height2 = self.atmosphere.bin_edges[0][ii-2]
+                thick2  = self.atmosphere.evaluate([height2])
+                
+                return (height2-height1) / (thick2-thick1) * (t_shower_max-thick1) + height1
+
+
     #@jit    
     def get_parametrisation(self, shower, tel_data):
         
@@ -127,13 +137,14 @@ class FitGammaLikelihood:
 
         shower_dir  = set_phi_theta_r(shower.az, 90.*u.deg+shower.alt, 1*u.dimless)
         shower_core = np.array([ shower.core_x/u.m, shower.core_y/u.m, 0. ]) *u.m
+        shower_max_pos = shower_core - shower_dir * shower.h_shower_max / sin(shower.alt)
         
 
         for tel_id, photo_electrons in tel_data.items():
             
             print("entering telescope {}".format(tel_id))
             
-            # in most cases, idx should be id-1, but to be sure
+            # if all telescopes until id are present, idx should be id-1, but to be sure
             tel_idx = np.searchsorted( self.telescopes['TelID'], tel_id )
             
 
@@ -148,25 +159,23 @@ class FitGammaLikelihood:
 
             # TODO replace with actual pixel direction when they become available
             if tel_id not in self.pix_dirs:
+                # doesn't seem to be right for camera types with 0 degree rotation...
+                # use default value of -100.893 degrees in guessPixDirectionFocLength 
+                #camera_rotation = _guess_camera_type(len(self.cameras(tel_id)['PixX']), self.telescopes['FL'][tel_idx]*u.m)[4]
                 geom = CameraGeometry.guess(self.cameras(tel_id)['PixX'].to(u.m), self.cameras(tel_id)['PixY'].to(u.m), self.telescopes['FL'][tel_idx] * u.m)
                 self.pix_dirs[tel_id] = guessPixDirectionFocLength(geom.pix_x, geom.pix_y, tel_phi, tel_theta, self.telescopes['FL'][tel_idx] * u.m)
 
+            shower_max_dir = normalise(shower_max_pos-tel_pos)
             
-            # TODO use a physical estimate for the shower-max in the atmosphere, 
-            # not just the direction of the pixel with the most hits...
-            shower_max_dir = np.zeros(3) 
-            max_npe = 0
-            for pix_dir, npe in zip(self.pix_dirs[tel_id], photo_electrons):
-                if  max_npe < npe:
-                    max_npe = npe
-                    shower_max_dir = pix_dir
-
             for pix_id, npe in enumerate( photo_electrons ):
                 
                 pixel_area = self.cameras(tel_id)['PixA'][pix_id]
                 
                 # the direction the pixel is looking in
                 pixel_dir = self.pix_dirs[tel_id][pix_id]
+
+                # angle between pixel direction and telescope diretion (for acceptance test)
+                alpha = angle(pixel_dir, tel_dir)
 
                 # angle between the pixel direction and the shower direction
                 delta  = angle(pixel_dir, shower_dir)
@@ -179,24 +188,26 @@ class FitGammaLikelihood:
 
                 # if the current pixel contains the shower-max direction, defining an angle makes little sense
                 # put the info in the underflow bin
-                if length(temp_dir)**2 < pixel_area:
-                    gamma = -1.*u.degree
-                else:
-                    gamma = angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
-                                    temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and
-                                                                                      # shower-max direction perpendicular to the telescope direction
+                gamma = angle(shower_dir - pixel_dir * shower_dir.dot(pixel_dir), # component of the shower direction perpendicular to the telescope direction
+                                temp_dir - pixel_dir *   temp_dir.dot(pixel_dir)) # component of the connecting vector between pixel direction and
+                                                                                  # shower-max direction perpendicular to the telescope direction
+                                                                                  
                 #print ([Energy, d, delta, shower.alt, rho, gamma], npe, pixel_area)
                 #yield ([Energy, d, delta, shower.alt, rho, gamma], npe, pixel_area)
                 #yield ([angle(tel_dir,shower_max_dir), d, delta, shower.alt, rho, gamma], npe, pixel_area)
-                yield ([ d, delta, rho, gamma], npe, pixel_area)
+                yield ([ alpha, d, delta, rho, gamma], npe, pixel_area)
 
         
     def fill_pdf( self, event=None, coordinates=None, value=None ):
     
         if event:
-            
-            # TODO add shower "max_height" to event.mc here
-            self.find_shower_max_offset(event.mc.energy, event.mc.h_first_int, event.mc.alt)
+            # if not done yet, add the height of the shower maximum as a field to the shower container
+            try:
+                event.mc.add_item("h_shower_max")
+            except AttributeError:
+                pass
+            # find the height of the shower maximum and set it in the shower container
+            event.mc.h_shower_max = self.find_shower_max_height(event.mc.energy, event.mc.h_first_int, event.mc.alt)
             
             data = dict( [ (tel_id, tel.photo_electrons) for tel_id, tel in event.mc.tel.items() ] )
             for (coordinates, value, pixel_area) in self.get_parametrisation( event.mc, data ):
@@ -251,14 +262,14 @@ class FitGammaLikelihood:
             
     def fit(self, event):
         
-        # TODO add shower-max as soon as available in parametrisation
-        shower_pars = [ 1., 1.2, 0., 0., 0. ]
+        shower_pars = [ 1., 1.2, 0., 0., 0., 10000 ]
         if self.seed:
-            shower_pars[0] = self.seed.energy.to(u.TeV).value
-            shower_pars[1] = self.seed.alt   .to(u.rad).value
-            shower_pars[2] = self.seed.az    .to(u.rad).value
-            shower_pars[3] = self.seed.core_x.to(u.m  ).value
-            shower_pars[4] = self.seed.core_y.to(u.m  ).value
+            shower_pars[0] = self.seed.energy      .to(u.TeV).value
+            shower_pars[1] = self.seed.alt         .to(u.rad).value
+            shower_pars[2] = self.seed.az          .to(u.rad).value
+            shower_pars[3] = self.seed.core_x      .to(u.m  ).value
+            shower_pars[4] = self.seed.core_y      .to(u.m  ).value
+            shower_pars[5] = self.seed.h_shower_max.to(u.m  ).value
 
         
         # selct only pixel with data and those around them
@@ -272,7 +283,7 @@ class FitGammaLikelihood:
 
         #data = dict( [ (tel_id, tel.photo_electrons[tel.photo_electrons>0]) for tel_id, tel in event.mc.tel.items() ] )
 
-        # shower_pars = np.arra([ E / TeV, alt / rad, az / rad, core_x / m, core_y / m, max_height / m]) 
+        # shower_pars = np.arra([ E / TeV, alt / rad, az / rad, core_x / m, core_y / m, h_shower_max / m]) 
         fit_result = minimize( lambda x : self.get_nlog_likelihood(x, data), shower_pars, 
                               #method='nelder-mead', options={'xtol': 1e-8, 'disp': True}
                               method='BFGS', options={'disp': True}
@@ -283,12 +294,12 @@ class FitGammaLikelihood:
     def get_nlog_likelihood(self, shower_pars, data):
         self.iteration += 1
         print("get_nlog_likelihood called {}. time".format(self.iteration))
-        self.seed.energy  = shower_pars[0] * u.TeV
-        self.seed.alt     = shower_pars[1] * u.rad
-        self.seed.az      = shower_pars[2] * u.rad
-        self.seed.core_x  = shower_pars[3] * u.m
-        self.seed.core_y  = shower_pars[4] * u.m
-        #shower.max_height = shower_pars[5] * u.m
+        self.seed.energy       = shower_pars[0] * u.TeV
+        self.seed.alt          = shower_pars[1] * u.rad
+        self.seed.az           = shower_pars[2] * u.rad
+        self.seed.core_x       = shower_pars[3] * u.m
+        self.seed.core_y       = shower_pars[4] * u.m
+        self.seed.h_shower_max = shower_pars[5] * u.m
 
         log_likelihood = 0.
         for (coordinates, measured, pixel_area) in self.get_parametrisation(self.seed, data):

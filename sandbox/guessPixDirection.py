@@ -1,6 +1,6 @@
 """
 """
-
+from math import pi
 import numpy as np
 from numpy import arctan2 as atan2
 from astropy import units as u
@@ -8,7 +8,7 @@ from ctapipe.utils.linalg import *
 
 
 
-def guessPixDirectionFieldView(pix_x, pix_y, tel_phi, tel_theta, tel_view = 4 * u.degree, array_focus_dist=None, tel_x=None, tel_y=None, array_phi=None, array_theta=None):
+def guessPixDirectionFieldView(pix_x, pix_y, tel_phi, tel_theta, tel_view = 4 * u.degree, camera_rotation=-100.893 * u.degree, array_focus_dist=None, tel_x=None, tel_y=None, array_phi=None, array_theta=None):
     """
     guesses the direction a pixel is looking at from the direction the telescope is pointing to
     
@@ -58,13 +58,13 @@ def guessPixDirectionFieldView(pix_x, pix_y, tel_phi, tel_theta, tel_view = 4 * 
     for a, b in zip(pix_alpha,pix_beta):
         pix_dir = set_phi_theta_r( tel_phi, tel_theta + b, 1*u.dimless )
         
-        pix_dir = rotate_around_axis(pix_dir, tel_dir, a)
+        pix_dir = rotate_around_axis(pix_dir, tel_dir, a+camera_rotation)
         pix_dirs.append(pix_dir)
         
     return np.array( pix_dirs )
 
 
-def guessPixDirectionFocLength(pix_x, pix_y, tel_phi, tel_theta, tel_foclen = 4 * u.m, tel_x=None, tel_y=None, array_phi=None, array_theta=None):
+def guessPixDirectionFocLength(pix_x, pix_y, tel_phi, tel_theta, tel_foclen = 4 * u.m, camera_rotation=-100.893 * u.degree, tel_x=None, tel_y=None, array_phi=None, array_theta=None):
     # beta is the pixel's angular distance to the centre according to beta / tel_view = r / maxR
     # alpha is the polar angle between the y-axis and the pixel
     # to find the direction the pixel is looking at, 
@@ -88,7 +88,7 @@ def guessPixDirectionFocLength(pix_x, pix_y, tel_phi, tel_theta, tel_foclen = 4 
     for a, b in zip(pix_alpha,pix_beta):
         pix_dir = set_phi_theta( tel_phi, tel_theta + b )
         
-        pix_dir = rotate_around_axis(pix_dir, tel_dir, a)
+        pix_dir = rotate_around_axis(pix_dir, tel_dir, a+camera_rotation)
         pix_dirs.append(pix_dir*u.dimless)
         
     return pix_dirs
