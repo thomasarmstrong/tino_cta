@@ -4,6 +4,7 @@ from ctapipe.io import CameraGeometry
 from ctapipe.io.camera import _guess_camera_type
 from ctapipe.io.containers import MCShowerData as MCShower
 from ctapipe.utils.linalg import *
+from ctapipe.reco.shower_max import *
 from math import pi, log, sin
 
 from Histogram import nDHistogram
@@ -61,7 +62,7 @@ edges.append( np.concatenate( (
                               )
                             )*u.degree
             )
-from numba import jit
+#from numba import jit
 class FitGammaLikelihood:
     def __init__(self, edges=edges, labels=labels):
         self.seed       = None
@@ -73,7 +74,6 @@ class FitGammaLikelihood:
         self.norm = nDHistogram( edges, labels )
         self.pdf  = None
         
-
     def set_instrument_description(self, telescopes, cameras, optics):
         self.Ver = 'Feb2016'
         self.TelVer = 'TelescopeTable_Version{}'.format(self.Ver)
@@ -85,52 +85,45 @@ class FitGammaLikelihood:
         self.optics     = lambda tel_id : optics [self.OptVer+str(tel_id)]
     
     def set_atmosphere(self, filename):
-        altitude  = []
-        thickness = []
-        atm_file = open(filename, "r")
-        for line in atm_file:
-            if line.startswith("#"): continue
-            altitude .append(float(line.split()[0]))
-            thickness.append(float(line.split()[2]))
+        self.shower_max_estimator = ShowerMaxEstimator(filename)
+        #altitude  = []
+        #thickness = []
+        #atm_file = open(filename, "r")
+        #for line in atm_file:
+            #if line.startswith("#"): continue
+            #altitude .append(float(line.split()[0]))
+            #thickness.append(float(line.split()[2]))
         
-        self.atmosphere = nDHistogram( [np.array(altitude)*u.km], ["altitude"] )
-        self.atmosphere.data = (thickness[0:1]+thickness)*u.g * u.cm**-2
+        #self.atmosphere = nDHistogram( [np.array(altitude)*u.km], ["altitude"] )
+        #self.atmosphere.data = (thickness[0:1]+thickness)*u.g * u.cm**-2
 
         
-    def find_shower_max_height(self,energy,h_first_int,gamma_alt):
-        # offset of the shower-maximum in radiation lengths
-        c = 0.97 * log(energy / (83 * u.MeV)) - 1.32
-        # radiation length in dry air at 1 atm = 36,62 g / cm**2 [PDG]
-        c *= 36.62*u.g * u.cm**-2
-        # showers with a more horizontal direction spend more path length in each atm. layer
-        # the "effective transverse thickness" they have to pass is reduced
-        c *= sin(gamma_alt)
+    #def find_shower_max_height(self,energy,h_first_int,gamma_alt):
+        ## offset of the shower-maximum in radiation lengths
+        #c = 0.97 * log(energy / (83 * u.MeV)) - 1.32
+        ## radiation length in dry air at 1 atm = 36,62 g / cm**2 [PDG]
+        #c *= 36.62 * u.g * u.cm**-2
+        ## showers with a more horizontal direction spend more path length in each atm. layer
+        ## the "effective transverse thickness" they have to pass is reduced
+        #c *= sin(gamma_alt)
         
-        # find the thickness at the height of the first interaction
-        t_first_int = 0.
-        for ii, height1 in enumerate(self.atmosphere.bin_edges[0]):
-            if h_first_int < height1:
-                height2 = self.atmosphere.bin_edges[0][ii-1]
-                thick1  = self.atmosphere.evaluate([height1])
-                thick2  = self.atmosphere.evaluate([height2])
+        ## find the thickness at the height of the first interaction
+        #t_first_int = self.atmosphere.interpolate_linear([h_first_int])
+
+        ## total thickness at shower maximum = thickness at first interaction + thickness traversed to shower maximum
+        #t_shower_max = t_first_int + c
+        
+        ## now find the height with the wanted thickness
+        #for ii, thick1 in enumerate(self.atmosphere.data):
+            #if t_shower_max > thick1:
+                #height1 = self.atmosphere.bin_edges[0][ii-1]
+                #height2 = self.atmosphere.bin_edges[0][ii-2]
+                #thick2  = self.atmosphere.evaluate([height2])
                 
-                t_first_int = (thick2-thick1) / (height2-height1) * (h_first_int.to(u.km) - height1) + thick1
-                break
-
-        # total thickness at shower maximum = thickness at first interaction + thickness traversed to shower maximum
-        t_shower_max = t_first_int + c
-        
-        # now find the height with the wanted thickness
-        for ii, thick1 in enumerate(self.atmosphere.data):
-            if t_shower_max > thick1:
-                height1 = self.atmosphere.bin_edges[0][ii-1]
-                height2 = self.atmosphere.bin_edges[0][ii-2]
-                thick2  = self.atmosphere.evaluate([height2])
-                
-                return (height2-height1) / (thick2-thick1) * (t_shower_max-thick1) + height1
+                #return (height2-height1) / (thick2-thick1) * (t_shower_max-thick1) + height1
 
 
-    #@jit    
+
     def get_parametrisation(self, shower, tel_data):
         
         Energy = shower.energy
@@ -195,7 +188,7 @@ class FitGammaLikelihood:
                 #print ([Energy, d, delta, shower.alt, rho, gamma], npe, pixel_area)
                 #yield ([Energy, d, delta, shower.alt, rho, gamma], npe, pixel_area)
                 #yield ([angle(tel_dir,shower_max_dir), d, delta, shower.alt, rho, gamma], npe, pixel_area)
-                yield ([ alpha, d, delta, rho, gamma], npe, pixel_area)
+                yield ([ alpha, d, rho, gamma], npe, pixel_area)
 
         
     def fill_pdf( self, event=None, coordinates=None, value=None ):
@@ -207,8 +200,10 @@ class FitGammaLikelihood:
             except AttributeError:
                 pass
             # find the height of the shower maximum and set it in the shower container
-            event.mc.h_shower_max = self.find_shower_max_height(event.mc.energy, event.mc.h_first_int, event.mc.alt)
-            
+            event.mc.h_shower_max = self.shower_max_estimator.find_shower_max_height(event.mc.energy, event.mc.h_first_int, event.mc.alt)
+            print(event.mc.h_shower_max)
+            return 
+        
             data = dict( [ (tel_id, tel.photo_electrons) for tel_id, tel in event.mc.tel.items() ] )
             for (coordinates, value, pixel_area) in self.get_parametrisation( event.mc, data ):
                 self.hits.fill(coordinates, value)

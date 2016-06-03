@@ -43,6 +43,9 @@ def display_event(event, calibrate = 0, max_tel = 5):
         geom = io.CameraGeometry.guess(x, y, event.meta.optical_foclen[tel_id])
         disp = visualization.CameraDisplay(geom, ax=ax,
                                            title="CT{0} DetectorResponse".format(tel_id))
+        
+        print(geom.cam_id)
+        
         disp.pixels.set_antialiaseds(False)
         disp.autoupdate = False
         disp.cmap = plt.cm.hot
@@ -128,13 +131,13 @@ if __name__ == '__main__':
         filename = args.filename
     else:
         filenamelist = []
-        filenamelist += glob("/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/gamma_20deg_180deg_run10*")
+        filenamelist += glob("/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/gamma_20deg_180deg_run47*")
         filenamelist += glob("/home/ichanmich/software/cta/datafiles/*")
         filename = filenamelist[0]
 
     source = hessio_event_source(filename,
                                  #allowed_tels=[args.tel],
-                                 #allowed_tels=[1,2,3,4,5],
+                                 allowed_tels=[1,2,3,4,5,6,7,8],
                                  max_events=args.max_events)
 
     for event in source:
@@ -148,7 +151,7 @@ if __name__ == '__main__':
             response = get_input()
             print()
             if response.startswith("d"):
-                disps = display_event(event,max_tel=1)
+                disps = display_event(event,max_tel=10)
                 plt.pause(0.1)
             elif response.startswith("p"):
                 print("--event-------------------")
