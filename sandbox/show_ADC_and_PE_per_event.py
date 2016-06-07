@@ -19,7 +19,7 @@ def get_input():
     return input("Choice: ")
 
 fig = plt.figure(figsize=(12, 8))
-def display_event(event, calibrate = 0, max_tel = 5):
+def display_event(event, calibrate = 0, max_tel = 4):
     """an extremely inefficient display. It creates new instances of
     CameraDisplay for every event and every camera, and also new axes
     for each event. It's hacked, but it works
@@ -43,8 +43,6 @@ def display_event(event, calibrate = 0, max_tel = 5):
         geom = io.CameraGeometry.guess(x, y, event.meta.optical_foclen[tel_id])
         disp = visualization.CameraDisplay(geom, ax=ax,
                                            title="CT{0} DetectorResponse".format(tel_id))
-        
-        print(geom.cam_id)
         
         disp.pixels.set_antialiaseds(False)
         disp.autoupdate = False
@@ -117,7 +115,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='show single telescope')
     parser.add_argument('-t','--tel', type=int)
+    parser.add_argument('-r', '--runnr',   type=str, default="2?")
+    parser.add_argument('-i', '--indir',   type=str, 
+                        default="/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/")
     parser.add_argument('-m', '--max-events', type=int, default=10000)
+    parser.add_argument('-n', '--max-ntels',  type=int, default=4)
     parser.add_argument('-w', '--write', action='store_true',
                         help='write images to files')
     parser.add_argument('-f', '--filename', type=str)
@@ -129,6 +131,9 @@ if __name__ == '__main__':
 
     if args.filename:
         filename = args.filename
+    elif args.runnr:
+        filenamelist = glob( "{}*run{}*gz".format(args.indir,args.runnr ))
+        filename = filenamelist[0]
     else:
         filenamelist = []
         filenamelist += glob("/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/gamma_20deg_180deg_run47*")
@@ -137,7 +142,7 @@ if __name__ == '__main__':
 
     source = hessio_event_source(filename,
                                  #allowed_tels=[args.tel],
-                                 allowed_tels=[1,2,3,4,5,6,7,8],
+                                 #allowed_tels=[1,2,3,4,5,6,7,8],
                                  max_events=args.max_events)
 
     for event in source:
@@ -151,7 +156,7 @@ if __name__ == '__main__':
             response = get_input()
             print()
             if response.startswith("d"):
-                disps = display_event(event,max_tel=10)
+                disps = display_event(event,max_tel=args.max_ntels)
                 plt.pause(0.1)
             elif response.startswith("p"):
                 print("--event-------------------")

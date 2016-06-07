@@ -66,7 +66,6 @@ edges.append( np.concatenate( (
 class FitGammaLikelihood:
     def __init__(self, edges=edges, labels=labels):
         self.seed       = None
-        self.iteration=0
 
         self.pix_dirs = {}
 
@@ -86,41 +85,6 @@ class FitGammaLikelihood:
     
     def set_atmosphere(self, filename):
         self.shower_max_estimator = ShowerMaxEstimator(filename)
-        #altitude  = []
-        #thickness = []
-        #atm_file = open(filename, "r")
-        #for line in atm_file:
-            #if line.startswith("#"): continue
-            #altitude .append(float(line.split()[0]))
-            #thickness.append(float(line.split()[2]))
-        
-        #self.atmosphere = nDHistogram( [np.array(altitude)*u.km], ["altitude"] )
-        #self.atmosphere.data = (thickness[0:1]+thickness)*u.g * u.cm**-2
-
-        
-    #def find_shower_max_height(self,energy,h_first_int,gamma_alt):
-        ## offset of the shower-maximum in radiation lengths
-        #c = 0.97 * log(energy / (83 * u.MeV)) - 1.32
-        ## radiation length in dry air at 1 atm = 36,62 g / cm**2 [PDG]
-        #c *= 36.62 * u.g * u.cm**-2
-        ## showers with a more horizontal direction spend more path length in each atm. layer
-        ## the "effective transverse thickness" they have to pass is reduced
-        #c *= sin(gamma_alt)
-        
-        ## find the thickness at the height of the first interaction
-        #t_first_int = self.atmosphere.interpolate_linear([h_first_int])
-
-        ## total thickness at shower maximum = thickness at first interaction + thickness traversed to shower maximum
-        #t_shower_max = t_first_int + c
-        
-        ## now find the height with the wanted thickness
-        #for ii, thick1 in enumerate(self.atmosphere.data):
-            #if t_shower_max > thick1:
-                #height1 = self.atmosphere.bin_edges[0][ii-1]
-                #height2 = self.atmosphere.bin_edges[0][ii-2]
-                #thick2  = self.atmosphere.evaluate([height2])
-                
-                #return (height2-height1) / (thick2-thick1) * (t_shower_max-thick1) + height1
 
 
 
@@ -152,11 +116,13 @@ class FitGammaLikelihood:
 
             # TODO replace with actual pixel direction when they become available
             if tel_id not in self.pix_dirs:
+                print("\tgenerating pixel directions for telescope {}".format(tel_id))
                 # doesn't seem to be right for camera types with 0 degree rotation...
                 # use default value of -100.893 degrees in guessPixDirectionFocLength 
                 #camera_rotation = _guess_camera_type(len(self.cameras(tel_id)['PixX']), self.telescopes['FL'][tel_idx]*u.m)[4]
                 geom = CameraGeometry.guess(self.cameras(tel_id)['PixX'].to(u.m), self.cameras(tel_id)['PixY'].to(u.m), self.telescopes['FL'][tel_idx] * u.m)
                 self.pix_dirs[tel_id] = guessPixDirectionFocLength(geom.pix_x, geom.pix_y, tel_phi, tel_theta, self.telescopes['FL'][tel_idx] * u.m)
+                print("\t... done")
 
             shower_max_dir = normalise(shower_max_pos-tel_pos)
             
@@ -226,7 +192,7 @@ class FitGammaLikelihood:
 
     def evaluate_pdf(self, args):
         #return self.pdf.evaluate(args)
-        return self.pdf.interpolate_linear(args)
+        return self.pdf.interpolate(args,order=1)
 
 
     def write_raw(self,filename):
@@ -256,6 +222,7 @@ class FitGammaLikelihood:
 
             
     def fit(self, event):
+        self.iteration=0
         
         shower_pars = [ 1., 1.2, 0., 0., 0., 10000 ]
         if self.seed:
@@ -270,13 +237,15 @@ class FitGammaLikelihood:
         # selct only pixel with data and those around them
         data = dict()
         for tel_id, tel in event.mc.tel.items():
-            geom = CameraGeometry.guess(self.cameras(tel_id)['PixX'].to(u.m), self.cameras(tel_id)['PixY'].to(u.m), self.telescopes['FL'][tel_idx] * u.m)
+            geom = CameraGeometry.guess(self.cameras(tel_id)['PixX'].to(u.m), self.cameras(tel_id)['PixY'].to(u.m), self.telescopes['FL'][tel_id] * u.m)
             mask = tel.photo_electrons>0
             for pixid in geom.pix_id[mask]:
                 mask[geom.neighbors[pixid]] = True
             data[tel_id] = tel.photo_electrons[mask]
 
         #data = dict( [ (tel_id, tel.photo_electrons[tel.photo_electrons>0]) for tel_id, tel in event.mc.tel.items() ] )
+
+        print(shower_pars)
 
         # shower_pars = np.arra([ E / TeV, alt / rad, az / rad, core_x / m, core_y / m, h_shower_max / m]) 
         fit_result = minimize( lambda x : self.get_nlog_likelihood(x, data), shower_pars, 

@@ -4,6 +4,8 @@ from math import pi
 import numpy as np
 from numpy import arctan2 as atan2
 from astropy import units as u
+u.dimless = u.dimensionless_unscaled
+
 from ctapipe.utils.linalg import *
 
 

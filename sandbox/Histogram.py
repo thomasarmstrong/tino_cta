@@ -50,7 +50,7 @@ class nDHistogram:
         return self.data[ self.find_bins(args) ]
     
 
-    def interpolate_linear(self, args, out_of_bounds_value=0.):
+    def interpolate(self, args, out_of_bounds_value=0.,order=3):
         bins_u = np.array(self.find_bins(args))
         bins_l = bins_u - 1
         
@@ -64,7 +64,14 @@ class nDHistogram:
             bin_l_edges[ij] = axis[ bins_l[ij]-1 ].to(unit).value
         coordinates =  (margs-bin_u_edges) / (bin_u_edges-bin_l_edges) * (bins_u - bins_l) + bins_u
         
-        return ndimage.map_coordinates(self.data, [coordinates],order=3)[0] * self.data.unit
+        mcoordinates = []
+        for coor in coordinates:
+            mcoordinates.append([coor])
+        
+        try:
+            return ndimage.map_coordinates(self.data, mcoordinates, order=order)[0] * self.data.unit
+        except AttributeError:
+            return ndimage.map_coordinates(self.data, mcoordinates, order=order)[0]
         
     
     def fill_bin(self, value, args):
@@ -79,17 +86,17 @@ class nDHistogram:
     
     def get_outlier(self):
         data = self.data
-        for i in range(self.dimension):
+        while len(data.shape):
             data = data[1:-1].sum(axis=0)
         return self.data.sum() - data
     def get_overflow(self):
         data = self.data
-        for i in range(self.dimension):
+        while len(data.shape):
             data = data[:-1].sum(axis=0)
         return self.data.sum() - data    
     def get_underflow(self):
         data = self.data
-        for i in range(self.dimension):
+        while len(data.shape):
             data = data[1:].sum(axis=0)
         return self.data.sum() - data    
 
@@ -102,6 +109,6 @@ class nDHistogram:
     @classmethod
     def read(cls, filename):
         with np.load(filename) as data:
-            histo = nDHistogram( data['axes'], data['labels'] )
+            histo = cls( data['axes'], data['labels'] )
             histo.data = data['data']
         return histo
