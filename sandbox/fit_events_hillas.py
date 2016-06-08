@@ -18,7 +18,7 @@ from Telescope_Mask import TelDict
 from FitGammaHillas import FitGammaHillas
 
 import matplotlib.pyplot as plt
-
+from mpl_toolkits.mplot3d import Axes3D
 
 
 
@@ -54,7 +54,9 @@ if __name__ == '__main__':
     
     signal.signal(signal.SIGINT, signal_handler)
     
-    xis = []
+    xis1 = []
+    xis2 = []
+    xisb = []
     for filename in sorted(filenamelist):
         print("filename = {}".format(filename))
         
@@ -74,18 +76,52 @@ if __name__ == '__main__':
             for tel_id, tel in event.mc.tel.items():
                 data[tel_id] = tel.photo_electrons
             
-            result = fit.fit(data)
+            
+            fit.get_great_circles(data)
+            result1, crossings = fit.fit_crosses()
+            result2            = fit.fit_MEst(result1)
             
             
             shower = event.mc
-            shower_dir = set_phi_theta(shower.az, 90.*u.deg+shower.alt)
+            # corsika measures azimuth the other way around, using phi=-az
+            shower_dir = set_phi_theta(-shower.az, 90.*u.deg+shower.alt)
+            # shower direction is downwards, shower origin up
             shower_org = -shower_dir
             
-            xi = angle(result, shower_org).to(u.deg)
-            print("\nxi = {}".format( xi ) )
-            xis.append(math.log10(xi.value))
+            print()
+            print(get_phi_theta(result1).to(u.deg) )
+            print(get_phi_theta(shower_org).to(u.deg) )
             
-            print("median: = {} degrees\n\n".format(10**sorted(xis)[ len(xis)//2 ] ) )
+            
+            xi1 = angle(result1, shower_org).to(u.deg)
+            xi2 = angle(result2, shower_org).to(u.deg)
+            print("\nxi1 = {}".format( xi1 ) )
+            print(  "xi2 = {}".format( xi2 ) )
+            xis1.append(math.log10(xi1.value))
+            xis2.append(math.log10(xi2.value))
+            
+            xisb.append( math.log10( min(xi1.value, xi2.value) ) )
+            
+            print("median1: = {} degrees"    .format(10**sorted(xis1)[ len(xis1)//2 ] ) )
+            print("median2: = {} degrees"    .format(10**sorted(xis2)[ len(xis2)//2 ] ) )
+            print("medianb: = {} degrees\n\n".format(10**sorted(xisb)[ len(xisb)//2 ] ) )
+
+            #X,Y,Z = [],[],[]
+            #for res in crossings:
+                #X.append(res[0])
+                #Y.append(res[1])
+                #Z.append(res[2])
+            #fig = plt.figure()
+            #ax = fig.add_subplot(111, projection='3d')
+            #ax.scatter(X,Y,Z, c='r')
+            ##ax.set_aspect('equal', 'datalim')
+            #ax.scatter( [shower_org[0]],[shower_org[1]],[shower_org[2]], c='b')
+            #ax.scatter( [result[0]],[result[1]],[result[2]], c='g')
+            #ax.set_xlim3d( shower_org[0]-.1, shower_org[0]+.1)
+            #ax.set_ylim3d( shower_org[1]-.1, shower_org[1]+.1)
+            #ax.set_zlim3d( shower_org[2]-.1, shower_org[2]+.1)
+            #plt.show()
+
 
             if stop: break
         if stop: break  
@@ -93,6 +129,15 @@ if __name__ == '__main__':
     
     
     figure = plt.figure()
-    plt.hist(xis, bins=np.linspace(-3,1,100)  )
-    plt.xlabel(r"log($\xi$ / deg)")
+    plt.hist(xis1, bins=np.linspace(-3,1,50)  )
+    plt.xlabel(r"log($\xi_1$ / deg)")
+
+    figure = plt.figure()
+    plt.hist(xis2, bins=np.linspace(-3,1,50)  )
+    plt.xlabel(r"log($\xi_2$ / deg)")
+
+    figure = plt.figure()
+    plt.hist(np.array(xis1)-np.array(xis2), bins=np.linspace(-.5,.5,50)  )
+    plt.xlabel(r"$\log(\xi_1 / \deg)-\log(\xi_2 / \deg)$")
+
     plt.show()

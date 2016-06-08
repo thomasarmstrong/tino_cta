@@ -8,7 +8,9 @@ u.dimless = u.dimensionless_unscaled
 
 from ctapipe.utils.linalg import *
 
-
+__all__ = ["guessPixDirection",
+           "guessPixDirectionFocLength",
+           "guessPixDirectionFieldView"]
 
 def guessPixDirectionFieldView(pix_x, pix_y, tel_phi, tel_theta, tel_view = 4 * u.degree, camera_rotation=-100.893 * u.degree, array_focus_dist=None, tel_x=None, tel_y=None, array_phi=None, array_theta=None):
     """
@@ -91,3 +93,6 @@ def guessPixDirectionFocLength(pix_x, pix_y, tel_phi, tel_theta, tel_foclen = 4 
         pix_dirs.append(pix_dir*u.dimless)
         
     return pix_dirs
+
+
+guessPixDirection = guessPixDirectionFocLength 
