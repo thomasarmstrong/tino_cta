@@ -12,7 +12,7 @@ from ctapipe.io.hessio import hessio_event_source
 from ctapipe.io.containers import MCShowerData as MCShower
 from ctapipe.instrument.InstrumentDescription import load_hessio
 
-from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle
+from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle,length
 
 from Telescope_Mask import TelDict
 from FitGammaHillas import FitGammaHillas
@@ -77,34 +77,47 @@ if __name__ == '__main__':
                 data[tel_id] = tel.photo_electrons
             
             
-            fit.get_great_circles(data)
-            result1, crossings = fit.fit_crosses()
-            result2            = fit.fit_MEst(result1)
-            
-            
             shower = event.mc
             # corsika measures azimuth the other way around, using phi=-az
             shower_dir = set_phi_theta(-shower.az, 90.*u.deg+shower.alt)
             # shower direction is downwards, shower origin up
             shower_org = -shower_dir
             
-            print()
-            print(get_phi_theta(result1).to(u.deg) )
-            print(get_phi_theta(shower_org).to(u.deg) )
+            shower_core = np.array([shower.core_x.value, shower.core_y.value])*u.m
+            
+            fit.get_great_circles(data)
+            #result1, crossings = fit.fit_origin_crosses()
+            #result2            = fit.fit_origin_minimise(result1)
             
             
-            xi1 = angle(result1, shower_org).to(u.deg)
-            xi2 = angle(result2, shower_org).to(u.deg)
-            print("\nxi1 = {}".format( xi1 ) )
-            print(  "xi2 = {}".format( xi2 ) )
-            xis1.append(math.log10(xi1.value))
-            xis2.append(math.log10(xi2.value))
+            #print()
+            #print(get_phi_theta(result1).to(u.deg) )
+            #print(get_phi_theta(shower_org).to(u.deg) )
             
-            xisb.append( math.log10( min(xi1.value, xi2.value) ) )
             
-            print("median1: = {} degrees"    .format(10**sorted(xis1)[ len(xis1)//2 ] ) )
-            print("median2: = {} degrees"    .format(10**sorted(xis2)[ len(xis2)//2 ] ) )
-            print("medianb: = {} degrees\n\n".format(10**sorted(xisb)[ len(xisb)//2 ] ) )
+            #xi1 = angle(result1, shower_org).to(u.deg)
+            #xi2 = angle(result2, shower_org).to(u.deg)
+            #print("\nxi1 = {}".format( xi1 ) )
+            #print(  "xi2 = {}".format( xi2 ) )
+            #xis1.append(math.log10(xi1.value))
+            #xis2.append(math.log10(xi2.value))
+            
+            #xisb.append( math.log10( min(xi1.value, xi2.value) ) )
+            
+            #print("median1: = {} degrees"    .format(10**sorted(xis1)[ int(len(xis1)*.68) ] ) )
+            #print("median2: = {} degrees"    .format(10**sorted(xis2)[ int(len(xis2)*.68) ] ) )
+            #print("medianb: = {} degrees\n\n".format(10**sorted(xisb)[ int(len(xisb)*.68) ] ) )
+
+
+
+
+            pos_fit = fit.fit_core()
+
+            diff = length(pos_fit[:2]-shower_core)
+            print(diff)
+
+
+
 
             #X,Y,Z = [],[],[]
             #for res in crossings:
@@ -128,16 +141,16 @@ if __name__ == '__main__':
     
     
     
-    figure = plt.figure()
-    plt.hist(xis1, bins=np.linspace(-3,1,50)  )
-    plt.xlabel(r"log($\xi_1$ / deg)")
+    #figure = plt.figure()
+    #plt.hist(xis1, bins=np.linspace(-3,1,50)  )
+    #plt.xlabel(r"log($\xi_1$ / deg)")
 
-    figure = plt.figure()
-    plt.hist(xis2, bins=np.linspace(-3,1,50)  )
-    plt.xlabel(r"log($\xi_2$ / deg)")
+    #figure = plt.figure()
+    #plt.hist(xis2, bins=np.linspace(-3,1,50)  )
+    #plt.xlabel(r"log($\xi_2$ / deg)")
 
-    figure = plt.figure()
-    plt.hist(np.array(xis1)-np.array(xis2), bins=np.linspace(-.5,.5,50)  )
-    plt.xlabel(r"$\log(\xi_1 / \deg)-\log(\xi_2 / \deg)$")
+    #figure = plt.figure()
+    #plt.hist(np.array(xis1)-np.array(xis2), bins=np.linspace(-.5,.5,50)  )
+    #plt.xlabel(r"$\log(\xi_1 / \deg)-\log(\xi_2 / \deg)$")
 
-    plt.show()
+    #plt.show()
