@@ -89,7 +89,7 @@ def guessPixDirectionFocLength(pix_x, pix_y, tel_phi, tel_theta, tel_foclen = 4 
     for a, b in zip(pix_alpha,pix_beta):
         pix_dir = set_phi_theta( tel_phi, tel_theta + b )
         
-        pix_dir = rotate_around_axis(pix_dir, tel_dir, a+camera_rotation)
+        pix_dir = rotate_around_axis(pix_dir, tel_dir, (a-camera_rotation))
         pix_dirs.append(pix_dir*u.dimless)
         
     return pix_dirs

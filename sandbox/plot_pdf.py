@@ -23,7 +23,7 @@ def get_subplot(x, y):
     for i in range(abs(x-y)-1):
         a = a[:,1:-1,...].sum(axis=1)
         b = b[:,1:-1,...].sum(axis=1)
-    # remove all axes beyond either the two we look at
+    # remove all axes beyond either of the two we look at
     for i in range(dim-max(x,y)-1):
         a = a[...,1:-1].sum(axis=-1)
         b = b[...,1:-1].sum(axis=-1)

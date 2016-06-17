@@ -8,11 +8,13 @@ from astropy import units as u
 u.dimless = u.dimensionless_unscaled
 
 from ctapipe.io import CameraGeometry
+#from ctapipe.io.camera import _guess_camera_type
 
 from ctapipe.reco.hillas import hillas_parameters
 from ctapipe.utils.linalg import *
 
 from guessPixDirection import guessPixDirection
+from Telescope_Mask import TelDict
 
 
 __all__ = ["FitGammaHillas"]
@@ -40,6 +42,7 @@ class FitGammaHillas:
 
 
     def get_great_circles(self,tel_data):
+        self.circles = {}
         for tel_id, photo_electrons in tel_data.items():
 
             if tel_id not in self.tel_geom:
@@ -50,7 +53,18 @@ class FitGammaHillas:
                                         self.tel_geom[tel_id].pix_y,
                                         photo_electrons)
             
-            camera_rotation = 100.893 * u.deg
+            camera_rotation = -110.893*u.deg
+            if tel_id in TelDict["LST"]          : camera_rotation = -110.893*u.deg
+            else: camera_rotation = -90.*u.deg
+            #if tel_id in TelDict["MST_NectaCam"] : camera_rotation = -90.*u.deg
+            #if tel_id in TelDict["MST_FlashCam"] : camera_rotation = -90.*u.deg
+            #if tel_id in TelDict["SST_ASTRI"]    : camera_rotation = -90.*u.deg
+            #if tel_id in TelDict["SST_GCT"]      : camera_rotation = -90.*u.deg    
+            #if tel_id in TelDict["SST_GCT-S"]    : camera_rotation = -90.*u.deg    
+            #if tel_id in TelDict["SST_DC"]       : camera_rotation = -90.*u.deg    
+            #if tel_id in TelDict["SCT"]          : camera_rotation = -90.*u.deg    
+            
+            #camera_rotation_s = _guess_camera_type(len(self.cameras(tel_id)['PixX']), self.telescopes['FL'][tel_id-1]*u.m )[4]
             circle = GreatCircle(guessPixDirection( np.array([ moments.cen_x.value, (moments.cen_x + moments.length * np.cos( moments.psi + np.pi/2*u.rad )).value] ) * u.m,
                                                     np.array([ moments.cen_y.value, (moments.cen_y + moments.length * np.sin( moments.psi + np.pi/2*u.rad )).value] ) * u.m,
                                                     self.tel_phi, self.tel_theta, self.telescopes['FL'][tel_id-1] * u.m, camera_rotation=camera_rotation
@@ -64,7 +78,6 @@ class FitGammaHillas:
         """ calculates the origin of the gamma as the weighted average direction
             of the intersections of all great circles
         """
-        
         
         crossings = []
         for perm in combinations(self.circles.values(), 2):
@@ -113,13 +126,13 @@ class FitGammaHillas:
         weights = [ np.sum( [ length( np.cross(A.norm,B.norm) ) for A in self.circles.values() ] ) for B in self.circles.values() ]
         
         # minimising the test function
-        result = minimize( test_function, seed, args=(self.circles,weights),
-                            method='BFGS', options={'disp': True}
-                          ).x
+        self.fit_result_origin = minimize( test_function, seed, args=(weights),
+                                           method='BFGS', options={'disp': False}
+                                         )
             
-        return np.array(result)*u.dimless
+        return np.array(self.fit_result_origin.x)*u.dimless
         
-    def _MEst(self, origin, circles, weights=None):
+    def _MEst(self, origin, weights):
         """ calculates the M-Estimator:
             a modified chi2 that becomes asymptotically linear for high values
             and is therefore less sensitive to outliers
@@ -151,12 +164,12 @@ class FitGammaHillas:
             seemingly inferior to negative sum of angles...
             
         """
-        if weights == None: weights = np.ones(len(circles))
-        ang = np.array([angle(origin,circ.norm) for circ in circles.values()])
+
+        ang = np.array([angle(origin,circ.norm) for circ in self.circles.values()])
         ang[ang>np.pi/2.] = np.pi-ang[ang>np.pi/2]
         return sum( weights*np.sqrt( 2.+ (ang-np.pi/2.)**2) )
     
-    def _n_angle_sum(self, origin, circles, weights=None):
+    def _n_angle_sum(self, origin, weights):
         """ calculates the negative sum of the angle between the fit direction 
             and all the normal vectors of the great circles
             
@@ -175,39 +188,44 @@ class FitGammaHillas:
                 negative of the sum of the angles between the test direction
                 and all normal vectors of the given great circles
         """
-        if weights == None: weights = np.ones(len(circles))
-        ang = np.array([angle(origin,circ.norm) for circ in circles.values()])
+        #ang = np.array([angle(origin,circ.norm) for circ in self.circles.values()])
+        #sin_ang = np.array([np.dot(origin,circ.norm) for circ in self.circles.values()])
+        sin_ang = np.array([length(np.cross(origin,circ.norm)) for circ in self.circles.values()])
+        return -sum(weights*sin_ang)
         ang[ang>np.pi/2.] = np.pi-ang[ang>np.pi/2]
-        return -sum( weights* ang )
+        return -sum( weights*ang )
     
     
     
-    def fit_core(self, seed=[0,0,0]):
-        xdir = np.array([1,0,0])
-        ydir = np.array([0,1,0])
+    def fit_core(self, seed=[0,0]*u.m, test_function=None):
+        if test_function == None: test_function = self._dist_to_traces
         zdir = np.array([0,0,1])
-        # the core of the shower lies on the cross section of the great circle with the horizontal plane
-        # the direction of this cross section is the cross-product of the normal vectors the circle with the horizontal plane
-        traces = dict([ [tel_id, np.cross( circle.norm, zdir)] for tel_id, circle in self.circles.items() ])
         
-        crossings = []
-        t_weight = 0.
-        for pair in combinations(traces.items(), 2):
-            A,B = pair[0], pair[1]
-            mA = A[1][1]/A[1][0]
-            mB = B[1][1]/B[1][0]
-            
-            Ax = self.telescopes["TelX"][A[0]-1]
-            Ay = self.telescopes["TelY"][A[0]-1]
-            Bx = self.telescopes["TelX"][B[0]-1]
-            By = self.telescopes["TelY"][B[0]-1]
+        # the core of the shower lies on the cross section of the great circle with the horizontal plane
+        # the direction of this cross section is the cross-product of the normal vectors of the circle and the horizontal plane
+        # here we only care about the direction; not the orientation...
+        for circle in self.circles.values():
+            circle.trace = normalise( np.cross( circle.norm, zdir) )
+        
 
-            x = ( Ay+(mA*Ax) - (By+mB*Bx) ) / (mB - mA)
-            crossing = np.array([Ax,Ay,0]) + x * A[1]
-            weight = length(np.cross(A[1],B[1]))
-            t_weight += weight
-            crossings.append(crossing*weight)
-        return (sum(crossings) / t_weight)*u.m 
+        # minimising the test function
+        self.fit_result_core = minimize( test_function, seed,
+                                         method='BFGS', options={'disp': False}
+                                       )
+        return np.array(self.fit_result_core.x) * u.m
+    
+    def _dist_to_traces(self, core):
+        sum_dist = 0.
+        for tel_id, circle in self.circles.items():
+            # the distance of the core to the trace line is the scalar product of 
+            # • the connecting vector between the core and a random point on the line 
+            #   (e.g. the position of the telescope)
+            # • and a normal vector of the trace in the same plane as the trace and the core
+            #   (e.g. { trace[1], -trace[0] } )
+            D = [core[0]-self.telescopes["TelX"][tel_id-1], core[1]-self.telescopes["TelY"][tel_id-1]]
+            sum_dist += np.sqrt( 2 + (D[0]*circle.trace[1] - D[1]*circle.trace[0])**2 / 5 ) 
+        return sum_dist
+    
 
 class GreatCircle:
     """ a tiny helper class to collect some parameters for each great great circle """

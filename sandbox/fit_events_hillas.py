@@ -18,7 +18,7 @@ from Telescope_Mask import TelDict
 from FitGammaHillas import FitGammaHillas
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
 
 
 
@@ -40,7 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--indir',   type=str, 
                         default="/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/")
     parser.add_argument('-r', '--runnr',   type=str, default="2?")
-    parser.add_argument('-t', '--teltype', type=str, default="LST")
+    parser.add_argument('-t', '--teltype', type=str, default="all")
     parser.add_argument('-o', '--outtoken', type=str, default=None)
     args = parser.parse_args()
     
@@ -54,15 +54,20 @@ if __name__ == '__main__':
     
     signal.signal(signal.SIGINT, signal_handler)
     
+    NTels = []
+    
     xis1 = []
     xis2 = []
     xisb = []
+    
+    diffs = []
+    
     for filename in sorted(filenamelist):
         print("filename = {}".format(filename))
         
         source = hessio_event_source(filename,
                                     # for now use only identical telescopes...
-                                    #allowed_tels=TelDict[args.teltype],
+                                    allowed_tels=TelDict[args.teltype],
                                     max_events=args.max_events)
         
         for event in source:
@@ -84,56 +89,42 @@ if __name__ == '__main__':
             shower_org = -shower_dir
             
             shower_core = np.array([shower.core_x.value, shower.core_y.value])*u.m
-            
+
             fit.get_great_circles(data)
-            #result1, crossings = fit.fit_origin_crosses()
-            #result2            = fit.fit_origin_minimise(result1)
+            NTels.append(len(fit.circles))
             
+            result1, crossings = fit.fit_origin_crosses()
+            result2            = fit.fit_origin_minimise(result1)
             
+            print()
+            
+            xi1 = angle(result1, shower_org).to(u.deg)
+            xi2 = angle(result2, shower_org).to(u.deg)
+            print("xi1 = {}".format( xi1 ) )
+            print("xi2 = {}".format( xi2 ) )
+            xis1.append(math.log10(xi1.value))
+            xis2.append(math.log10(xi2.value))
+            
+            xisb.append( math.log10( min(xi1.value, xi2.value) ) )
+            
+            print("xi1 res (68-percentile) = {} degrees"    .format(10**sorted(xis1)[ int(len(xis1)*.68) ] ) )
+            print("xi2 res (68-percentile) = {} degrees"    .format(10**sorted(xis2)[ int(len(xis2)*.68) ] ) )
+            print("xib res (68-percentile) = {} degrees\n\n".format(10**sorted(xisb)[ int(len(xisb)*.68) ] ) )
+
+
+            
+
+            #seed = sum( [ np.array([ fit.telescopes["TelX"][tel_id-1], fit.telescopes["TelY"][tel_id-1] ])
+                        #for tel_id in fit.circles.keys() ]
+                      #) / len(fit.circles) * u.m
+            #pos_fit = fit.fit_core(seed)
+            #diff = length(pos_fit[:2]-shower_core)
+            #diffs.append(diff)
+            #print("reco = ",pos_fit, diff)
+            #print("core res (68-percentile) = {}".format( sorted(diffs)[ int(len(diffs)*.68) ] ) )
             #print()
-            #print(get_phi_theta(result1).to(u.deg) )
-            #print(get_phi_theta(shower_org).to(u.deg) )
-            
-            
-            #xi1 = angle(result1, shower_org).to(u.deg)
-            #xi2 = angle(result2, shower_org).to(u.deg)
-            #print("\nxi1 = {}".format( xi1 ) )
-            #print(  "xi2 = {}".format( xi2 ) )
-            #xis1.append(math.log10(xi1.value))
-            #xis2.append(math.log10(xi2.value))
-            
-            #xisb.append( math.log10( min(xi1.value, xi2.value) ) )
-            
-            #print("median1: = {} degrees"    .format(10**sorted(xis1)[ int(len(xis1)*.68) ] ) )
-            #print("median2: = {} degrees"    .format(10**sorted(xis2)[ int(len(xis2)*.68) ] ) )
-            #print("medianb: = {} degrees\n\n".format(10**sorted(xisb)[ int(len(xisb)*.68) ] ) )
 
 
-
-
-            pos_fit = fit.fit_core()
-
-            diff = length(pos_fit[:2]-shower_core)
-            print(diff)
-
-
-
-
-            #X,Y,Z = [],[],[]
-            #for res in crossings:
-                #X.append(res[0])
-                #Y.append(res[1])
-                #Z.append(res[2])
-            #fig = plt.figure()
-            #ax = fig.add_subplot(111, projection='3d')
-            #ax.scatter(X,Y,Z, c='r')
-            ##ax.set_aspect('equal', 'datalim')
-            #ax.scatter( [shower_org[0]],[shower_org[1]],[shower_org[2]], c='b')
-            #ax.scatter( [result[0]],[result[1]],[result[2]], c='g')
-            #ax.set_xlim3d( shower_org[0]-.1, shower_org[0]+.1)
-            #ax.set_ylim3d( shower_org[1]-.1, shower_org[1]+.1)
-            #ax.set_zlim3d( shower_org[2]-.1, shower_org[2]+.1)
-            #plt.show()
 
 
             if stop: break
@@ -153,4 +144,15 @@ if __name__ == '__main__':
     #plt.hist(np.array(xis1)-np.array(xis2), bins=np.linspace(-.5,.5,50)  )
     #plt.xlabel(r"$\log(\xi_1 / \deg)-\log(\xi_2 / \deg)$")
 
-    #plt.show()
+
+    figure = plt.figure()
+    heatmap, x, y = np.histogram2d(NTels, xis2, bins=[5,max(NTels)-min(NTels)+1])
+    #x,y = x[:-1],y[:-1]
+    plt.pcolor(x,y,heatmap.T,cmap=cm.hot)
+    #plt.axis([x.min(), x.max(), y.min(), y.max()])
+    plt.colorbar()
+    plt.xlabel("Number of Telescopes")
+    plt.ylabel(r"log($\xi_2$ / deg)")
+    
+
+    plt.show()
