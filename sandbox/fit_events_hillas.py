@@ -107,9 +107,9 @@ if __name__ == '__main__':
             
             xisb.append( math.log10( min(xi1.value, xi2.value) ) )
             
-            print("xi1 res (68-percentile) = {} degrees"    .format(10**sorted(xis1)[ int(len(xis1)*.68) ] ) )
-            print("xi2 res (68-percentile) = {} degrees"    .format(10**sorted(xis2)[ int(len(xis2)*.68) ] ) )
-            print("xib res (68-percentile) = {} degrees\n\n".format(10**sorted(xisb)[ int(len(xisb)*.68) ] ) )
+            print("xi1 res (68-percentile) = {} degrees"    .format(10**(sorted(xis1)[ int(len(xis1)*.68) ]) ) )
+            print("xi2 res (68-percentile) = {} degrees"    .format(10**(sorted(xis2)[ int(len(xis2)*.68) ]) ) )
+            print("xib res (68-percentile) = {} degrees\n\n".format(10**(sorted(xisb)[ int(len(xisb)*.68) ]) ) )
 
 
             
