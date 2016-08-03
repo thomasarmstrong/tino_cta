@@ -165,10 +165,10 @@ if __name__ == '__main__':
                                             tel_geom[tel_id].pix_y[ mask ],
                                             pmt_signal[ mask ])
                 
-                width_mean     = widths    .get_value( [[log10(tot_signal), impact_dist]] )[0]
-                width_sq_mean  = widths_sq .get_value( [[log10(tot_signal), impact_dist]] )[0]
-                length_mean    = lengths   .get_value( [[log10(tot_signal), impact_dist]] )[0]
-                length_sq_mean = lengths_sq.get_value( [[log10(tot_signal), impact_dist]] )[0]
+                width_mean     = widths    .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                width_sq_mean  = widths_sq .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                length_mean    = lengths   .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                length_sq_mean = lengths_sq.get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
                 
                 
                 if  width_mean**2  -  width_sq_mean == 0: continue
