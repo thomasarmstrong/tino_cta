@@ -5,10 +5,15 @@ from ctapipe.io.hessio import hessio_event_source
 from astropy import units as u
 import sys
 
+from itertools import chain
 
 from numpy import ceil
 from matplotlib import pyplot as plt
+
+from ctapipe.reco.hillas import hillas_parameters
+from ctapipe.reco.cleaning import tailcuts_clean, dilate
 from ctapipe import visualization, io
+
 def get_input():
     print("============================================")
     print("n or [enter]    - go to Next event")
@@ -19,7 +24,7 @@ def get_input():
     return input("Choice: ")
 
 fig = plt.figure(figsize=(12, 8))
-def display_event(event, calibrate = 0, max_tel = 4):
+def display_event(event, calibrate = 0, max_tel = 4, cleaning=None):
     """an extremely inefficient display. It creates new instances of
     CameraDisplay for every event and every camera, and also new axes
     for each event. It's hacked, but it works
@@ -50,8 +55,17 @@ def display_event(event, calibrate = 0, max_tel = 4):
         chan = 0
         signals = event.dl0.tel[tel_id].adc_sums[chan].astype(float)[:]
         if calibrate:
-            signals = apply_mc_calibration(signals, tel_id)
+            signals = apply_mc_calibration_ASTRI(event.dl0.tel[tel_id].adc_sums, tel_id)
+        if cleaning == 'tailcut':
+            mask = tailcuts_clean(geom, signals, 1,picture_thresh=10.,boundary_thresh=8.)
+            dilate(geom, mask)
+            signals[mask==False] = 0
+            
+        moments = hillas_parameters(geom.pix_x,
+                                    geom.pix_y,
+                                    signals)
         disp.image = signals
+        disp.overlay_moments(moments, color='seagreen', linewidth=3)
         disp.set_limits_percent(95)
         disp.add_colorbar()
         disps.append(disp)
@@ -72,7 +86,13 @@ def display_event(event, calibrate = 0, max_tel = 4):
         for jj in range(len(event.mc.tel[tel_id].photo_electrons)):
             event.dl0.tel[tel_id].adc_sums[chan][jj] = event.mc.tel[tel_id].photo_electrons[jj]
         signals2 = event.dl0.tel[tel_id].adc_sums[chan].astype(float)
+        moments2 = hillas_parameters(geom.pix_x,
+                                    geom.pix_y,
+                                    signals2)
+
+
         disp.image = signals2
+        disp.overlay_moments(moments2, color='seagreen', linewidth=3)
         disp.set_limits_percent(95)
         disp.add_colorbar()
         disps.append(disp)
@@ -108,6 +128,19 @@ def apply_mc_calibration(adcs, tel_id):
 
     return (adcs - peds) * gains
 
+def apply_mc_calibration_ASTRI(adcs, tel_id):
+    """
+    apply basic calibration
+    """
+    
+    peds0 = pyhessio.get_pedestal(tel_id)[0]
+    peds1 = pyhessio.get_pedestal(tel_id)[1]
+    gains0 = pyhessio.get_calibration(tel_id)[0]
+    gains1 = pyhessio.get_calibration(tel_id)[1]
+    
+    calibrated = [ (adc0-971)*gain0 if adc0 < 3500 else (adc1-961)*gain1 for adc0, adc1, gain0, gain1 in zip(adcs[0], adcs[1], gains0,gains1) ]
+    return np.array(calibrated)
+
 
 if __name__ == '__main__':
     
@@ -115,9 +148,9 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='show single telescope')
     parser.add_argument('-t','--tel', type=int)
-    parser.add_argument('-r', '--runnr',   type=str, default="2?")
+    parser.add_argument('-r', '--runnr',   type=str, default="*")
     parser.add_argument('-i', '--indir',   type=str, 
-                        default="/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/")
+                        default="/local/home/tmichael/Data/cta/ASTRI9")
     parser.add_argument('-m', '--max-events', type=int, default=10000)
     parser.add_argument('-n', '--max-ntels',  type=int, default=4)
     parser.add_argument('-w', '--write', action='store_true',
@@ -127,60 +160,66 @@ if __name__ == '__main__':
                         help='show time-variablity, one frame at a time')
     parser.add_argument('-c','--calibrate', action='store_true',
                         help='apply calibration coeffs from MC')
+    parser.add_argument('--clean', type=str,
+                        help='apply given cleaning method')
     args = parser.parse_args()
 
-    if args.filename:
-        filename = args.filename
-    elif args.runnr:
-        filenamelist = glob( "{}*run{}*gz".format(args.indir,args.runnr ))
-        filename = filenamelist[0]
-    else:
-        filenamelist = []
-        filenamelist += glob("/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/gamma_20deg_180deg_run47*")
-        filenamelist += glob("/home/ichanmich/software/cta/datafiles/*")
-        filename = filenamelist[0]
+    filenamelist_gamma  = glob( "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
+    filenamelist_proton = glob( "{}/proton/run{}.*gz".format(args.indir,args.runnr ))
+    
+    print(  "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
+    if len(filenamelist_gamma) == 0:
+        print("no gammas found")
+        exit()
+    if len(filenamelist_proton) == 0:
+        print("no protons found")
+        exit()
 
-    source = hessio_event_source(filename,
-                                 #allowed_tels=[args.tel],
-                                 #allowed_tels=[1,2,3,4,5,6,7,8],
-                                 max_events=args.max_events)
+    for filename in chain(sorted(filenamelist_gamma)[:0], sorted(filenamelist_proton)[:]):
+        print("filename = {}".format(filename))
+        
+        source = hessio_event_source(filename,
+                                    allowed_tels=range(28),
+                                    max_events=args.max_events)
 
-    for event in source:
+        for event in source:
 
-        print('Scanning input file... count = {}'.format(event.count))
-        print(event.dl0.tels_with_data)
-        if args.tel and args.tel not in event.dl0.tels_with_data: continue
+            print('Scanning input file... count = {}'.format(event.count))
+            print(event.dl0.tels_with_data)
+            if args.tel and args.tel not in event.dl0.tels_with_data: continue
 
-                
-        while True:
-            response = get_input()
-            print()
-            if response.startswith("d"):
-                disps = display_event(event,max_tel=args.max_ntels)
-                plt.pause(0.1)
-            elif response.startswith("p"):
-                print("--event-------------------")
-                print(event)
-                print("--event.dl0---------------")
-                print(event.dl0)
-                print("--event.dl0.tel-----------")
-                for teldata in event.dl0.tel.values():
-                    print(teldata)
-            elif response == "" or response.startswith("n"):
-                break
-            elif response.startswith('i'):
-                for tel_id in sorted(event.dl0.tel):
-                    for chan in event.dl0.tel[tel_id].adc_samples:
-                        npix = len(event.meta.pixel_pos[tel_id][0])
-                        print("CT{:4d} ch{} pixels:{} samples:{}"
-                            .format(tel_id, chan, npix,
-                                    event.dl0.tel[tel_id].
-                                    adc_samples[chan].shape[1]))
+                    
+            while True:
+                response = get_input()
+                print()
+                if response.startswith("d"):
+                    disps = display_event(event,max_tel=args.max_ntels,
+                                          calibrate=args.calibrate,
+                                          cleaning=args.clean)
+                    plt.pause(0.1)
+                elif response.startswith("p"):
+                    print("--event-------------------")
+                    print(event)
+                    print("--event.dl0---------------")
+                    print(event.dl0)
+                    print("--event.dl0.tel-----------")
+                    for teldata in event.dl0.tel.values():
+                        print(teldata)
+                elif response == "" or response.startswith("n"):
+                    break
+                elif response.startswith('i'):
+                    for tel_id in sorted(event.dl0.tel):
+                        for chan in event.dl0.tel[tel_id].adc_samples:
+                            npix = len(event.meta.pixel_pos[tel_id][0])
+                            print("CT{:4d} ch{} pixels:{} samples:{}"
+                                .format(tel_id, chan, npix,
+                                        event.dl0.tel[tel_id].
+                                        adc_samples[chan].shape[1]))
 
-            elif response.startswith('q'):
+                elif response.startswith('q'):
+                    sys.exit()
+                else:
+                    sys.exit()
+
+            if response.startswith('q'):
                 sys.exit()
-            else:
-                sys.exit()
-
-        if response.startswith('q'):
-            sys.exit()
