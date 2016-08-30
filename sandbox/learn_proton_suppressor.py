@@ -25,6 +25,8 @@ from Telescope_Mask import TelDict
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
+from random import gauss
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn import svm
@@ -42,16 +44,13 @@ def signal_handler(signal, frame):
 
 
 import pyhessio
-def apply_mc_calibration_ASTRI(adcs, tel_id):
+def apply_mc_calibration_ASTRI(adcs, tel_id, adc_tresh=3500):
     """
     apply basic calibration
     """
-    peds0 = pyhessio.get_pedestal(tel_id)[0]
-    peds1 = pyhessio.get_pedestal(tel_id)[1]
-    gains0 = pyhessio.get_calibration(tel_id)[0]
-    gains1 = pyhessio.get_calibration(tel_id)[1]
+    gains = pyhessio.get_calibration(tel_id)
     
-    calibrated = [ (adc0-971)*gain0 if adc0 < 3500 else (adc1-961)*gain1 for adc0, adc1, gain0, gain1 in zip(adcs[0], adcs[1], gains0,gains1) ]
+    calibrated = [ (adc0-971)*gain0 if adc0 < adc_tresh else (adc1-961)*gain1 for adc0, adc1, gain0, gain1 in zip(adcs[0], adcs[1], gains[0],gains[1]) ]
     return np.array(calibrated)
 
 
@@ -83,11 +82,17 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
 
 
-    widths     = Histogram(initFromFITS="widths.fits")
-    widths_sq  = Histogram(initFromFITS="widths_sq.fits")
-    lengths    = Histogram(initFromFITS="lengths.fits")
-    lengths_sq = Histogram(initFromFITS="lengths_sq.fits")
+    mean_widths     = Histogram(initFromFITS="widths.fits")
+    mean_widths_sq  = Histogram(initFromFITS="widths_sq.fits")
+    mean_lengths    = Histogram(initFromFITS="lengths.fits")
+    mean_lengths_sq = Histogram(initFromFITS="lengths_sq.fits")
 
+    axisNames = [ "log(E / GeV)" ]
+    ranges    = [ [2,8] ]
+    nbins     = [ 8 ]
+    wrong = { "p":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges), "g":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges) }
+    total = { "p":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges), "g":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges) }
+    
     
     
     (h_telescopes, h_cameras, h_optics) = load_hessio(filenamelist_gamma[0])
@@ -104,10 +109,12 @@ if __name__ == '__main__':
     tel_theta =  20.*u.deg
     
 
-    Features_g = []
-    Class_g    = []
-    Features_p = []
-    Class_p    = []
+    Features = { "p":[], "g":[] }
+    Classes  = { "p":[], "g":[] }
+    MCEnergy = { "p":[], "g":[] }
+    
+    red_width = { "p":[], "g":[] }
+    red_lenth = { "p":[], "g":[] }
 
     tel_geom = {}
     for tel_idx, tel_id in enumerate(telescopes['TelID']):
@@ -116,10 +123,6 @@ if __name__ == '__main__':
                                                 telescopes['FL'][tel_idx] * u.m) 
 
 
-    red_width_p = []
-    red_lenth_p = []
-    red_width_g = []
-    red_lenth_g = []
     
     for filename in chain(sorted(filenamelist_gamma)[:], sorted(filenamelist_proton)[:]):
         print("filename = {}".format(filename))
@@ -146,8 +149,8 @@ if __name__ == '__main__':
                 tot_signal += sum(data)
           
             sizes   = []
-            #widths  = []
-            #lengths = []
+            widths  = []
+            lengths = []
             
             reduced_scaled_width     = []
             reduced_scaled_length    = []
@@ -165,28 +168,28 @@ if __name__ == '__main__':
                                             tel_geom[tel_id].pix_y[ mask ],
                                             pmt_signal[ mask ])
                 
-                width_mean     = widths    .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                width_sq_mean  = widths_sq .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                length_mean    = lengths   .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                length_sq_mean = lengths_sq.get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                width_mean     = mean_widths    .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                width_sq_mean  = mean_widths_sq .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                length_mean    = mean_lengths   .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                length_sq_mean = mean_lengths_sq.get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
                 
                 
-                if  width_mean**2  -  width_sq_mean == 0: continue
-                if length_mean**2  - length_sq_mean == 0: continue
+                if  width_mean**2  ==  width_sq_mean: continue
+                if length_mean**2  == length_sq_mean: continue
                 if np.isnan(np.array([width_mean, width_sq_mean, length_mean,
                                       length_sq_mean,moments.length.value,moments.width.value])).any():
                     continue
             
                 
-                reduced_scaled_width    .append((moments.width .value -  width_mean) /
+                reduced_scaled_width    .append(abs(moments.width .value -  width_mean) /
                                                 abs(  width_mean**2  -  width_sq_mean)**.5 )
-                reduced_scaled_length   .append((moments.length.value - length_mean) /
+                reduced_scaled_length   .append(abs(moments.length.value - length_mean) /
                                                 abs( length_mean**2  - length_sq_mean)**.5 )
                 
                 
                 sizes  .append(moments.size)
-                #widths .append(moments.width.value if moments.width.value==moments.width.value else 0)
-                #lengths.append(moments.length.value)
+                widths .append(moments.width.value if moments.width.value==moments.width.value else 0)
+                lengths.append(moments.length.value)
 
             if len(sizes) == 0: continue
 
@@ -194,111 +197,132 @@ if __name__ == '__main__':
 
             sizes     = np.array(sizes)
             size_mean = np.mean(sizes)
-            #widths     = np.array(widths)
-            #width_mean = np.mean(widths) 
-            #size_RMS   = np.mean( ( sizes  -  size_mean )**2 )**.5
-            #width_RMS  = np.mean( ( widths - width_mean )**2 )**.5
-
+            widths     = np.array(widths)
+            width_mean = np.mean(widths) 
+            size_RMS   = np.mean( ( sizes  -  size_mean )**2 )**.5
+            width_RMS  = np.mean( ( widths - width_mean )**2 )**.5
+            
             if filename in filenamelist_proton:
-                #Features_p.append( [size_mean, width_mean, width_RMS, mc_shower.energy.value] )
-                Features_p.append( [log10(size_mean), log10(tot_signal),
-                                    sum(reduced_scaled_length)/len(reduced_scaled_length),
-                                    sum(reduced_scaled_width)/len(reduced_scaled_width) ] )
-
-                Class_p.append( "p" )
-
-                red_width_p.append(sum(reduced_scaled_width) /len(reduced_scaled_width) )
-                red_lenth_p.append(sum(reduced_scaled_length)/len(reduced_scaled_length))
-
+                Class = "p"
+                mu    = 5.
+                sigma = 4.
             else:
-                #Features_g.append( [size_mean, width_mean, width_RMS, mc_shower.energy.value] )
-                Features_g.append( [log10(size_mean), log10(tot_signal),
-                                    sum(reduced_scaled_length)/len(reduced_scaled_length),
-                                    sum(reduced_scaled_width)/len(reduced_scaled_width) ] )
-                Class_g.append( "g" )
+                Class = "g"
+                mu    = 0.
+                sigma = 2.
+            
+            #Features[Class].append( [size_mean, width_mean, width_RMS, mc_shower.energy.value] )
+            Features[Class].append( [log10(size_mean), log10(tot_signal),
+                                     gauss(mu,sigma),
+                                     gauss(mu,sigma/2.) ])
+                                   #sum(reduced_scaled_length)/len(reduced_scaled_length),
+                                   #sum(reduced_scaled_width) /len(reduced_scaled_width) ] )
 
-                red_width_g.append(sum(reduced_scaled_width) /len(reduced_scaled_width) )
-                red_lenth_g.append(sum(reduced_scaled_length)/len(reduced_scaled_length))
-            #print(sum(reduced_scaled_width) ,len(reduced_scaled_width),
-                  #sum(reduced_scaled_length),len(reduced_scaled_length))
+            Classes[Class].append( Class )
+
+            #red_width[Class].append(sum(reduced_scaled_width) /len(reduced_scaled_width) )
+            #red_lenth[Class].append(sum(reduced_scaled_length)/len(reduced_scaled_length))
+                
+            MCEnergy[Class].append(log10(mc_shower.energy.to(u.GeV).value))
+
+
         if stop:
             stop = False
             break
     
+    lengths = { "p": len(Features["p"]), "g":len(Features["g"]) }
+    print("\nfound {} gammas and {} protons\n".format(lengths["g"], lengths["p"]))
     
     
     fig, ax = plt.subplots(4, 8)
-    minmax = [ [min([a[j] for a in Features_g]+[a[j] for a in Features_p]), max([a[j] for a in Features_g]+[a[j] for a in Features_p])] for j in range(4) ]
+    minmax = [ [min([a[j] for a in Features["g"]]+[a[j] for a in Features["p"]]), max([a[j] for a in Features["g"]]+[a[j] for a in Features["p"]])] for j in range(4) ]
     for i in range(4):
         for j in range(4):
-            ax[i,  j].hexbin( [a[j] for a in Features_g], [a[i] for a in Features_g], gridsize=20) 
-            ax[i,4+j].hexbin( [a[j] for a in Features_p], [a[i] for a in Features_p], gridsize=20) 
+            ax[i,  j].hexbin( [a[j] for a in Features["g"]], [a[i] for a in Features["g"]], gridsize=20) 
+            ax[i,4+j].hexbin( [a[j] for a in Features["p"]], [a[i] for a in Features["p"]], gridsize=20) 
             ax[i,  j].axis( minmax[j] + minmax[i] )
             ax[i,4+j].axis( minmax[j] + minmax[i] )
-    #plt.show()
-    #exit(0)
+    plt.pause(1)
 
+
+    
     # reduce the number of events so that they are the same in gammas and protons
-    len_p = len(Features_p)
-    len_g = len(Features_g)
-    
-    NEvents = min(len_p, len_g)
-    print("\nfound {} gammas and {} protons\n".format(len_g, len_p))
-    
-    
-    Features_g = Features_g[:NEvents]
-    Class_g    = Class_g   [:NEvents]
-    Features_p = Features_p[:NEvents]
-    Class_p    = Class_p   [:NEvents]
+    NEvents = min(lengths.values())
+    for cl in ["p", "g"]:
+        Features[cl] = Features[cl][:NEvents]
+        Classes [cl] = Classes [cl][:NEvents]
+        MCEnergy[cl] = MCEnergy[cl][:NEvents]
     # done
 
     
     
-    wrong_p = 0
-    total_p = 0
-    wrong_g = 0
-    total_g = 0
     
     split_size = 10
     start      = 0
     while start+split_size <= NEvents:
             
-        predictFeatures = Features_p[start:start+split_size] + Features_g[start:start+split_size]
-        predictClass    = Class_p[start:start+split_size]    + Class_g[start:start+split_size]
+        predictFeatures = Features["p"][start:start+split_size] + Features["g"][start:start+split_size]
+        predictClasses  = Classes ["p"][start:start+split_size] + Classes ["g"][start:start+split_size]
+        predictMCEnergy = MCEnergy["p"][start:start+split_size] + MCEnergy["g"][start:start+split_size]
     
-        trainFeatures   = Features_p[:start] + Features_p[start+split_size:] + Features_g[:start] + Features_g[start+split_size:]
-        trainClass      = Class_p[:start] + Class_p[start+split_size:]       + Class_g[:start] + Class_g[start+split_size:]
+        trainFeatures   = Features["p"][:start] + Features["p"][start+split_size:] + Features["g"][:start] + Features["g"][start+split_size:]
+        trainClasses    = Classes ["p"][:start] + Classes ["p"][start+split_size:] + Classes ["g"][:start] + Classes ["g"][start+split_size:]
 
         start += split_size
         
         
         #clf = svm.SVC(kernel='rbf')
         clf = RandomForestClassifier(n_estimators=20, max_depth=None,min_samples_split=1, random_state=0)
-        clf.fit(trainFeatures, trainClass)
+        clf.fit(trainFeatures, trainClasses)
     
         predict = clf.predict(predictFeatures)
         
-        for idx, ev in enumerate(predictClass):
-            if ev == "p":
-                total_p += 1
-                if ev != predict[idx]: wrong_p += 1
-            else:
-                total_g += 1
-                if ev != predict[idx]: wrong_g += 1
+        for idx, ev in enumerate(predictClasses):
+            total[ev].fill( [predictMCEnergy[idx]] )
+            if ev != predict[idx]: wrong[ev].fill( [predictMCEnergy[idx]] )
+                    
             
         
-        
-        if total_p:
-            print( "wrong p: {} out of {} => {}".format(wrong_p, total_p,wrong_p / total_p *100*u.percent))
-        if total_g:
-            print( "wrong g: {} out of {} => {}".format(wrong_g, total_g,wrong_g / total_g *100*u.percent))
+        for cl in ["p", "g"]:
+            if sum(total[cl].hist) > 0:
+                print( "wrong {}: {} out of {} => {}".format(cl, sum(wrong[cl].hist), sum(total[cl].hist),sum(wrong[cl].hist) / sum(total[cl].hist) *100*u.percent))
         print()
         if stop: break
 
     print()
     print("-"*30)
     print()
-    if total_p:
-        print( "wrong p: {} out of {} => {}".format(wrong_p, total_p,wrong_p / total_p *100*u.percent))
-    if total_g:
-        print( "wrong g: {} out of {} => {}".format(wrong_g, total_g,wrong_g / total_g *100*u.percent))
+    for cl in ["p", "g"]:
+        if sum(total[cl].hist) > 0:
+            print( "wrong {}: {} out of {} => {}".format(cl, sum(wrong[cl].hist), sum(total[cl].hist),sum(wrong[cl].hist) / sum(total[cl].hist) *100*u.percent))
+
+        wrong[cl].hist[total[cl].hist > 0] = wrong[cl].hist[total[cl].hist > 0] / total[cl].hist[total[cl].hist > 0]
+    
+    fig = plt.figure()
+    plt.subplot(221)
+    wrong["g"].draw_1d()
+    plt.title("gamma misstag")
+    plt.xlabel("log(E/GeV)")
+    plt.ylabel("incorrect / all")
+    
+    plt.subplot(222)
+    wrong["p"].draw_1d()
+    plt.title("proton misstag")
+    plt.xlabel("log(E/GeV)")
+    plt.ylabel("incorrect / all")
+
+    plt.subplot(223)
+    total["g"].draw_1d()
+    plt.title("gamma numbers")
+    plt.xlabel("log(E/GeV)")
+    plt.ylabel("events")
+
+    plt.subplot(224)
+    total["p"].draw_1d()
+    plt.title("proton numbers")
+    plt.xlabel("log(E/GeV)")
+    plt.ylabel("events")
+
+    
+    plt.show()
+    
