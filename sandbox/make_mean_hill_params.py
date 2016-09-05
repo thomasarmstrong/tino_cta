@@ -1,4 +1,11 @@
-from sys import exit
+from sys import exit, path
+
+path.append("/local/home/tmichael/software/jeremie_cta/snippets/ctapipe")
+from extract_and_crop_simtel_images import crop_astri_image
+
+path.append("/local/home/tmichael/software/jeremie_cta/data-pipeline-standalone-scripts")
+from datapipe.denoising.wavelets_mrtransform import wavelet_transform
+
 from glob import glob
 import argparse
 
@@ -127,15 +134,18 @@ if __name__ == '__main__':
                 
                 max_dist = max(max_dist,impact_dist)
                 
-                mask = tailcuts_clean(tel_geom[tel_id], pmt_signal, 1,picture_thresh=10.,boundary_thresh=8.)
-                dilate(tel_geom[tel_id], mask)
-                pmt_signal[mask==False] = 0
+                #mask = tailcuts_clean(tel_geom[tel_id], pmt_signal, 1,picture_thresh=10.,boundary_thresh=8.)
+                #if True not in mask: continue
+                #dilate(tel_geom[tel_id], mask)
+                #pmt_signal[mask==False] = 0
                 
-                if True not in mask: continue
+                pix_x = crop_astri_image(tel_geom[tel_id].pix_x).flatten()
+                pix_y = crop_astri_image(tel_geom[tel_id].pix_y).flatten()
+                cropped_img = crop_astri_image(pmt_signal)
+                pmt_signal = wavelet_transform(cropped_img, 4, "/tmp/wavelet").flatten()
+        
                 
-                moments = hillas_parameters(tel_geom[tel_id].pix_x,
-                                            tel_geom[tel_id].pix_y,
-                                            pmt_signal)
+                moments = hillas_parameters(pix_x, pix_y, pmt_signal)
                 
                 if moments.width != moments.width:   continue
                 if moments.length != moments.length: continue
@@ -186,8 +196,8 @@ if __name__ == '__main__':
     plt.show()
     
     
-    #widths    .to_fits().writeto(    "widths.fits",clobber=True)
-    #widths_sq .to_fits().writeto( "widths_sq.fits",clobber=True)
-    #lengths   .to_fits().writeto(   "lengths.fits",clobber=True)
-    #lengths_sq.to_fits().writeto("lengths_sq.fits",clobber=True)
+    widths    .to_fits().writeto(    "wave_widths.fits",clobber=True)
+    widths_sq .to_fits().writeto( "wave_widths_sq.fits",clobber=True)
+    lengths   .to_fits().writeto(   "wave_lengths.fits",clobber=True)
+    lengths_sq.to_fits().writeto("wave_lengths_sq.fits",clobber=True)
     

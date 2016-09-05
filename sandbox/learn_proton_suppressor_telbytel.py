@@ -168,8 +168,8 @@ if __name__ == '__main__':
             reduced_scaled_width     = []
             reduced_scaled_length    = []
             
-            Nfeatures = 4
-            features = [0]*(10*Nfeatures) # Nr tels * Nr features
+
+            features = []
             
             for tel_id, pmt_signal in tel_data.items():
 
@@ -199,64 +199,12 @@ if __name__ == '__main__':
                     raise Exception('cleaning mode "{}" not found'.format(mode))
                 
                 moments = hillas_parameters(pix_x, pix_y, pmt_signal)
-                
-                #width_mean     = mean_widths    .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                #width_sq_mean  = mean_widths_sq .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                #length_mean    = mean_lengths   .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                #length_sq_mean = mean_lengths_sq.get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                
-                
-                ## sometimes weird things happen
-                #if  width_mean**2  ==  width_sq_mean: continue
-                #if length_mean**2  == length_sq_mean: continue
-                #if np.isnan(np.array([width_mean, width_sq_mean, length_mean,
-                                      #length_sq_mean,moments.length.value,moments.width.value])).any():
-                                    #continue
-            
-                
-                #reduced_scaled_width    .append(   (moments.width .value -  width_mean) /
-                                                #abs(  width_mean**2  -  width_sq_mean)**.5 )
-                #reduced_scaled_length   .append(   (moments.length.value - length_mean) /
-                                                #abs( length_mean**2  - length_sq_mean)**.5 )
-                
-                
-                #sizes  .append(moments.size)
-                #widths .append(moments.width.value if moments.width.value==moments.width.value else 0)
-                #lengths.append(moments.length.value)
-
-                features[tel_id*Nfeatures + 0] = (moments.size)
-                features[tel_id*Nfeatures + 1] = (moments.width.value if moments.width.value==moments.width.value else 0)
-                features[tel_id*Nfeatures + 2] = (moments.length.value if moments.length.value == moments.length.value else 0)
-                features[tel_id*Nfeatures + 3] = impact_dist
-
-            #if len(sizes) == 0: continue
-
-
-
-            sizes       = np.array(sizes)
-            size_mean   = np.mean(sizes)
-            widths      = np.array(widths)
-            width_mean  = np.mean(widths) 
-            lengths     = np.array(lengths)
-            length_mean = np.mean(lengths) 
-            size_RMS    = np.mean( ( sizes  -  size_mean )**2 )**.5
-            width_RMS   = np.mean( ( widths  - width_mean  )**2 )**.5
-            length_RMS  = np.mean( ( lengths - length_mean )**2 )**.5
+                features.append( [ moments.size, moments.width.value, moments.length.value, impact_dist ] )
             
             
             Features[Class].append( features )
-            #Features[Class].append( [size_mean, width_mean, length_mean, width_RMS, length_RMS, size_RMS, sum(sizes)] )
-            #Features[Class].append( [log10(size_mean), log10(tot_signal),
-                                     ##gauss(mu,sigma),
-                                     ##gauss(mu,sigma/2.) ])
-                                   #sum(reduced_scaled_length)/len(reduced_scaled_length),
-                                   #sum(reduced_scaled_width) /len(reduced_scaled_width) ] )
-
             Classes[Class].append( Class )
 
-            #red_width[Class].append(sum(reduced_scaled_width) /len(reduced_scaled_width) )
-            #red_lenth[Class].append(sum(reduced_scaled_length)/len(reduced_scaled_length))
-                
             MCEnergy[Class].append(log10(mc_shower.energy.to(u.GeV).value))
 
 
@@ -268,22 +216,6 @@ if __name__ == '__main__':
     print("\nfound {} gammas and {} protons\n".format(lengths["g"], lengths["p"]))
     
     
-    # creating 2D plots of all features
-    #NFeatures = len(Features["p"][0])
-    #fig, ax = plt.subplots(4, NFeatures)
-    #minmax = [ [min([a[j] for a in Features["g"]]+[a[j] for a in Features["p"]]), max([a[j] for a in Features["g"]]+[a[j] for a in Features["p"]])] for j in range(4) ]
-    
-    #for a in Features["g"]:
-        #for b in Features["p"]:
-            #for i, foo in enumerate(a):
-                #for j, bar in enumerate(b):
-                    #ax[i,          j].hexbin( [a[j] for a in Features["g"]], [a[i] for a in Features["g"]], gridsize=20) 
-                    #ax[i,NFeatures+j].hexbin( [a[j] for a in Features["p"]], [a[i] for a in Features["p"]], gridsize=20) 
-                    #ax[i,          j].axis( minmax[j] + minmax[i] )
-                    #ax[i,NFeatures+j].axis( minmax[j] + minmax[i] )
-            #break
-        #break
-    #plt.pause(1)
 
 
     
@@ -302,31 +234,38 @@ if __name__ == '__main__':
     start      = 0
     while start+split_size <= NEvents:
             
-        predictFeatures = Features["p"][start:start+split_size] + Features["g"][start:start+split_size]
-        predictClasses  = Classes ["p"][start:start+split_size] + Classes ["g"][start:start+split_size]
-        predictMCEnergy = MCEnergy["p"][start:start+split_size] + MCEnergy["g"][start:start+split_size]
-    
-        trainFeatures   = Features["p"][:start] + Features["p"][start+split_size:] + Features["g"][:start] + Features["g"][start+split_size:]
-        trainClasses    = Classes ["p"][:start] + Classes ["p"][start+split_size:] + Classes ["g"][:start] + Classes ["g"][start+split_size:]
+        
+        trainFeatures   = []
+        trainClasses    = []
+        for ev, cl in zip( chain(Features["p"][:start] + Features["p"][start+split_size:], Features["g"][:start] + Features["g"][start+split_size:]),
+                           chain(Classes ["p"][:start] + Classes ["p"][start+split_size:] + Classes ["g"][:start] + Classes ["g"][start+split_size:]) ):
+            trainFeatures += ev
+            trainClasses  += [cl]*len(ev)
 
-        start += split_size
         
         
         #clf = svm.SVC(kernel='rbf')
         clf = RandomForestClassifier(n_estimators=20, max_depth=None,min_samples_split=1, random_state=0)
         clf.fit(trainFeatures, trainClasses)
-    
-        predict = clf.predict(predictFeatures)
         
-        for idx, ev in enumerate(predictClasses):
-            total[ev].fill( [predictMCEnergy[idx]] )
-            if ev != predict[idx]: wrong[ev].fill( [predictMCEnergy[idx]] )
+        
+        for ev, cl, en in zip( chain(Features["p"][start:start+split_size], Features["g"][start:start+split_size]), 
+                               chain(Classes ["p"][start:start+split_size], Classes ["g"][start:start+split_size]),
+                               chain(MCEnergy["p"][start:start+split_size], MCEnergy["g"][start:start+split_size])
+                             ):
+            predict = clf.predict(ev)
+            right = [ 1 if (cl == tel) else 0 for tel in predict ]
+            total[cl].fill( [en] )
+            if sum(right) < len(right)/2.: wrong[cl].fill( [en] )
+        
                     
             
+        start += split_size
         
         for cl in ["p", "g"]:
             if sum(total[cl].hist) > 0:
                 print( "wrong {}: {} out of {} => {}".format(cl, sum(wrong[cl].hist), sum(total[cl].hist),sum(wrong[cl].hist) / sum(total[cl].hist) *100*u.percent))
+                
         print()
         if stop: break
 
