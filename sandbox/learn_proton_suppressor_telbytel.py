@@ -312,6 +312,7 @@ if __name__ == '__main__':
     ax[1,1].set_ylabel("events")
     
     fig2 = plt.figure()
+
     plt.subplot(221)
     wrong["g"].draw_1d()
     plt.title("gamma misstag")

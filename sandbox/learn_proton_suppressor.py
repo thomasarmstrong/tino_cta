@@ -1,4 +1,12 @@
-from sys import exit
+from sys import exit, path
+
+path.append("/local/home/tmichael/software/jeremie_cta/snippets/ctapipe")
+from extract_and_crop_simtel_images import crop_astri_image
+
+path.append("/local/home/tmichael/software/jeremie_cta/data-pipeline-standalone-scripts")
+from datapipe.denoising.wavelets_mrtransform import wavelet_transform
+
+
 from glob import glob
 import argparse
 
@@ -55,8 +63,6 @@ def apply_mc_calibration_ASTRI(adcs, tel_id, adc_tresh=3500):
 
 
 
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='show single telescope')
@@ -66,6 +72,8 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--runnr',   type=str, default="*")
     parser.add_argument('-t', '--teltype', type=str, default="SST_ASTRI")
     parser.add_argument('-o', '--outtoken', type=str, default=None)
+    parser.add_argument('--tail', dest="mode", action='store_const',
+                        const="tail", default="wave")
     args = parser.parse_args()
     
     filenamelist_gamma  = glob( "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
@@ -82,14 +90,14 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
 
 
-    mean_widths     = Histogram(initFromFITS="widths.fits")
-    mean_widths_sq  = Histogram(initFromFITS="widths_sq.fits")
-    mean_lengths    = Histogram(initFromFITS="lengths.fits")
-    mean_lengths_sq = Histogram(initFromFITS="lengths_sq.fits")
+    mean_widths     = Histogram(initFromFITS="tail_widths.fits")
+    mean_widths_sq  = Histogram(initFromFITS="tail_widths_sq.fits")
+    mean_lengths    = Histogram(initFromFITS="tail_lengths.fits")
+    mean_lengths_sq = Histogram(initFromFITS="tail_lengths_sq.fits")
 
     axisNames = [ "log(E / GeV)" ]
     ranges    = [ [2,8] ]
-    nbins     = [ 8 ]
+    nbins     = [ 7 ]
     wrong = { "p":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges), "g":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges) }
     total = { "p":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges), "g":Histogram( axisNames=axisNames, nbins=nbins, ranges=ranges) }
     
@@ -132,7 +140,11 @@ if __name__ == '__main__':
                                     max_events=args.max_events)
 
         
-        
+        if filename in filenamelist_proton:
+            Class = "p"
+        else:
+            Class = "g"
+
         
         for event in source:
             mc_shower = event.mc
@@ -151,77 +163,106 @@ if __name__ == '__main__':
             sizes   = []
             widths  = []
             lengths = []
+            dists   = []
             
-            reduced_scaled_width     = []
-            reduced_scaled_length    = []
+            wsum  = 0
+            lsum  = 0
+            wsum2 = 0
+            lsum2 = 0
+            sumWeigthWidth = 0
+            sumLengthWidth = 0
+            
+            scaled_width  = []
+            scaled_length = []
+            weight_width  = []
+            weight_length = []
             
             for tel_id, pmt_signal in tel_data.items():
 
                 tel_idx = np.searchsorted( telescopes['TelID'], tel_id )
                 tel_pos = np.array( [telescopes["TelX"][tel_idx], telescopes["TelY"][tel_idx]] )
                 impact_dist = linalg.length(tel_pos-mc_shower_core)
-                
-                mask = tailcuts_clean(tel_geom[tel_id], pmt_signal, 1,picture_thresh=10.,boundary_thresh=8.)
-                dilate(tel_geom[tel_id], mask)
-                
-                moments = hillas_parameters(tel_geom[tel_id].pix_x[ mask ],
-                                            tel_geom[tel_id].pix_y[ mask ],
-                                            pmt_signal[ mask ])
-                
-                width_mean     = mean_widths    .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                width_sq_mean  = mean_widths_sq .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                length_mean    = mean_lengths   .get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
-                length_sq_mean = mean_lengths_sq.get_value( [[log10(tot_signal), log10(impact_dist)]] )[0]
+                dists.append(impact_dist)
                 
                 
+                if args.mode == "wave":
+                    # for now wavelet library works only on rectangular images
+                    cropped_img = crop_astri_image(pmt_signal)
+                    pmt_signal = wavelet_transform(cropped_img, 4, "/tmp/wavelet").flatten()
+                    
+                    # hillas parameter function requires image and x/y arrays to be of the same dimension
+                    pix_x = crop_astri_image(tel_geom[tel_id].pix_x).flatten()
+                    pix_y = crop_astri_image(tel_geom[tel_id].pix_y).flatten()
+        
+                elif args.mode == "tail":
+                    mask = tailcuts_clean(tel_geom[tel_id], pmt_signal, 1,picture_thresh=10.,boundary_thresh=8.)
+                    if True not in mask: continue
+                    dilate(tel_geom[tel_id], mask)
+                    pmt_signal[mask] = 0
+                    pix_x = tel_geom[tel_id].pix_x
+                    pix_y = tel_geom[tel_id].pix_y
+                else: 
+                    raise Exception('cleaning mode "{}" not found'.format(mode))
+                
+                moments = hillas_parameters(pix_x, pix_y, pmt_signal)
+                signal = moments.size
+                width_mean     = mean_widths    .get_value( [[log10(signal), log10(impact_dist)]] )[0]
+                width_sq_mean  = mean_widths_sq .get_value( [[log10(signal), log10(impact_dist)]] )[0]
+                length_mean    = mean_lengths   .get_value( [[log10(signal), log10(impact_dist)]] )[0]
+                length_sq_mean = mean_lengths_sq.get_value( [[log10(signal), log10(impact_dist)]] )[0]
+                
+                
+                # sometimes weird things happen
                 if  width_mean**2  ==  width_sq_mean: continue
                 if length_mean**2  == length_sq_mean: continue
                 if np.isnan(np.array([width_mean, width_sq_mean, length_mean,
                                       length_sq_mean,moments.length.value,moments.width.value])).any():
-                    continue
-            
+                                    continue
                 
-                reduced_scaled_width    .append(abs(moments.width .value -  width_mean) /
-                                                abs(  width_mean**2  -  width_sq_mean)**.5 )
-                reduced_scaled_length   .append(abs(moments.length.value - length_mean) /
-                                                abs( length_mean**2  - length_sq_mean)**.5 )
+
+                
+                scaled_width .append((moments.width  -  width_mean) / ( width_sq_mean -  width_mean**2)**.5)
+                weight_width .append(1)
+                scaled_length.append((moments.length - length_mean) / (length_sq_mean - length_mean**2)**.5)
+                weight_length.append(1)
                 
                 
                 sizes  .append(moments.size)
-                widths .append(moments.width.value if moments.width.value==moments.width.value else 0)
+                widths .append(moments.width.value)
                 lengths.append(moments.length.value)
+
 
             if len(sizes) == 0: continue
 
-
-
-            sizes     = np.array(sizes)
-            size_mean = np.mean(sizes)
-            widths     = np.array(widths)
-            width_mean = np.mean(widths) 
-            size_RMS   = np.mean( ( sizes  -  size_mean )**2 )**.5
-            width_RMS  = np.mean( ( widths - width_mean )**2 )**.5
             
-            if filename in filenamelist_proton:
-                Class = "p"
-                mu    = 5.
-                sigma = 4.
-            else:
-                Class = "g"
-                mu    = 0.
-                sigma = 2.
+            scaled_width = np.array(scaled_width) 
+            weight_width = np.array(weight_width)
+            scaled_length = np.array(scaled_length) 
+            weight_length = np.array(weight_length)
+            wsum = sum( scaled_width  * weight_width ) / sum(weight_width)
+            lsum = sum( scaled_length * weight_length) / sum(weight_length)
+            sigmaW = sum(weight_width )**.5
+            sigmaL = sum(weight_length)**.5
+
+            #sizes       = np.array(sizes)
+            #size_mean   = np.mean(sizes)
+            #widths      = np.array(widths)
+            #width_mean  = np.mean(widths) 
+            #lengths     = np.array(lengths)
+            #length_mean = np.mean(lengths) 
+            #size_RMS    = np.mean( ( sizes  -  size_mean )**2 )**.5
+            #width_RMS   = np.mean( ( widths  - width_mean  )**2 )**.5
+            #length_RMS  = np.mean( ( lengths - length_mean )**2 )**.5
             
-            #Features[Class].append( [size_mean, width_mean, width_RMS, mc_shower.energy.value] )
+            
+            #Features[Class].append( [size_mean, width_mean, length_mean, width_RMS, length_RMS, size_RMS, sum(sizes)] )
             Features[Class].append( [log10(size_mean), log10(tot_signal),
-                                     gauss(mu,sigma),
-                                     gauss(mu,sigma/2.) ])
-                                   #sum(reduced_scaled_length)/len(reduced_scaled_length),
-                                   #sum(reduced_scaled_width) /len(reduced_scaled_width) ] )
+                                   wsum , lsum] )
 
             Classes[Class].append( Class )
 
-            #red_width[Class].append(sum(reduced_scaled_width) /len(reduced_scaled_width) )
-            #red_lenth[Class].append(sum(reduced_scaled_length)/len(reduced_scaled_length))
+            red_width[Class].append(wsum)
+            red_lenth[Class].append(lsum)
                 
             MCEnergy[Class].append(log10(mc_shower.energy.to(u.GeV).value))
 
@@ -233,16 +274,30 @@ if __name__ == '__main__':
     lengths = { "p": len(Features["p"]), "g":len(Features["g"]) }
     print("\nfound {} gammas and {} protons\n".format(lengths["g"], lengths["p"]))
     
-    
-    fig, ax = plt.subplots(4, 8)
+    ''' creating 2D plots of all features '''
+    NFeatures = len(Features["p"][0])
+    fig, ax = plt.subplots(4,2*NFeatures)
     minmax = [ [min([a[j] for a in Features["g"]]+[a[j] for a in Features["p"]]), max([a[j] for a in Features["g"]]+[a[j] for a in Features["p"]])] for j in range(4) ]
-    for i in range(4):
-        for j in range(4):
-            ax[i,  j].hexbin( [a[j] for a in Features["g"]], [a[i] for a in Features["g"]], gridsize=20) 
-            ax[i,4+j].hexbin( [a[j] for a in Features["p"]], [a[i] for a in Features["p"]], gridsize=20) 
-            ax[i,  j].axis( minmax[j] + minmax[i] )
-            ax[i,4+j].axis( minmax[j] + minmax[i] )
-    plt.pause(1)
+    
+    for i in range(NFeatures):
+        for j in range(NFeatures):
+            #for i, foo in enumerate(a):
+                #for j, bar in enumerate(b):
+                    ax1 = ax[i,j]
+                    ax2 = ax[i,j+NFeatures]
+                    if i == j:
+                        ax1.hist( [a[j] for a in Features["g"]] )
+                        ax2.hist( [a[j] for a in Features["p"]] )
+                        ax1.yscale('log', nonposy='clip')
+                        ax2.yscale('log', nonposy='clip')
+                    else:
+                        ax1.hexbin( [a[j] for a in Features["g"]], [a[i] for a in Features["g"]], gridsize=20) 
+                        ax2.hexbin( [a[j] for a in Features["p"]], [a[i] for a in Features["p"]], gridsize=20) 
+                        ax1.axis( minmax[j] + minmax[i] )
+                        ax2.axis( minmax[j] + minmax[i] )
+            #break
+        #break
+    plt.show()
 
 
     
@@ -252,7 +307,7 @@ if __name__ == '__main__':
         Features[cl] = Features[cl][:NEvents]
         Classes [cl] = Classes [cl][:NEvents]
         MCEnergy[cl] = MCEnergy[cl][:NEvents]
-    # done
+
 
     
     
@@ -298,6 +353,8 @@ if __name__ == '__main__':
 
         wrong[cl].hist[total[cl].hist > 0] = wrong[cl].hist[total[cl].hist > 0] / total[cl].hist[total[cl].hist > 0]
     
+    
+    plt.style.use('seaborn-talk')
     fig = plt.figure()
     plt.subplot(221)
     wrong["g"].draw_1d()
