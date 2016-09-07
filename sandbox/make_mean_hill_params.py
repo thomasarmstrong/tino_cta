@@ -65,6 +65,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--runnr',   type=str, default="*")
     parser.add_argument('-t', '--teltype', type=str, default="SST_ASTRI")
     parser.add_argument('-o', '--outtoken', type=str, default=None)
+    parser.add_argument('-p', '--proton', default=False, action='store_true')
     args = parser.parse_args()
     
     filenamelist_gamma  = glob( "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
@@ -103,8 +104,10 @@ if __name__ == '__main__':
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    #for filename in sorted(filenamelist_gamma)[:]:
-    for filename in sorted(filenamelist_proton)[:]:
+    filenamelist = filenamelist_gamma
+    if args.proton: filenamelist = filenamelist_proton
+
+    for filename in sorted(filenamelist)[:]:
         print("filename = {}".format(filename))
         
         source = hessio_event_source(filename,
@@ -145,16 +148,18 @@ if __name__ == '__main__':
                 pmt_signal = wavelet_transform(cropped_img, 4, "/tmp/wavelet").flatten()
         
                 
-                moments = hillas_parameters(pix_x, pix_y, pmt_signal)
+                moments, hmoments = hillas_parameters(pix_x, pix_y, pmt_signal)
                 
                 if moments.width != moments.width:   continue
                 if moments.length != moments.length: continue
             
-                widths    .fill([[np.clip(log10(tot_signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.width.value])
-                widths_sq .fill([[np.clip(log10(tot_signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.width.value**2])
-                lengths   .fill([[np.clip(log10(tot_signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.length.value])
-                lengths_sq.fill([[np.clip(log10(tot_signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.length.value**2])
-                norms     .fill([[np.clip(log10(tot_signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]])
+                signal = moments.size
+            
+                widths    .fill([[np.clip(log10(signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.width])
+                widths_sq .fill([[np.clip(log10(signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.width**2])
+                lengths   .fill([[np.clip(log10(signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.length])
+                lengths_sq.fill([[np.clip(log10(signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.length**2])
+                norms     .fill([[np.clip(log10(signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]])
 
                 if stop: break
             if stop: break
@@ -195,9 +200,9 @@ if __name__ == '__main__':
 
     plt.show()
     
-    
-    widths    .to_fits().writeto(    "wave_widths.fits",clobber=True)
-    widths_sq .to_fits().writeto( "wave_widths_sq.fits",clobber=True)
-    lengths   .to_fits().writeto(   "wave_lengths.fits",clobber=True)
-    lengths_sq.to_fits().writeto("wave_lengths_sq.fits",clobber=True)
+    if not args.proton:
+        widths    .to_fits().writeto(    "wave_widths.fits",clobber=True)
+        widths_sq .to_fits().writeto( "wave_widths_sq.fits",clobber=True)
+        lengths   .to_fits().writeto(   "wave_lengths.fits",clobber=True)
+        lengths_sq.to_fits().writeto("wave_lengths_sq.fits",clobber=True)
     

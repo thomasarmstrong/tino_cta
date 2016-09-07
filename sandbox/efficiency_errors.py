@@ -4,6 +4,19 @@ from scipy.optimize import minimize
 
 from itertools import count
 
+''' method from the paper
+Calculating Efficiencies and Their
+Uncertainties
+Marc Paterno
+FNAL/CD/CEPA/SLD
+paterno@fnal.gov
+May 5, 2003
+'''
+
+
+
+
+
 __all__ = [
             "get_efficiency_errors",
             "get_efficiency_errors_minimize",
@@ -23,10 +36,10 @@ def P_e (k, N, e):
     
     ''' protect from log(0) calls '''
     if e == 0:
-        if k == 0: return 1
+        if k == 0: return 6
         else:      return 0
     if e == 1:
-        if k == N: return 1
+        if k == N: return 6
         else:      return 0
     
     res2 = log_gamma(N+2) + k*log(e) + (N-k)*log(1-e) - (log_gamma(k+1) + log_gamma(N-k+1))
@@ -67,11 +80,11 @@ def get_efficiency_errors_minimize(k, N, conf=.68) :
             )
     return [k/N, test_func.a, test_func.b]
 
-def get_efficiency_errors_scan(k, N, conf=.68) :
+def get_efficiency_errors_scan(k, N, conf=.68, de=0.0005) :
     
     if N == 0: return [0,0,0,0,0]
     
-    de = 0.0005
+    
     min_diff = 20.
     min_a = None
     min_b = None
@@ -82,7 +95,7 @@ def get_efficiency_errors_scan(k, N, conf=.68) :
             min_diff = b-a
             min_a = a
             min_b = b
-        if 1 < b: break
+        if b > 1: break
     
     
     mean = k/N 
@@ -98,37 +111,36 @@ get_efficiency_errors = get_efficiency_errors_scan
 
 
 
-
-print(get_efficiency_errors(10,50)) 
-
-'''
-import numpy as np
-import matplotlib.pyplot as plt
-
-dt = 0.001
-t = np.arange(0.0, 1.+dt, dt)
-y0 = [P_e(0,5,x) for x in t]
-y1 = [P_e(1,5,x) for x in t]
-y2 = [P_e(2,5,x) for x in t]
-y3 = [P_e(3,5,x) for x in t]
-y4 = [P_e(4,5,x) for x in t]
-y5 = [P_e(5,5,x) for x in t]
+if __name__ == "__main__":
+    print(get_efficiency_errors(10,500)) 
 
 
+    import numpy as np
+    import matplotlib.pyplot as plt
 
-
-print( sum(y0) * dt )
-print( sum(y1) * dt )
-print( sum(y2) * dt )
-print( sum(y3) * dt )
-print( sum(y4) * dt )
-print( sum(y5) * dt )
+    dt = 0.001
+    t = np.arange(0.0, 1.+dt, dt)
+    y0 = [P_e(0,5,x) for x in t]
+    y1 = [P_e(1,5,x) for x in t]
+    y2 = [P_e(2,5,x) for x in t]
+    y3 = [P_e(3,5,x) for x in t]
+    y4 = [P_e(4,5,x) for x in t]
+    y5 = [P_e(5,5,x) for x in t]
 
 
 
 
-plt.figure(1)
-plt.plot(y0, 'bo', y1, 'ro', y2, 'yo', y3, 'go', y4, "bo", y5, "ro")
-plt.show()
+    print( sum(y0) * dt )
+    print( sum(y1) * dt )
+    print( sum(y2) * dt )
+    print( sum(y3) * dt )
+    print( sum(y4) * dt )
+    print( sum(y5) * dt )
 
-'''
+
+
+
+    plt.figure(1)
+    plt.plot(y0, 'bo', y1, 'ro', y2, 'yo', y3, 'go', y4, "bo", y5, "ro")
+    plt.show()
+
