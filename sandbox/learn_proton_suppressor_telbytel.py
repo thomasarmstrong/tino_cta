@@ -117,12 +117,12 @@ if __name__ == '__main__':
     tel_theta =  20.*u.deg
     
 
-    Features = { "p":[], "g":[] }
-    Classes  = { "p":[], "g":[] }
-    MCEnergy = { "p":[], "g":[] }
+    Features  = { "g":[], "p":[] }
+    Classes   = { "g":[], "p":[] }
+    MCEnergy  = { "g":[], "p":[] }
     
-    red_width = { "p":[], "g":[] }
-    red_lenth = { "p":[], "g":[] }
+    red_width = { "g":[], "p":[] }
+    red_lenth = { "g":[], "p":[] }
 
     tel_geom = {}
     for tel_idx, tel_id in enumerate(telescopes['TelID']):
@@ -199,7 +199,7 @@ if __name__ == '__main__':
                     raise Exception('cleaning mode "{}" not found'.format(mode))
                 
                 moments, h_moments = hillas_parameters(pix_x, pix_y, pmt_signal)
-                features.append( [ moments.size, moments.width.value, moments.length.value, impact_dist, h_moments.Skewness, h_moments.Kurtosis, h_moments.Asymmetry ] )
+                features.append( [ moments.size, moments.width, moments.length, impact_dist, h_moments.Skewness, h_moments.Kurtosis, h_moments.Asymmetry ] )
             
             
             Features[Class].append( features )
@@ -245,7 +245,8 @@ if __name__ == '__main__':
         
         
         #clf = svm.SVC(kernel='rbf')
-        clf = RandomForestClassifier(n_estimators=20, max_depth=None,min_samples_split=1, random_state=0)
+        #clf = RandomForestClassifier(n_estimators=20, max_depth=None,min_samples_split=1, random_state=0)
+        clf = RandomForestClassifier(n_estimators=40, max_depth=None,min_samples_split=1, random_state=0)
         clf.fit(trainFeatures, trainClasses)
         
         
@@ -286,56 +287,59 @@ if __name__ == '__main__':
              y_eff_lerrors[cl].append( errors[1] )
              y_eff_uerrors[cl].append( errors[2] )
     
-        wrong[cl].hist[total[cl].hist > 0] = wrong[cl].hist[total[cl].hist > 0] / total[cl].hist[total[cl].hist > 0]
+        #wrong[cl].hist[total[cl].hist > 0] = wrong[cl].hist[total[cl].hist > 0] / total[cl].hist[total[cl].hist > 0]
     
     plt.style.use('seaborn-talk')
     fig, ax = plt.subplots(2,2, sharex=True)
+    tax = ax[0,0]
+    tax.errorbar(wrong["g"].bin_centers(0), y_eff["g"], yerr=[y_eff_lerrors["g"], y_eff_uerrors["g"]])
+    tax.set_title("gamma misstag")
+    tax.set_xlabel("log(E/GeV)")
+    tax.set_ylabel("incorrect / all")
+    
+    tax = ax[0,1]
+    tax.errorbar(wrong["p"].bin_centers(0), y_eff["p"], yerr=[y_eff_lerrors["p"], y_eff_uerrors["p"]])
+    tax.set_title("proton misstag")
+    tax.set_xlabel("log(E/GeV)")
+    tax.set_ylabel("incorrect / all")
+    
+    tax = ax[1,0]
+    tax.bar(total["g"].bin_lower_edges[0][:-1], total["g"].hist, width=(total["g"].bin_lower_edges[0][-1] - total["g"].bin_lower_edges[0][0])/len(total["g"].bin_centers(0)))
+    tax.set_title("gamma numbers")
+    tax.set_xlabel("log(E/GeV)")
+    tax.set_ylabel("events")
+    
+    tax = ax[1,1]
+    tax.bar(total["p"].bin_lower_edges[0][:-1], total["p"].hist, width=(total["p"].bin_lower_edges[0][-1] - total["p"].bin_lower_edges[0][0])/len(total["p"].bin_centers(0)))
+    tax.set_title("proton numbers")
+    tax.set_xlabel("log(E/GeV)")
+    tax.set_ylabel("events")
+    
+    #fig2 = plt.figure()
 
-    ax[0,0].errorbar(wrong["g"].bin_centers(0), y_eff["g"], yerr=[y_eff_lerrors["g"], y_eff_uerrors["g"]])
-    ax[0,0].set_title("gamma misstag")
-    ax[0,0].set_xlabel("log(E/GeV)")
-    ax[0,0].set_ylabel("incorrect / all")
+    #plt.subplot(221)
+    #wrong["g"].draw_1d()
+    #plt.title("gamma misstag")
+    #plt.xlabel("log(E/GeV)")
+    #plt.ylabel("incorrect / all")
     
-    ax[0,1].errorbar(wrong["p"].bin_centers(0), y_eff["p"], yerr=[y_eff_lerrors["p"], y_eff_uerrors["p"]])
-    ax[0,1].set_title("proton misstag")
-    ax[0,1].set_xlabel("log(E/GeV)")
-    ax[0,1].set_ylabel("incorrect / all")
-    
-    ax[1,0].bar(total["g"].bin_centers(0), total["g"].hist, width=(total["g"].bin_lower_edges[0][-1] - total["g"].bin_lower_edges[0][0])/len(total["g"].bin_centers(0)))
-    ax[1,0].set_title("gamma numbers")
-    ax[1,0].set_xlabel("log(E/GeV)")
-    ax[1,0].set_ylabel("events")
-    
-    ax[1,1].bar(total["p"].bin_centers(0), total["p"].hist, width=(total["p"].bin_lower_edges[0][-1] - total["p"].bin_lower_edges[0][0])/len(total["p"].bin_centers(0)))
-    ax[1,1].set_title("proton numbers")
-    ax[1,1].set_xlabel("log(E/GeV)")
-    ax[1,1].set_ylabel("events")
-    
-    fig2 = plt.figure()
+    #plt.subplot(222)
+    #wrong["p"].draw_1d()
+    #plt.title("proton misstag")
+    #plt.xlabel("log(E/GeV)")
+    #plt.ylabel("incorrect / all")
 
-    plt.subplot(221)
-    wrong["g"].draw_1d()
-    plt.title("gamma misstag")
-    plt.xlabel("log(E/GeV)")
-    plt.ylabel("incorrect / all")
-    
-    plt.subplot(222)
-    wrong["p"].draw_1d()
-    plt.title("proton misstag")
-    plt.xlabel("log(E/GeV)")
-    plt.ylabel("incorrect / all")
+    #plt.subplot(223)
+    #total["g"].draw_1d()
+    #plt.title("gamma numbers")
+    #plt.xlabel("log(E/GeV)")
+    #plt.ylabel("events")
 
-    plt.subplot(223)
-    total["g"].draw_1d()
-    plt.title("gamma numbers")
-    plt.xlabel("log(E/GeV)")
-    plt.ylabel("events")
-
-    plt.subplot(224)
-    total["p"].draw_1d()
-    plt.title("proton numbers")
-    plt.xlabel("log(E/GeV)")
-    plt.ylabel("events")
+    #plt.subplot(224)
+    #total["p"].draw_1d()
+    #plt.title("proton numbers")
+    #plt.xlabel("log(E/GeV)")
+    #plt.ylabel("events")
 
     
     plt.show()

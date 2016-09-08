@@ -204,7 +204,7 @@ if __name__ == '__main__':
                 else: 
                     raise Exception('cleaning mode "{}" not found'.format(mode))
                 
-                moments = hillas_parameters(pix_x, pix_y, pmt_signal)
+                moments, h_moments = hillas_parameters(pix_x, pix_y, pmt_signal)
                 signal = moments.size
                 width_mean     = mean_widths    .get_value( [[log10(signal), log10(impact_dist)]] )[0]
                 width_sq_mean  = mean_widths_sq .get_value( [[log10(signal), log10(impact_dist)]] )[0]
@@ -216,7 +216,7 @@ if __name__ == '__main__':
                 if  width_mean**2  ==  width_sq_mean: continue
                 if length_mean**2  == length_sq_mean: continue
                 if np.isnan(np.array([width_mean, width_sq_mean, length_mean,
-                                      length_sq_mean,moments.length.value,moments.width.value])).any():
+                                      length_sq_mean,moments.length,moments.width])).any():
                                     continue
                 
 
@@ -228,8 +228,8 @@ if __name__ == '__main__':
                 
                 
                 sizes  .append(moments.size)
-                widths .append(moments.width.value)
-                lengths.append(moments.length.value)
+                widths .append(moments.width)
+                lengths.append(moments.length)
 
 
             if len(sizes) == 0: continue
@@ -244,8 +244,8 @@ if __name__ == '__main__':
             sigmaW = sum(weight_width )**.5
             sigmaL = sum(weight_length)**.5
 
-            #sizes       = np.array(sizes)
-            #size_mean   = np.mean(sizes)
+            sizes       = np.array(sizes)
+            size_mean   = np.mean(sizes)
             #widths      = np.array(widths)
             #width_mean  = np.mean(widths) 
             #lengths     = np.array(lengths)
@@ -288,16 +288,16 @@ if __name__ == '__main__':
                     if i == j:
                         ax1.hist( [a[j] for a in Features["g"]] )
                         ax2.hist( [a[j] for a in Features["p"]] )
-                        ax1.yscale('log', nonposy='clip')
-                        ax2.yscale('log', nonposy='clip')
+                        #ax1.yscale('log', nonposy='clip')
+                        #ax2.yscale('log', nonposy='clip')
                     else:
-                        ax1.hexbin( [a[j] for a in Features["g"]], [a[i] for a in Features["g"]], gridsize=20) 
-                        ax2.hexbin( [a[j] for a in Features["p"]], [a[i] for a in Features["p"]], gridsize=20) 
+                        ax1.hexbin( [a[j] for a in Features["g"]], [a[i] for a in Features["g"]], bins='log', gridsize=20) 
+                        ax2.hexbin( [a[j] for a in Features["p"]], [a[i] for a in Features["p"]], bins='log', gridsize=20) 
                         ax1.axis( minmax[j] + minmax[i] )
                         ax2.axis( minmax[j] + minmax[i] )
             #break
         #break
-    plt.show()
+    plt.pause(1)
 
 
     

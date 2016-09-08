@@ -23,16 +23,38 @@ __all__ = [
             "get_efficiency_errors_scan",
             ]
 
-#gamma = lambda x: factorial(x-1)
+
 def log_gamma(x):
-    # Gamma(x) = (x-1)!
+    ''' Gamma(x) = (x-1)! '''
     return sum( log(i) for i in np.arange(1,x) )
     
     
 def P_e (k, N, e):
+    '''
+        probability density function for the efficiency e of passing k events while observing N
+        
+        Parameters:
+        ----------
+        k: integer
+            number of events passing selection
+        N : integer
+            total number of events
+        e : float
+            test-efficiency
+            0 <= e <= 1
+        
+        Returns:
+        --------
+        P : float
+            the probability density to have a real efficiency of e
+            while observing k out of N events passing a selection
+        
+    '''
+    
+    
     ''' has problems with high numbers, use log-version instead '''
     #res1 = gamma(N+2) / (gamma(k+1)*gamma(N-k+1)) * e**k * (1-e)**(N-k)
-    #return res1 / 6
+    #return res1
     
     ''' protect from log(0) calls '''
     if e == 0:
@@ -41,31 +63,16 @@ def P_e (k, N, e):
     if e == 1:
         if k == N: return 6
         else:      return 0
+    if abs(e-.5) > .5: return 0
+    
     
     res2 = log_gamma(N+2) + k*log(e) + (N-k)*log(1-e) - (log_gamma(k+1) + log_gamma(N-k+1))
     return exp(res2)
-
-
-def test_func(arg,k,N, conf=.68, func=P_e,de=.001):
-    # test function that calculates the 
-    # difference between a and b while covering an intervall of conf
-    a = arg[0]
-    print(a)
-    b = a
-    integral=0
-    for i in count():
-        integral += (func(k,N,b) + func(k,N,b+de))*de /2.
-        b = a + i*de
-        if integral >= .68: 
-            test_func.a = a
-            test_func.b = b
-            return b-a
-        if b > 1 :          return 1.1
     
-def test_func_2(a,k,N, conf=.68, func=P_e,de=.001):
-    # test function that calculates the 
-    # difference between a and b while covering an intervall of conf
-    # use in scan mode, returns b instead of b-a
+def get_b_from_a(a,k,N, conf=.68,de=.001, func=P_e):
+    '''
+        determines b from a so that the difference between them covers an intervall of conf
+    '''
     b = a
     integral=0
     for i in count():
@@ -74,23 +81,48 @@ def test_func_2(a,k,N, conf=.68, func=P_e,de=.001):
         if integral >= .68: return (b,integral)
         if b+de > 1 :       return (9,integral)
 
-def get_efficiency_errors_minimize(k, N, conf=.68) :
-    minimize(test_func, [0], args=(k,N), bounds=[(0,1)],
-             method='L-BFGS-B', options={'disp' : False, 'eps':1e-10}
-            )
-    return [k/N, test_func.a, test_func.b]
 
-def get_efficiency_errors_scan(k, N, conf=.68, de=0.0005) :
-    
+def test_func(arg,k,N, conf=.68,de=.001, func=P_e):
+    '''
+        test function that calculates the 
+        difference between a and b while covering an intervall of conf
+    '''
+    a = arg[0]
+    (b,integral) = get_b_from_a(a, k, N, conf, de)
+    if b <= 1: 
+        test_func.min_a = a
+        test_func.min_b = b
+        return b-a
+    else: return b
+
+
+def get_efficiency_errors_minimize(k, N, conf=.68, de=0.0005) :
     if N == 0: return [0,0,0,0,0]
     
+    test_func.min_diff=5.
+
+    minimize(test_func, [0], args=(k,N,conf,de), bounds=[(0,1)],
+             method='L-BFGS-B', options={'disp' : False, 'eps':1e-3}
+            )    
+    
+    
+    mean = k/N 
+    if k == 0: test_func.min_b = 0
+    if k == N: test_func.min_b = 1
+    lerr = mean-test_func.min_a
+    herr = test_func.min_b-mean
+    
+    return [mean, lerr, herr, test_func.min_a, test_func.min_b]
+
+def get_efficiency_errors_scan(k, N, conf=.68, de=0.0005) :
+    if N == 0: return [0,0,0,0,0]
     
     min_diff = 20.
     min_a = None
     min_b = None
     for i in count(0):
         a = i * de
-        (b,integral) = test_func_2(a, k, N)
+        (b,integral) = get_b_from_a(a, k, N, conf, de)
         if b-a < min_diff: 
             min_diff = b-a
             min_a = a
@@ -99,22 +131,31 @@ def get_efficiency_errors_scan(k, N, conf=.68, de=0.0005) :
     
     
     mean = k/N 
+    if k == 0: min_a = 0
+    if k == N: min_b = 1
     lerr = mean-min_a
     herr = min_b-mean
-    if k == 0: lerr = 0
-    if k == N: herr = 1
     
-    return [mean, lerr, herr, min_a, min_b, integral]
+    return [mean, lerr, herr, min_a, min_b]
 
 
-get_efficiency_errors = get_efficiency_errors_scan
+#get_efficiency_errors = get_efficiency_errors_scan
+get_efficiency_errors = get_efficiency_errors_minimize
 
 
 
 if __name__ == "__main__":
-    print(get_efficiency_errors(10,500)) 
+    import sys
+    if len(sys.argv) < 2:
+        pars = [2,5]
+    else:
+        pars = sys.argv[:2]
+    
+    print(get_efficiency_errors_scan    (pars[0], pars[1])) 
+    print(get_efficiency_errors_minimize(pars[0], pars[1])) 
 
-
+    sys.exit()
+    
     import numpy as np
     import matplotlib.pyplot as plt
 
