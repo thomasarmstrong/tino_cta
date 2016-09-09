@@ -24,14 +24,33 @@ __all__ = [
             ]
 
 
-def log_gamma(x):
-    ''' Gamma(x) = (x-1)! '''
-    return sum( log(i) for i in np.arange(1,x) )
+def log_gamma(end,start=1):
+    ''' 
+        calculating log(Γ(x)) as the sum of the logarithms 
+        of all integers in [1, x)
+        a second argument can be used to set an alternative start
+        e.g. if you have Γ(N) / Γ(k) -> Γ(N,k) sums all in [k,N)
+        
+        Parameters:
+        -----------
+        end : integer
+            (not included) end of the sum
+        start : integer, default: 1
+            start of the sum
+        
+        Note:
+        -----
+        Γ(x) = (x-1)! 
+        so @end doesn't neet to be included in sum
+        
+        if @start > @end, return the negative instead
+    '''
+    return np.sign(end-start) * sum( log(i) for i in np.arange(min(start,end),max(start,end)) )
     
     
 def P_e (k, N, e):
     '''
-        probability density function for the efficiency e of passing k events while observing N
+        probability density function for the efficiency @e of passing @k events while observing @N
         
         Parameters:
         ----------
@@ -52,7 +71,7 @@ def P_e (k, N, e):
     '''
     
     
-    ''' has problems with high numbers, use log-version instead '''
+    ''' has problems with high numbers ( Γ(100) gets HUUUUGE), use log-version instead '''
     #res1 = gamma(N+2) / (gamma(k+1)*gamma(N-k+1)) * e**k * (1-e)**(N-k)
     #return res1
     
@@ -65,9 +84,14 @@ def P_e (k, N, e):
         else:      return 0
     if abs(e-.5) > .5: return 0
     
+    ''' log-ed version '''
+    #res2 = log_gamma(N+2)     + k*log(e) + (N-k)*log(1-e) - log_gamma(N-k+1) - log_gamma(k+1)
+    #return exp(res3)
     
-    res2 = log_gamma(N+2) + k*log(e) + (N-k)*log(1-e) - (log_gamma(k+1) + log_gamma(N-k+1))
-    return exp(res2)
+    ''' optimised version (sum_{0..N} - sum_{0..k} = sum_{k..N}) '''
+    res3 = log_gamma(N+2,k+1) + k*log(e) + (N-k)*log(1-e) - log_gamma(N-k+1)
+    return exp(res3)
+
     
 def get_b_from_a(a,k,N, conf=.68,de=.001, func=P_e):
     '''
