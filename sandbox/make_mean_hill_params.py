@@ -103,6 +103,9 @@ if __name__ == '__main__':
     norms      = Histogram(axisNames=axisNames,nbins=nbins,ranges=ranges,name="norms")
 
     signal.signal(signal.SIGINT, signal_handler)
+    
+    from random import random
+    wave_out_name = "/tmp/wavelet_{}_".format(random())
 
     filenamelist = filenamelist_gamma
     if args.proton: filenamelist = filenamelist_proton
@@ -145,7 +148,7 @@ if __name__ == '__main__':
                 pix_x = crop_astri_image(tel_geom[tel_id].pix_x).flatten()
                 pix_y = crop_astri_image(tel_geom[tel_id].pix_y).flatten()
                 cropped_img = crop_astri_image(pmt_signal)
-                pmt_signal = wavelet_transform(cropped_img, 4, "/tmp/wavelet").flatten()
+                pmt_signal = wavelet_transform(cropped_img, 4, wave_out_name).flatten()
         
                 
                 moments, hmoments = hillas_parameters(pix_x, pix_y, pmt_signal)
@@ -154,6 +157,7 @@ if __name__ == '__main__':
                 if moments.length != moments.length: continue
             
                 signal = moments.size
+                #signal = tot_signal
             
                 widths    .fill([[np.clip(log10(signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.width])
                 widths_sq .fill([[np.clip(log10(signal),3,6)], [np.clip(log10(impact_dist),0.5,3.5)]], weights=[moments.width**2])
@@ -177,6 +181,7 @@ if __name__ == '__main__':
     
     
     fig = plt.figure()
+    plt.style.use('seaborn-talk')
 
     plt.subplot(2,3,1)
     widths .draw_2d()
@@ -195,12 +200,18 @@ if __name__ == '__main__':
     plt.colorbar()
 
     plt.subplot(2,3,3)
-    norms.draw_2d()
+    from matplotlib.colors import LogNorm
+    norms.draw_2d(norm=LogNorm(vmin=.1))
     plt.colorbar()
 
     plt.show()
     
-    if not args.proton:
+    if args.proton:
+        widths    .to_fits().writeto(    "wave_widths_proton.fits",clobber=True)
+        widths_sq .to_fits().writeto( "wave_widths_sq_proton.fits",clobber=True)
+        lengths   .to_fits().writeto(   "wave_lengths_proton.fits",clobber=True)
+        lengths_sq.to_fits().writeto("wave_lengths_sq_proton.fits",clobber=True)
+    else:
         widths    .to_fits().writeto(    "wave_widths.fits",clobber=True)
         widths_sq .to_fits().writeto( "wave_widths_sq.fits",clobber=True)
         lengths   .to_fits().writeto(   "wave_lengths.fits",clobber=True)

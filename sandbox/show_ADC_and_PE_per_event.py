@@ -10,7 +10,7 @@ from itertools import chain
 from numpy import ceil
 from matplotlib import pyplot as plt
 
-from ctapipe.reco.hillas import hillas_parameters
+from ctapipe.reco.hillas import hillas_parameters,hillas_parameters_2
 from ctapipe.reco.cleaning import tailcuts_clean, dilate
 from ctapipe import visualization, io
 
@@ -61,9 +61,10 @@ def display_event(event, calibrate = 0, max_tel = 4, cleaning=None):
             dilate(geom, mask)
             signals[mask==False] = 0
             
-        moments = hillas_parameters(geom.pix_x,
+        moments = hillas_parameters_2(geom.pix_x,
                                     geom.pix_y,
                                     signals)
+
         disp.image = signals
         disp.overlay_moments(moments, color='seagreen', linewidth=3)
         disp.set_limits_percent(95)
@@ -86,13 +87,13 @@ def display_event(event, calibrate = 0, max_tel = 4, cleaning=None):
         for jj in range(len(event.mc.tel[tel_id].photo_electrons)):
             event.dl0.tel[tel_id].adc_sums[chan][jj] = event.mc.tel[tel_id].photo_electrons[jj]
         signals2 = event.dl0.tel[tel_id].adc_sums[chan].astype(float)
-        moments2 = hillas_parameters(geom.pix_x,
+        moments2 = hillas_parameters_2(geom.pix_x,
                                     geom.pix_y,
                                     signals2)
 
 
         disp.image = signals2
-        disp.overlay_moments(moments2, color='seagreen', linewidth=3)
+        #disp.overlay_moments(moments2, color='seagreen', linewidth=3)
         disp.set_limits_percent(95)
         disp.add_colorbar()
         disps.append(disp)
@@ -175,11 +176,11 @@ if __name__ == '__main__':
         print("no protons found")
         exit()
 
-    for filename in chain(sorted(filenamelist_gamma)[:0], sorted(filenamelist_proton)[:]):
+    for filename in chain(sorted(filenamelist_gamma)[:], sorted(filenamelist_proton)[:]):
         print("filename = {}".format(filename))
         
         source = hessio_event_source(filename,
-                                    allowed_tels=range(28),
+                                    allowed_tels=[6],#range(10),
                                     max_events=args.max_events)
 
         for event in source:

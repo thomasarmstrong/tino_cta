@@ -1,4 +1,4 @@
-from sys import exit
+from sys import exit,path
 from glob import glob
 import argparse
 
@@ -15,11 +15,12 @@ from ctapipe.instrument.InstrumentDescription import load_hessio
 from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle,length
 
 from Telescope_Mask import TelDict
-from FitGammaHillas import FitGammaHillas
 
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
+path.append("/local/home/tmichael/software/jeremie_cta/data-pipeline-standalone-scripts")
+from datapipe.reco.FitGammaHillas import FitGammaHillas
 
 
 import signal
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--max-events', type=int, default=None)
     parser.add_argument('-i', '--indir',   type=str, 
                         default="/local/home/tmichael/software/corsika_simtelarray/Data/sim_telarray/cta-ultra6/0.0deg/Data/")
-    parser.add_argument('-r', '--runnr',   type=str, default="2?")
+    parser.add_argument('-r', '--runnr',   type=str, default="*")
     parser.add_argument('-t', '--teltype', type=str, default="all")
     parser.add_argument('-o', '--outtoken', type=str, default=None)
     args = parser.parse_args()
@@ -50,7 +51,7 @@ if __name__ == '__main__':
         exit(-1)
         
     fit = FitGammaHillas()
-    fit.set_instrument_description( *load_hessio(filenamelist[0]) )
+    fit.setup_geometry( *load_hessio(filenamelist[0]),phi=180*u.deg,theta=20*u.deg )
     
     signal.signal(signal.SIGINT, signal_handler)
     
@@ -62,13 +63,13 @@ if __name__ == '__main__':
     
     diffs = []
     
+    allowed_tels=TelDict[args.teltype],
     for filename in sorted(filenamelist):
         print("filename = {}".format(filename))
         
         source = hessio_event_source(filename,
-                                    # for now use only identical telescopes...
-                                    allowed_tels=TelDict[args.teltype],
-                                    max_events=args.max_events)
+                                     allowed_tels=range(10),
+                                     max_events=args.max_events)
         
         for event in source:
             

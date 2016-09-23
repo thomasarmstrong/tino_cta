@@ -178,7 +178,6 @@ if __name__ == "__main__":
     print(get_efficiency_errors_scan    (pars[0], pars[1])) 
     print(get_efficiency_errors_minimize(pars[0], pars[1])) 
 
-    sys.exit()
     
     import numpy as np
     import matplotlib.pyplot as plt
