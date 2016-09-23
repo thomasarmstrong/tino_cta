@@ -150,11 +150,15 @@ if __name__ == '__main__':
             off_angles     [cl].append(        linalg.angle(fit_orig, source_orig).value )
             off_angles_sq  [cl].append(       (linalg.angle(fit_orig, source_orig).value**2 ) )
             off_angles_sine[cl].append( np.sin(linalg.angle(fit_orig, source_orig) ) )
-        
+    
+    
+    # TODO determine weights better (NEvents generated, signal/background flux ratios...)
+    weight_g = 1
+    weight_p = 1e5
 
     fig = plt.figure()
     plt.subplot(211)
-    plt.hist([off_angles['p'],off_angles['g']], rwidth=1, bins=10,stacked=True)#range=(0,.5))
+    plt.hist([off_angles['p'],off_angles['g']], weights=[[weight_g]*len(off_angles['g']), [weight_p]*len(off_angles['p'])], rwidth=1, bins=10,stacked=True)#range=(0,.5))
     plt.xlabel("alpha")
     
     plt.subplot(212)
