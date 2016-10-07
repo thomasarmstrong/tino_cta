@@ -13,6 +13,7 @@ from itertools import chain
 
 from ctapipe.io.hessio import hessio_event_source
 
+from ctapipe.instrument.InstrumentDescription import load_hessio
 
 
 import signal
@@ -63,6 +64,7 @@ if __name__ == '__main__':
     classifier.setup_geometry(*load_hessio(filenamelist_gamma[0]))
     
     
+    events = {'g':0, 'p':0}
     
     for filenamelist_class in [ filenamelist_gamma, filenamelist_proton ]:
         for filename in sorted(filenamelist_class)[:args.last]:
@@ -82,7 +84,8 @@ if __name__ == '__main__':
             
             for event in source:
                 classifier.get_event(event, Class, skip_edge_events=True,mode=args.mode)
-            
+                events[Class] += 1
+                
                 if stop: break
             if stop:
                 stop = False
@@ -91,20 +94,70 @@ if __name__ == '__main__':
     
     print("total images:", classifier.total_images)
     print("selected images:", classifier.selected_images)
+    print()
     
-    lengths = { "p": len(classifier.Features["p"]), "g":len(classifier.Features["g"]) }
-    print("\nfound {} gammas and {} protons\n".format(lengths["g"], lengths["p"]))
-    
+    lengths = {}
+    print("events:")
+    for cl in classifier.class_list:
+        lengths[cl] = len(classifier.Features[cl])
+        print("found {}: {}".format(cl, events[cl]))
+        print("pickd {}: {}".format(cl, len(classifier.Features[cl])))
     
     
     # reduce the number of events so that they are the same in gammas and protons
     NEvents = min(lengths.values())
     classifier.equalise_nevents(NEvents)
-    
+
+
+
     
     if args.store:
         classifier.learn()
         classifier.save(args.store_path+"_"+args.mode+".pkl")
     
     if args.self_check:
-        classifier.self_check()
+        classifier.self_check(min_tel=4)
+
+
+
+    
+    ##from sklearn.model_selection import train_test_split
+    ##from sklearn.preprocessing import StandardScaler
+    ##from sklearn.datasets import make_moons, make_circles, make_classification
+    
+    ##from sklearn.neural_network import MLPClassifier
+    #from sklearn.neighbors import KNeighborsClassifier
+    #from sklearn.svm import SVC
+    ##from sklearn.gaussian_process import GaussianProcessClassifier
+    ##from sklearn.gaussian_process.kernels import RBF
+    #from sklearn.tree import DecisionTreeClassifier
+    #from sklearn.ensemble import AdaBoostClassifier
+    #from sklearn.naive_bayes import GaussianNB
+    #from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
+    #from sklearn.ensemble import RandomForestClassifier
+    #from sklearn.ensemble import ExtraTreesClassifier
+    #from sklearn import svm
+    
+    #for clf in [KNeighborsClassifier(3),
+                #SVC(kernel="linear", C=0.025),
+                #SVC(gamma=2, C=1),
+                ##GaussianProcessClassifier(1.0 * RBF(1.0), warm_start=True),
+                #DecisionTreeClassifier(max_depth=5),
+                #RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+                ##MLPClassifier(alpha=1),
+                #AdaBoostClassifier(),
+                #GaussianNB(),
+                #QuadraticDiscriminantAnalysis()]:
+        #classifier.learn(clf)
+        
+        #for cl in classifier.Features.keys():
+            #trainFeatures   = []
+            #trainClasses    = []
+            #for ev in classifier.Features[cl]:
+                #trainFeatures += ev
+                #trainClasses  += [cl]*len(ev)
+        
+            #print(cl,"score:", classifier.clf.score(trainFeatures, trainClasses) )
+        #print()
+
+

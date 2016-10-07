@@ -66,6 +66,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--teltype', type=str, default="SST_ASTRI")
     parser.add_argument('-o', '--outtoken', type=str, default=None)
     parser.add_argument('-p', '--proton', default=False, action='store_true')
+    parser.add_argument('-w', '--write',  default=False, action='store_true')
     args = parser.parse_args()
     
     filenamelist_gamma  = glob( "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
@@ -206,14 +207,15 @@ if __name__ == '__main__':
 
     plt.show()
     
-    if args.proton:
-        widths    .to_fits().writeto(    "wave_widths_proton.fits",clobber=True)
-        widths_sq .to_fits().writeto( "wave_widths_sq_proton.fits",clobber=True)
-        lengths   .to_fits().writeto(   "wave_lengths_proton.fits",clobber=True)
-        lengths_sq.to_fits().writeto("wave_lengths_sq_proton.fits",clobber=True)
-    else:
-        widths    .to_fits().writeto(    "wave_widths.fits",clobber=True)
-        widths_sq .to_fits().writeto( "wave_widths_sq.fits",clobber=True)
-        lengths   .to_fits().writeto(   "wave_lengths.fits",clobber=True)
-        lengths_sq.to_fits().writeto("wave_lengths_sq.fits",clobber=True)
-    
+    if args.write:
+        if args.proton:
+            widths    .to_fits().writeto(    "wave_widths_proton.fits",clobber=True)
+            widths_sq .to_fits().writeto( "wave_widths_sq_proton.fits",clobber=True)
+            lengths   .to_fits().writeto(   "wave_lengths_proton.fits",clobber=True)
+            lengths_sq.to_fits().writeto("wave_lengths_sq_proton.fits",clobber=True)
+        else:
+            widths    .to_fits().writeto(    "wave_widths.fits",clobber=True)
+            widths_sq .to_fits().writeto( "wave_widths_sq.fits",clobber=True)
+            lengths   .to_fits().writeto(   "wave_lengths.fits",clobber=True)
+            lengths_sq.to_fits().writeto("wave_lengths_sq.fits",clobber=True)
+        
