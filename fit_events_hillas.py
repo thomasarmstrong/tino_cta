@@ -14,7 +14,7 @@ from matplotlib import cm
 
 from astropy import units as u
 
-from ctapipe.io import CameraGeometry
+from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 from ctapipe.io.containers import MCShowerData as MCShower
 
@@ -70,6 +70,7 @@ if __name__ == '__main__':
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
 
+    signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
     NTels = []
@@ -102,10 +103,11 @@ if __name__ == '__main__':
             print('available telscopes: {}'.format(event.dl0.tels_with_data))
 
             hillas_dict = {}
-            #for tel_id, tel in event.mc.tel.items():
-                #pmt_signal = tel.photo_electrons
+            # for tel_id, tel in event.mc.tel.items():
+                # pmt_signal = tel.photo_electrons
 
-            for tel_id in set(event.trig.tels_with_trigger) & set(event.dl0.tels_with_data):
+            for tel_id in set(event.trig.tels_with_trigger) & \
+                          set(event.dl0.tels_with_data):
 
                 Imagecutflow.count("noCuts")
 
@@ -114,9 +116,11 @@ if __name__ == '__main__':
                 Imagecutflow.count("calibration")
 
                 if tel_id not in tel_geom:
-                    tel_geom[tel_id] = CameraGeometry.guess(fit.cameras(tel_id)['PixX'].to(u.m),
-                                                            fit.cameras(tel_id)['PixY'].to(u.m),
-                                                            fit.telescopes['FL'][tel_id-1] * u.m)
+                    tel_geom[tel_id] = CameraGeometry.guess(
+                                        fit.cameras(tel_id)['PixX'].to(u.m),
+                                        fit.cameras(tel_id)['PixY'].to(u.m),
+                                        fit.telescopes['FL'][tel_id-1] * u.m)
+
                 try:
                     pmt_signal, pix_x, pix_y = \
                         Cleaner.clean(pmt_signal, tel_geom[tel_id])
@@ -140,17 +144,7 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("Hillas")
 
-                #from ctapipe import visualization
-                #figure = plt.figure()
-                #ax = plt.subplot(111)
-                #disp = visualization.CameraDisplay(tel_geom[tel_id], ax=ax)
-                #disp.image = pmt_signal
-                #disp.cmap = plt.cm.hot
-                #disp.add_colorbar()
-                #disp.overlay_moments(moments, color='seagreen', linewidth=3)
-                #plt.show()
-
-
+            Eventcutflow.count("ImagePreparation")
 
             fit.get_great_circles(hillas_dict)
 
@@ -205,56 +199,59 @@ if __name__ == '__main__':
             diffs.append(diff)
             print("core res (68-percentile) = {}".format( sorted(diffs)[ int(len(diffs)*.68) ] ) )
 
-
-
+            '''
+            save number of telescopes and MC energy for this event '''
             NTels.append(len(fit.circles))
             EnMC.append(event.mc.energy)
 
-            if stop: break
-        if stop: break
+            if signal_handler.stop: break
+        if signal_handler.stop: break
 
-
+    '''
+    print the cutflows for telescopes and camera images '''
     print()
     Eventcutflow()
     print()
     Imagecutflow()
 
-
-    if not args.plot: exit(0)
+    '''
+    if we don't want to plot anything, we can exit now '''
+    if not args.plot:
+        exit(0)
 
     xis1 = convert_astropy_array(xis1)
     xis2 = convert_astropy_array(xis2)
     xisb = convert_astropy_array(xisb)
 
     figure = plt.figure()
-    plt.hist(np.log10(xis1/angle_unit), bins=np.linspace(-3, 1, 50))
-    plt.xlabel(r"log($\xi_1$ / deg)")
+    plt.hist(xis1, bins=np.linspace(0, 40, 80), log=True)
+    plt.xlabel(r"$\xi_1$ / deg")
     if args.write:
         tikz_save('plots/'+args.mode+'_xi1.tex', draw_rectangles=True)
         plt.savefig('plots/'+args.mode+'_xi1.png')
         plt.savefig('plots/'+args.mode+'_xi1.pdf')
     plt.pause(.1)
 
-    figure = plt.figure()
-    plt.hist(np.log10(xis2/angle_unit), bins=np.linspace(-3, 1, 50))
-    plt.xlabel(r"log($\xi_2$ / deg)")
-    if args.write:
-        tikz_save('plots/'+args.mode+'_xi2.tex', draw_rectangles=True)
-        plt.savefig('plots/'+args.mode+'_xi2.png')
-        plt.savefig('plots/'+args.mode+'_xi2.pdf')
-    plt.pause(.1)
+    #figure = plt.figure()
+    #plt.hist(np.log10(xis2/angle_unit), bins=np.linspace(-3, 1, 50))
+    #plt.xlabel(r"log($\xi_2$ / deg)")
+    #if args.write:
+        #tikz_save('plots/'+args.mode+'_xi2.tex', draw_rectangles=True)
+        #plt.savefig('plots/'+args.mode+'_xi2.png')
+        #plt.savefig('plots/'+args.mode+'_xi2.pdf')
+    #plt.pause(.1)
+
+    #figure = plt.figure()
+    #plt.hist(np.log10(xisb/angle_unit), bins=np.linspace(-.5, .5, 50))
+    #plt.xlabel(r"$\log(\xi_\mathrm{best} / \deg)$")
+    #if args.write:
+        #tikz_save('plots/'+args.mode+'_xi_best.tex', draw_rectangles=True)
+        #plt.savefig('plots/'+args.mode+'_xi_best.png')
+        #plt.savefig('plots/'+args.mode+'_xi_best.pdf')
+    #plt.pause(.1)
 
     figure = plt.figure()
-    plt.hist(np.log10(xisb/angle_unit), bins=np.linspace(-.5, .5, 50))
-    plt.xlabel(r"$\log(\xi_\mathrm{best} / \deg)$")
-    if args.write:
-        tikz_save('plots/'+args.mode+'_xi_best.tex', draw_rectangles=True)
-        plt.savefig('plots/'+args.mode+'_xi_best.png')
-        plt.savefig('plots/'+args.mode+'_xi_best.pdf')
-    plt.pause(.1)
-
-    figure = plt.figure()
-    plt.hist((xis1-xis2), bins=np.linspace(-.5, .5, 50))
+    plt.hist((xis1-xis2), bins=np.linspace(-.65, .65, 13), log=True)
     plt.xlabel(r"$(\xi_1 - \xi_2) / \deg)$")
     if args.write:
         tikz_save('plots/'+args.mode+'_xi_diff.tex', draw_rectangles=True)
@@ -262,8 +259,9 @@ if __name__ == '__main__':
         plt.savefig('plots/'+args.mode+'_xi_diff.pdf')
     plt.pause(.1)
 
-    ''' convert the xi-list into a dict with the number of
-        used telescopes as keys '''
+    '''
+    convert the xi-list into a dict with the number of
+    used telescopes as keys '''
     xi_vs_tel = {}
     for xi, ntel in zip(xis2, NTels):
         if ntel not in xi_vs_tel:
@@ -271,12 +269,14 @@ if __name__ == '__main__':
         else:
             xi_vs_tel[ntel].append(xi/angle_unit)
 
-    ''' create a list of energy bin-edges and -centres for violine plots '''
+    '''
+    create a list of energy bin-edges and -centres for violine plots '''
     Energy_edges = np.linspace(2, 8, 13)
     Energy_centres = (Energy_edges[1:]+Energy_edges[:-1])/2.
 
-    ''' convert the xi-list in to an energy-binned dict with
-        the bin centre as keys '''
+    '''
+    convert the xi-list in to an energy-binned dict with
+    the bin centre as keys '''
     xi_vs_energy = {}
     for en, xi in zip(EnMC, xis2):
         ''' get the bin number this event belongs into '''
@@ -311,10 +311,9 @@ if __name__ == '__main__':
 
     plt.pause(.1)
 
-
-
-    ''' convert the diffs-list into a dict with the number of
-        used telescopes as keys '''
+    '''
+    convert the diffs-list into a dict with the number of
+    used telescopes as keys '''
     diff_vs_tel = {}
     for diff, ntel in zip(diffs, NTels):
         if ntel not in diff_vs_tel:
@@ -322,9 +321,9 @@ if __name__ == '__main__':
         else:
             diff_vs_tel[ntel].append((diff/dist_unit))
 
-
-    ''' convert the diffs-list in to an energy-binned dict with
-        the bin centre as keys '''
+    '''
+    convert the diffs-list in to an energy-binned dict with
+    the bin centre as keys '''
     diff_vs_energy = {}
     for en, diff in zip(EnMC, diffs):
         ''' get the bin number this event belongs into '''
@@ -335,7 +334,9 @@ if __name__ == '__main__':
         else:
             diff_vs_energy[Energy_centres[ebin]] += [(diff/dist_unit)]
 
-
+    '''
+    plotting the core position error as violine plots with binning in
+    number of telescopes an shower energy '''
     figure = plt.figure()
     plt.subplot(211)
     plt.violinplot([np.log10(a) for a in diff_vs_tel.values()],

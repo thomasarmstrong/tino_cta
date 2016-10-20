@@ -1,15 +1,19 @@
 import numpy as np
 
+
 import signal
-stop = None
-def signal_handler(signal, frame):
-    global stop
-    if stop:
-        print('you pressed Ctrl+C again -- exiting NOW')
-        exit(-1)
-    print('you pressed Ctrl+C!')
-    print('exiting after current event')
-    stop = True
+class SignalHandler():
+    def __init__(self):
+        self.stop = False
+
+    def __call__(self, signal, frame):
+        if self.stop:
+            print('you pressed Ctrl+C again -- exiting NOW')
+            exit(-1)
+        print('you pressed Ctrl+C!')
+        print('exiting after current event')
+        self.stop = True
+
 
 import pyhessio
 def apply_mc_calibration_ASTRI(adcs, tel_id, mode=0, adc_tresh=3500):
@@ -68,3 +72,41 @@ def make_argparser():
                         const=1, default=-1,
                         help="only consider first file per type")
     return parser
+
+
+
+from matplotlib import pyplot as plt
+from matplotlib.patches import Ellipse
+from ctapipe import visualization
+continue_drawing = True
+#func_figure = plt.figure()
+def draw_image(tel_geom, pmt_signal, moments=None, pix_x=None, pix_y=None):
+    global continue_drawing
+    global func_figure
+    if continue_drawing:
+        ax = plt.subplot(111)
+        try:
+            disp = visualization.CameraDisplay(tel_geom, ax=ax)
+            disp.image = pmt_signal
+            disp.cmap = plt.cm.hot
+            disp.add_colorbar()
+            if moments:
+                disp.overlay_moments(moments, color='seagreen', linewidth=3)
+        except ValueError:
+            plt.imshow(pmt_signal.reshape(40, 40), interpolation='none',
+                       #extent=(min(pix_x).value, max(pix_x).value,
+                               #min(pix_y).value, max(pix_y).value)
+                       )
+
+            #ellipse = Ellipse(xy=(moments.cen_x, moments.cen_y),
+                              #width=moments.width, height=moments.length,
+                              #angle=np.degrees(moments.phi), fill=False)
+            #ax.add_patch(ellipse)
+
+        plt.pause(.1)
+
+        print("[enter] for next event")
+        print("anyting else: break rawing")
+        response = input("Choice: ")
+        if response != "":
+            continue_drawing = False
