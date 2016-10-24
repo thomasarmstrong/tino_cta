@@ -9,19 +9,21 @@ class CutFlow():
 
     def __init__(self, name="CutFlow"):
         self.name = name
-        self.cut_names = []
         self.cuts = {}
+        self.cut_names = []
         self.col_width = 20
 
     def count(self, name):
         if name not in self.cuts:
-            self.cut_names.append(name)
             self.cuts[name] = [None, 1]
+            self.cut_names.append(name)
         else:
             self.cuts[name][1] += 1
 
     def set_cut(self, function, name):
         self.cuts[name] = [function, 0]
+        if name not in self.cut_names:
+            self.cut_names.append(name)
 
     def cut(self, name, *args, **kwargs):
         if name not in self.cuts:
@@ -34,6 +36,16 @@ class CutFlow():
             return True
         else:
             return False
+
+    def __getitem__(self, name):
+        '''
+        returns the function stored as @name to call with
+        classifier["@name"](cut_parameter) '''
+        if name not in self.cuts:
+            raise UndefinedCutException(
+                "unknown cut {} -- only know: {}"
+                .format(name, [a for a in self.cuts.keys()]))
+        return self.cuts[name][0]
 
     def __call__(self, base_cut="noCuts"):
         if base_cut not in self.cuts:

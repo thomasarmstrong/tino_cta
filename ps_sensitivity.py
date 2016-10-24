@@ -8,25 +8,28 @@ import random
 
 from itertools import chain
 
+from helper_functions import *
+
 
 def make_mock_generator_spectrum(NEvents, Emin=2, Emax=8, NBins=6):
-
+    '''
+    since the energy distribution of the generated events is not accessible,
+    this function generates a mock E^-2 spectrum from the number of generated
+    shower events '''
     En = []
     we = []
 
-    hist, bin_edges = np.histogram([], bins=NBins,range=(Emin,Emax))
+    bin_edges = np.linspace(Emin, Emax, NBins+1)
     for bin in range(NBins):
-        En.append( (bin_edges[bin] + bin_edges[bin+1])/2. )
-        we.append( 1./(10**bin_edges[bin]) - 1./(10**bin_edges[bin+1]) )
+        En.append((bin_edges[bin] + bin_edges[bin+1])/2.)
+        we.append(1./(10**bin_edges[bin]) - 1./(10**bin_edges[bin+1]))
 
-    hist, bin_edges = np.histogram( En, weights=we, bins=NBins,range=(Emin,Emax), normed=True)
+    hist, bin_edges = np.histogram(En, weights=we, bins=NBins,
+                                   range=(Emin, Emax), normed=True)
     hist *= NEvents
     return hist, bin_edges
 
 
-def convert_astropy_array(arr,unit=None):
-    if unit is None: unit = arr[0].unit
-    return [a.to(unit).value for a in arr]*unit
 
 
 
@@ -35,10 +38,14 @@ Emax=8
 NBins=96
 if __name__ == "__main__":
 
-    gammas = Table.read("data/selected_events_g.fits")
-    proton = Table.read("data/selected_events_p.fits")
-    off_angles    = {'p': proton['off_angles'],
-                     'g': gammas['off_angles']}
+    args = make_argparser().parse_args()
+
+    gammas = Table.read("data/selected_events/"
+                        "selected_events_"+args.mode+"_g.fits")
+    proton = Table.read("data/selected_events/"
+                        "selected_events_"+args.mode+"_p.fits")
+    off_angles = {'p': proton['off_angles'],
+                  'g': gammas['off_angles']}
 
     NGammas_selected = len(gammas['off_angles'])
     NProton_selected = len(proton['off_angles'])
@@ -83,37 +90,31 @@ if __name__ == "__main__":
 
     # Crab source rate:   dN/dE = 3e-7  * (E/TeV)**-2.48 / (TeV * m² * s)
     # CR background rate: dN/dE = 0.215 * (E/TeV)**-.8/3 / (TeV * m² * s * sr)
-    # note: norm and spectral index reverse engineered from HESS and CR plots..
+    # norm and spectral index reverse engineered from HESS and CR plots..
     SourceRate = []
     BackgrRate = []
+    SNorm = 3e-7
+    BNorm = 100 * 0.1**(8./3)
     for l_edge, h_edge in zip(edges[:-1], edges[1:]):
-        SNorm = 3e-7
-        BNorm = 100 * 0.1**(8./3)
         bin_centre = 10**((l_edge+h_edge)/2.) * u.GeV
-        ''' differential source rate '''
-        bin_value_s = SNorm * (bin_centre.to(u.TeV).value)**-2.48
-        bin_value_b = BNorm * (bin_centre.to(u.TeV).value)**(-8./3.)
-        ''' multiply with bin width '''
-        bin_value_s *= (10**h_edge-10**l_edge)*u.GeV.to(u.TeV)
-        bin_value_b *= (10**h_edge-10**l_edge)*u.GeV.to(u.TeV)
-        ''' cosmic ray rate needs to be normalised to solid angle '''
-        bin_value_b *=  2*np.pi*(1 - np.cos(6*u.deg))
+        '''
+        differential source rate '''
+        bin_value_s = SNorm * (bin_centre/u.TeV)**-2.48
+        bin_value_b = BNorm * (bin_centre/u.TeV)**(-8./3.)
+        '''
+        multiply with bin width '''
+        bin_value_s *= ((10**h_edge-10**l_edge)*u.GeV) / u.TeV
+        bin_value_b *= ((10**h_edge-10**l_edge)*u.GeV) / u.TeV
+        '''
+        cosmic ray rate needs to be normalised to solid angle '''
+        bin_value_b *= Omega_Proton
 
         SourceRate.append(bin_value_s)
         BackgrRate.append(bin_value_b)
 
-    print(sum(SourceRate))
     SourceRate *= 1./(u.m**2 * u.s)
     BackgrRate *= 1./(u.m**2 * u.s)
 
-    figure = plt.figure()
-    plt.subplot(121)
-    plt.bar(edges[:-1], SourceRate.value, width=edges[1]-edges[0])
-    plt.yscale('log')
-    plt.subplot(122)
-    plt.bar(edges[:-1], BackgrRate.value, width=edges[1]-edges[0])
-    plt.yscale('log')
-    plt.show()
 
     SourceIntensity = 1
     ObsTime = (1*u.h).to(u.s)
@@ -127,37 +128,83 @@ if __name__ == "__main__":
     for ev in proton['MC_Energy']:
         weight_p.append(weight_vsE_p[np.digitize(np.log10(ev), edges) - 1])
 
+    print("expected gammas:", sum(weight_g))
+    print("expected proton:", sum(weight_p))
+    NProtExp = sum(weight_p)
+    #off_angles['p'] = []
+    #flat_weight = 100/NProtExp
+    #weight_p = []
+    #for i in np.linspace(np.cos(5*u.deg), 1, NProtExp*flat_weight):
+        #off_angles['p'].append(np.arccos(i)*u.rad.to(u.deg))
+        #weight_p.append(1./flat_weight)
+    #off_angles['p'] = np.array(off_angles['p'])
+    #print(len(weight_p))
+    #print(len(off_angles['p']))
 
+    if args.plot:
+        plt.style.use('seaborn-talk')
+        plt.style.use('t_slides')
+        angle_unit = u.deg
 
+        '''
+        plot the source and spectra to be assumed in the sensitivity study '''
+        if 0:
+            figure = plt.figure()
+            plt.subplot(121)
+            plt.bar(edges[:-1], SourceRate.value, width=edges[1]-edges[0])
+            plt.yscale('log')
+            plt.subplot(122)
+            plt.bar(edges[:-1], BackgrRate.value, width=edges[1]-edges[0])
+            plt.yscale('log')
+            plt.pause(.1)
 
-    fig2 = plt.figure()
-    unit = u.rad
-    plt.hist2d(
-        convert_astropy_array(chain(gammas['phi'], proton['phi']), unit),
-        convert_astropy_array(chain(gammas['theta'], proton['theta']), unit),
-        range=([[(180-3), (180+3)], [(20-3), (20+3)]]*u.deg).to(unit).value)
-    plt.xlabel("phi / {}".format(unit))
-    plt.ylabel("theta / {}".format(unit))
-    plt.pause(.1)
-    figure = plt.figure()
+        '''
+        plot a sky image of the events '''
+        if False:
+            fig2 = plt.figure()
+            plt.hist2d(
+                # convert_astropy_array(chain(gammas['phi'], proton['phi']), unit),
+                # convert_astropy_array(chain(gammas['theta'], proton['theta']), unit),
+                [a for a in chain(gammas['phi'], proton['phi'])],
+                [a for a in chain(gammas['theta'], proton['theta'])],
+                range=([[(180-3), (180+3)], [(20-3), (20+3)]]*u.deg) / angle_unit)
+            plt.xlabel("phi / {}".format(angle_unit))
+            plt.ylabel("theta / {}".format(angle_unit))
+            plt.pause(.1)
 
+        '''
+        plot the angular distance of the reconstructed shower direction
+        from the pseudo source in different scales '''
+        figure = plt.figure()
+        #plt.subplot(211)
+        plt.hist([off_angles['p'], off_angles['g']],
+                 weights=[weight_p, weight_g], rwidth=1, stacked=True,
+                 range=(0, 5),
+                 bins=25)
+        plt.xlabel(r"$\alpha / \mathrm{"+str(angle_unit)+"}$")
+        plt.ylabel("expected events")
+        plt.ylim([0, 3000])
 
-    plt.style.use('t_slides')
-    #plt.style.use('seaborn-talk')
+        if args.write:
+            tikz_save("plots/"+args.mode+"_proto_significance.tex",
+                        draw_rectangles=True)
 
-    plt.subplot(311)
-    plt.hist([off_angles['p'],off_angles['g']], weights=[weight_p, weight_g], rwidth=1, bins=100,stacked=True, range=(0,.1))
-    plt.xlabel(r"$\alpha / \mathrm{rad}$")
+        #plt.subplot(212)
+        #plt.hist([off_angles['p']**2,
+                  #off_angles['g']**2],
+                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
+                 #range=(0, .75),
+                 #bins=25)
+        #plt.xlabel(r"$\alpha^2 / \mathrm{"+str(angle_unit)+"}^2$")
 
-    plt.subplot(312)
-    plt.hist([off_angles['p']**2,off_angles['g']**2], weights=[weight_p, weight_g], rwidth=1, bins=100,stacked=True, range=(0,.005))
-    plt.xlabel(r"$\alpha^2 / \mathrm{rad}^2$")
+        #plt.subplot(313)
+        #plt.hist([-np.cos(off_angles['p']*u.degree.to(u.rad)),
+                  #-np.cos(off_angles['g']*u.degree.to(u.rad))],
+                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
+                 #range=(-1, -.9999),
+                 #bins=100)
+        #plt.xlabel(r"$-\cos(\alpha)$")
 
-    plt.subplot(313)
-    plt.hist([-np.cos(off_angles['p']),-np.cos(off_angles['g'])], weights=[weight_p, weight_g], rwidth=1, bins=100,stacked=True, range=(-1,-1+.002))
-    plt.xlabel(r"$-\cos(\alpha)$")
+        plt.tight_layout()
 
-    plt.tight_layout()
-
-
-    plt.show()
+        plt.show()

@@ -54,16 +54,13 @@ def make_argparser():
     parser.add_argument('-c', '--min_charge', type=int, default=0,
                         help="minimum charge per telescope after cleaning")
     parser.add_argument('-i', '--indir',   type=str,
-                        default="/local/home/tmichael/Data/cta/ASTRI9/gamma/")
+                        default="/local/home/tmichael/Data/cta/ASTRI9/")
     parser.add_argument('-r', '--runnr',   type=str, default="*")
     parser.add_argument('--tail', dest="mode", action='store_const',
                         const="tail", default="wave",
                         help="if set, use tail cleaning, otherwise wavelets")
     parser.add_argument('--dilate', default=False, action='store_true',
                         help="use dilate function for tailcut cleaning")
-    parser.add_argument('-t', '--teltype', type=str, default="all")
-    parser.add_argument('-o', '--outtoken', type=str, default=None,
-                        help="helper token; useful for refining filenames")
     parser.add_argument('-w', '--write', action='store_true',
                         help="write output -- e.g. plots, classifiers, events")
     parser.add_argument('-p', '--plot',  action='store_true',
@@ -110,3 +107,10 @@ def draw_image(tel_geom, pmt_signal, moments=None, pix_x=None, pix_y=None):
         response = input("Choice: ")
         if response != "":
             continue_drawing = False
+
+
+from matplotlib2tikz import save as tikzsave
+def tikz_save(arg, **kwargs):
+    tikzsave(arg, figureheight = '\\figureheight',
+                  figurewidth  = '\\figurewidth', **kwargs)
+

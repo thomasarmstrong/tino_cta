@@ -1,9 +1,5 @@
-from matplotlib2tikz import save as tikzsave
-def tikz_save(arg, **kwargs):
-    tikzsave(arg, figureheight = '\\figureheight',
-                  figurewidth  = '\\figurewidth', **kwargs)
-
 from sys import exit, path
+from os.path import expandvars
 import math
 import numpy as np
 
@@ -28,12 +24,12 @@ from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
 
 
-path.append("/local/home/tmichael/software/"
-            "jeremie_cta/data-pipeline-standalone-scripts")
+path.append(expandvars("$CTA_SOFT/"
+            "jeremie_cta/sap-cta-data-pipeline"))
+path.append(expandvars("$CTA_SOFT/"
+            "jeremie_cta/snippets/ctapipe"))
 
-path.append("/local/home/tmichael/software/jeremie_cta/snippets/ctapipe")
 from extract_and_crop_simtel_images import crop_astri_image
-
 
 from modules.ImageCleaning import ImageCleaner
 from modules.CutFlow import CutFlow
@@ -55,12 +51,12 @@ if __name__ == '__main__':
 
     args = make_argparser().parse_args()
 
-    filenamelist = glob("{}*run{}*gz".format(args.indir, args.runnr))
+    filenamelist = glob("{}/gamma/*run{}*gz".format(args.indir, args.runnr))
     if len(filenamelist) == 0:
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
-    Cleaner = ImageCleaner(mode="none")
+    # Cleaner = ImageCleaner(mode="none")
     Cleaner = ImageCleaner(mode=args.mode)
 
     fit = FitGammaHillas()
@@ -84,7 +80,7 @@ if __name__ == '__main__':
     tel_geom = {}
 
     allowed_tels = range(10)
-    for filename in sorted(filenamelist)[:args.last]:
+    for filename in sorted(filenamelist)[:4]:
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -164,14 +160,10 @@ if __name__ == '__main__':
                 result2            = result1
                 #result2            = fit.fit_origin_minimise(result1)
 
-                weight_sum = np.sum(circle.weight**0
-                                    for circle in fit.circles.values())
-                seed = sum([np.array([fit.telescopes["TelX"][tel_id-1],
-                                      fit.telescopes["TelY"][tel_id-1]]) *
-                            circle.weight**0
-                            for tel_id, circle in fit.circles.items()]
-                           ) / weight_sum * u.m
-                pos_fit            = fit.fit_core(seed)
+                seed = np.sum([[fit.telescopes["TelX"][tel_id-1],
+                                fit.telescopes["TelY"][tel_id-1]]
+                              for tel_id in fit.circles.keys()], axis=0) * u.m
+                pos_fit = fit.fit_core(seed)
             except TooFewTelescopesException as e:
                 print(e)
                 continue
@@ -180,24 +172,28 @@ if __name__ == '__main__':
 
             xi1 = angle(result1, shower_org).to(angle_unit)
             xi2 = angle(result2, shower_org).to(angle_unit)
-            print("xi1 = {}".format(xi1))
+
+            print()
+            # print("xi1 = {}".format(xi1))
             print("xi2 = {}".format(xi2))
-            xis1.append(xi1)
+            # xis1.append(xi1)
             xis2.append(xi2)
+            # xisb.append(min(xi1, xi2))
 
-            xisb.append(min(xi1, xi2))
-
-            print("xi1 res (68-percentile) = {}"    .format( sorted(xis1)[ int(len(xis1)*.68) ]) )
-            print("xi2 res (68-percentile) = {}"    .format( sorted(xis2)[ int(len(xis2)*.68) ]) )
-            print("xib res (68-percentile) = {}\n\n".format( sorted(xisb)[ int(len(xisb)*.68) ]) )
-
-
-
+            NEvents = len(xis2)
+            print()
+            print("xi2 res (68-percentile) = {}"
+                  .format(sorted(xis2)[int(NEvents*.68)]))
+            print()
 
             diff = length(pos_fit[:2]-shower_core)
-            print("reco = ", pos_fit, diff)
+            print("reco = ", diff)
             diffs.append(diff)
-            print("core res (68-percentile) = {}".format( sorted(diffs)[ int(len(diffs)*.68) ] ) )
+            print("core res (68-percentile) = {}"
+                  .format(sorted(diffs)[int(len(diffs)*.68)]))
+            print()
+            print("Events:", NEvents)
+            print()
 
             '''
             save number of telescopes and MC energy for this event '''
@@ -219,12 +215,14 @@ if __name__ == '__main__':
     if not args.plot:
         exit(0)
 
-    xis1 = convert_astropy_array(xis1)
+    # xis1 = convert_astropy_array(xis1)
     xis2 = convert_astropy_array(xis2)
-    xisb = convert_astropy_array(xisb)
+    # xisb = convert_astropy_array(xisb)
+
+    xis = xis2
 
     figure = plt.figure()
-    plt.hist(xis1, bins=np.linspace(0, 40, 80), log=True)
+    plt.hist(xis, bins=np.linspace(0, 25, 50), log=True)
     plt.xlabel(r"$\xi_1$ / deg")
     if args.write:
         tikz_save('plots/'+args.mode+'_xi1.tex', draw_rectangles=True)
@@ -250,20 +248,22 @@ if __name__ == '__main__':
         #plt.savefig('plots/'+args.mode+'_xi_best.pdf')
     #plt.pause(.1)
 
-    figure = plt.figure()
-    plt.hist((xis1-xis2), bins=np.linspace(-.65, .65, 13), log=True)
-    plt.xlabel(r"$(\xi_1 - \xi_2) / \deg)$")
-    if args.write:
-        tikz_save('plots/'+args.mode+'_xi_diff.tex', draw_rectangles=True)
-        plt.savefig('plots/'+args.mode+'_xi_diff.png')
-        plt.savefig('plots/'+args.mode+'_xi_diff.pdf')
-    plt.pause(.1)
+    #figure = plt.figure()
+    #plt.hist((xis1-xis2), bins=np.linspace(-.65, .65, 13), log=True)
+    #plt.xlabel(r"$(\xi_1 - \xi_2) / \deg)$")
+    #if args.write:
+        #tikz_save('plots/'+args.mode+'_xi_diff.tex', draw_rectangles=True)
+        #plt.savefig('plots/'+args.mode+'_xi_diff.png')
+        #plt.savefig('plots/'+args.mode+'_xi_diff.pdf')
+    #plt.pause(.1)
 
     '''
     convert the xi-list into a dict with the number of
     used telescopes as keys '''
     xi_vs_tel = {}
-    for xi, ntel in zip(xis2, NTels):
+    for xi, ntel in zip(xis, NTels):
+        if math.isnan(xi.value):
+            continue
         if ntel not in xi_vs_tel:
             xi_vs_tel[ntel] = [xi/angle_unit]
         else:
@@ -278,7 +278,9 @@ if __name__ == '__main__':
     convert the xi-list in to an energy-binned dict with
     the bin centre as keys '''
     xi_vs_energy = {}
-    for en, xi in zip(EnMC, xis2):
+    for en, xi in zip(EnMC, xis):
+        if math.isnan(xi.value):
+            continue
         ''' get the bin number this event belongs into '''
         ebin = np.digitize(np.log10(en/energy_unit), Energy_edges)-1
         ''' the central value of the bin is the key for the dictionary '''
@@ -287,6 +289,10 @@ if __name__ == '__main__':
         else:
             xi_vs_energy[Energy_centres[ebin]] += [xi/angle_unit]
 
+
+    '''
+    plotting the angular error as violine plots with binning in
+    number of telescopes an shower energy '''
     figure = plt.figure()
     plt.subplot(211)
     plt.violinplot([np.log10(a) for a in xi_vs_tel.values()],
@@ -301,7 +307,7 @@ if __name__ == '__main__':
                    [a for a in xi_vs_energy.keys()],
                    points=60, widths=(Energy_edges[1]-Energy_edges[0])/1.5,
                    showextrema=True, showmedians=True)
-    plt.xlabel("Energy / GeV")
+    plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\xi_2$ / deg)")
     plt.grid()
     if args.write:
@@ -351,7 +357,7 @@ if __name__ == '__main__':
                    [a for a in diff_vs_energy.keys()],
                    points=60, widths=(Energy_edges[1]-Energy_edges[0])/1.5,
                    showextrema=True, showmedians=True)
-    plt.xlabel("Energy / GeV")
+    plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\Delta R$ / m)")
     plt.grid()
     if args.write:
