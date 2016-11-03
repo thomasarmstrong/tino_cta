@@ -1,5 +1,6 @@
 import numpy as np
 
+from astropy import units as u
 
 import signal
 class SignalHandler():
@@ -40,7 +41,6 @@ def apply_mc_calibration_ASTRI(adcs, tel_id, mode=0, adc_tresh=3500):
     return np.array(calibrated)
 
 
-from astropy import units as u
 def convert_astropy_array(arr, unit=None):
     if unit is None: unit = arr[0].unit
     return np.array([a.to(unit).value for a in arr])*unit
@@ -114,3 +114,82 @@ def tikz_save(arg, **kwargs):
     tikzsave(arg, figureheight = '\\figureheight',
                   figurewidth  = '\\figurewidth', **kwargs)
 
+
+
+def make_mock_event_rate(spectra, binEdges=None, Emin=None, Emax=None,
+                         E_unit=u.GeV, NBins=None, logE=True, norm=None):
+
+    rates = [[]]*len(spectra)
+
+
+    if binEdges is None:
+        if logE:
+            Emin = np.log10(Emin)
+            Emax = np.log10(Emax)
+        binEdges = np.linspace(Emin, Emax, NBins+1, True)
+
+    for l_edge, h_edge in zip(binEdges[:-1], binEdges[1:]):
+        if logE:
+            bin_centre = 10**((l_edge+h_edge)/2.) * E_unit
+            bin_width = (10**h_edge-10**l_edge)*E_unit
+
+        else:
+            bin_centre = (l_edge+h_edge) * E_unit / 2.
+            bin_width = (h_edge-l_edge)*E_unit
+
+        for i, spectrum in enumerate(spectra):
+            bin_events = spectrum(bin_centre) * bin_width
+            rates[i].append(bin_events)
+
+    for i, rate in enumerate(rates):
+        rate = convert_astropy_array(rate)
+        if norm:
+            rate *= norm/np.sum(rate)
+        rates[i] = rate
+
+    return rates, binEdges
+
+
+if __name__ == "__main__":
+    def Eminus2(e, unit = u.GeV):
+        return (e/unit)**(-2) / (u.GeV * u.s * u.m**2)
+    import sys
+    ebins = np.linspace(2,8,7,True)
+    rate, binEdges = make_mock_event_rate([Eminus2], logE=int(sys.argv[1]),
+                                          Emin=1e2, Emax=1e8, NBins=16,
+                                          #binEdges=ebins,
+                                          norm=1)
+    print(binEdges)
+    figure = plt.figure()
+    #plt.plot(marker='o',
+    plt.bar(
+        (binEdges[1:]+binEdges[:-1])/2, rate[0].value )
+    plt.yscale('log')
+    if not int(sys.argv[1]):
+        plt.xscale('log')
+    plt.show()
+
+
+# ================================== #
+# Compute Eq. (17) of Li & Ma (1983) #
+# ================================== #
+def sigma_lima(Non, Noff, alpha=0.2):
+    """
+    Compute Eq. (17) of Li & Ma (1983).
+
+    Parameters:
+     Non   - Number of on counts
+     Noff  - Number of off counts
+    Keywords:
+     alpha - Ratio of on-to-off exposure
+    """
+
+    alpha1 = alpha + 1.0
+    sum    = Non + Noff
+    arg1   = Non / sum
+    arg2   = Noff / sum
+    term1  = Non  * np.log((alpha1/alpha)*arg1)
+    term2  = Noff * np.log(alpha1*arg2)
+    sigma  = np.sqrt(2.0 * (term1 + term2))
+
+    return sigma

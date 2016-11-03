@@ -1,76 +1,167 @@
-from astropy import units as u
+from astropy.table import Table
 
 
 class UndefinedCutException(Exception):
     pass
 
+class PureCountingCutException(Exception):
+    pass
+
 
 class CutFlow():
-
+    '''
+    a class that keeps track of e.g. events/images that passed cuts or other
+    events that could reject them '''
     def __init__(self, name="CutFlow"):
-        self.name = name
+        '''
+            Parameters:
+            -----------
+            name : string (default: "CutFlow")
+                name for the specific instance
+        '''
         self.cuts = {}
-        self.cut_names = []
-        self.col_width = 20
+        self.name = name
 
-    def count(self, name):
-        if name not in self.cuts:
-            self.cuts[name] = [None, 1]
-            self.cut_names.append(name)
+    def count(self, cut):
+        '''
+            counts an event/image at a given stage of the analysis
+
+            Parameters:
+            -----------
+            cut : string
+                name of the cut/stage where you want to count
+
+            Note:
+            -----
+            If @cut is not yet being tracked, it will simply be added
+            Will be an alias to __getitem__
+        '''
+        if cut not in self.cuts:
+            self.cuts[cut] = [None, 1]
         else:
-            self.cuts[name][1] += 1
+            self.cuts[cut][1] += 1
 
-    def set_cut(self, function, name):
-        self.cuts[name] = [function, 0]
-        if name not in self.cut_names:
-            self.cut_names.append(name)
+    def set_cut(self, function, cut):
+        '''
+            sets a function that selects on whatever you want to count
+            sets the counter corresponding to the selection criterion to 0
+            that means: it overwrites whatever you counted before under this
+            name
 
-    def cut(self, name, *args, **kwargs):
-        if name not in self.cuts:
+            Parameters:
+            -----------
+            function : function
+                a function that is your selection criterion
+                should return True if event shall pass and False if event
+                shall be rejected
+            cut : string
+                name of the cut/stage where you want to count
+
+            Note:
+            -----
+            Will be an alias to add_cut
+        '''
+        self.cuts[cut] = [function, 0]
+
+    def cut(self, cut, *args, **kwargs):
+        '''
+            selects the function associated with @cut and hands it all
+            additional arguments provided. if the function returns True,
+            the event counter is incremented.
+
+            Parameters:
+            -----------
+            cut : string
+                name of the selection criterion
+            args, kwargs: additional arguments
+                anything you want to hand to the associated function
+
+            Returns:
+            --------
+            True if the function evaluats to True
+            False otherwise
+
+            Raises:
+            -------
+            UndefinedCutException if @cut is not known
+            PureCountingCutException if @cut has no associated function
+            (i.e. manual counting mode)
+        '''
+        if cut not in self.cuts:
             raise UndefinedCutException(
                 "unknown cut {} -- only know: {}"
-                .format(name, [a for a in self.cuts.keys()]))
+                .format(cut, [a for a in self.cuts.keys()]))
+        elif self.cuts[cut][0] is None:
+            raise PureCountingCutException(
+                "{} has no function associated".format(cut))
 
-        if self.cuts[name][0](*args, **kwargs):
-            self.cuts[name][1] += 1
+        if self.cuts[cut][0](*args, **kwargs):
+            self.cuts[cut][1] += 1
             return True
         else:
             return False
 
-    def __getitem__(self, name):
+    def __call__(self, base_cut=None):
         '''
-        returns the function stored as @name to call with
-        classifier["@name"](cut_parameter) '''
-        if name not in self.cuts:
-            raise UndefinedCutException(
-                "unknown cut {} -- only know: {}"
-                .format(name, [a for a in self.cuts.keys()]))
-        return self.cuts[name][0]
+            creates an astropy table of the cut names, counted events and
+            selection efficiencies
+            prints the instance name and the astropy table
 
-    def __call__(self, base_cut="noCuts"):
-        if base_cut not in self.cuts:
+            Parameters:
+            -----------
+            base_cut : string
+                name of the selection criterion that should be taken as 100 %
+                in efficiency calculation
+
+            Returns:
+            --------
+            t : astropy.Table
+                the table containing the cut names, counted events and
+                efficiencies -- sorted descending by number of counted events
+        '''
+        print(self.name)
+        t = self.get_table(base_cut=None)
+        print(t)
+        return t
+
+    def get_table(self, base_cut=None):
+        '''
+            creates an astropy table of the cut names, counted events and
+            selection efficiencies
+
+            Parameters:
+            -----------
+            base_cut : string (default: None)
+                name of the selection criterion that should be taken as 100 %
+                in efficiency calculation
+                if not given, the criterion with the highest count is used
+
+            Returns:
+            --------
+            t : astropy.Table
+                the table containing the cut names, counted events and
+                efficiencies -- sorted descending by number of counted events
+        '''
+
+
+        if base_cut is None:
+            base_value = max([a[1] for a in self.cuts.values()])
+        elif base_cut not in self.cuts:
             raise UndefinedCutException(
                 "unknown cut {} -- only know: {}"
                 .format(base_cut, [a for a in self.cuts.keys()]))
-        base_value = self.cuts[base_cut][1]
+        else:
+            base_value = self.cuts[base_cut][1]
 
-        print(self.name)
-        print("Cut Name" +
-              " "*(self.col_width-5-len("Cut Name")) +
-              "passed Events" +
-              " "*(self.col_width-8) +
-              "efficiency")
 
-        for id, cut in enumerate(self.cut_names):
-            value = self.cuts[cut][1]
-            col_buffer = 0
-            if value < 10: col_buffer = 1
-            if value > 99: col_buffer = -1
-            print("{}{}{}{}{}".format(
-                  cut,
-                  " "*(self.col_width-len(cut)+col_buffer),
-                  value,
-                  " "*(self.col_width),
-                  value/base_value*100*u.percent)
-                  )
+        t = Table([[cut for cut in self.cuts.keys()],
+                   [self.cuts[cut][1] for cut in self.cuts.keys()],
+                   [self.cuts[cut][1]/base_value for cut in self.cuts.keys()]],
+                  names=['Cut Name', 'selected Events', 'Efficiency'])
 
+        t.sort("selected Events")
+        t.reverse()
+        return t
+
+    add_cut = set_cut
+    __getitem__ = count

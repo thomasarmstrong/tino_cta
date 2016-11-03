@@ -91,6 +91,10 @@ if __name__ == "__main__":
     # Crab source rate:   dN/dE = 3e-7  * (E/TeV)**-2.48 / (TeV * m² * s)
     # CR background rate: dN/dE = 0.215 * (E/TeV)**-.8/3 / (TeV * m² * s * sr)
     # norm and spectral index reverse engineered from HESS and CR plots..
+    def crab_source_rate(E):
+        return 3e-7 * (E/u.TeV)**-2.48 / (u.TeV * u.m**2 * u.s)
+    def CR_background_rate(E):
+         100 * 0.1**(8./3) * (E/u.TeV)**-.8/3 / (u.TeV * u.m**2 * u.s * u.sr)
     SourceRate = []
     BackgrRate = []
     SNorm = 3e-7
