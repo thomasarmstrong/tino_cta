@@ -31,7 +31,7 @@ path.append(expandvars("$CTA_SOFT/"
 
 from extract_and_crop_simtel_images import crop_astri_image
 
-from modules.ImageCleaning import ImageCleaner
+from modules.ImageCleaning import ImageCleaner, EdgeEventException
 from modules.CutFlow import CutFlow
 
 from helper_functions import *
@@ -79,8 +79,9 @@ if __name__ == '__main__':
 
     tel_geom = {}
 
-    allowed_tels = range(10)
-    for filename in sorted(filenamelist)[:4]:
+    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    # allowed_tels = range(34)  # all ASTRI telescopes
+    for filename in sorted(filenamelist):
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -91,7 +92,8 @@ if __name__ == '__main__':
 
             Eventcutflow.count("noCuts")
 
-            if len(event.dl0.tels_with_data) < 2: continue
+            if len(event.dl0.tels_with_data) < 2:
+                continue
 
             Eventcutflow.count("min2Tels")
 
@@ -102,12 +104,12 @@ if __name__ == '__main__':
             # for tel_id, tel in event.mc.tel.items():
                 # pmt_signal = tel.photo_electrons
 
-            for tel_id in set(event.trig.tels_with_trigger) & \
-                          set(event.dl0.tels_with_data):
+            for tel_id in event.dl0.tels_with_data:
 
                 Imagecutflow.count("noCuts")
 
-                pmt_signal = apply_mc_calibration_ASTRI(event.dl0.tel[tel_id].adc_sums, tel_id)
+                pmt_signal = apply_mc_calibration_ASTRI(
+                    event.dl0.tel[tel_id].adc_sums, tel_id)
 
                 Imagecutflow.count("calibration")
 
@@ -123,17 +125,18 @@ if __name__ == '__main__':
                 except FileNotFoundError as e:
                     print(e)
                     continue
+                except EdgeEventException:
+                    continue
 
                 Imagecutflow.count("cleaned")
 
-                if np.sum(pmt_signal) < args.min_charge: continue
+                if np.sum(pmt_signal) < args.min_charge:
+                    continue
 
                 Imagecutflow.count("minCharge")
 
                 try:
-                    moments, moms2 = hillas_parameters(pix_x, pix_y,
-                                                       pmt_signal)
-                    hillas_dict[tel_id] = moments
+                    hillas_dict[tel_id] = hillas_parameters(pix_x, pix_y, pmt_signal)[0]
                 except HillasParameterizationError as e:
                     print(e)
                     continue
@@ -146,19 +149,19 @@ if __name__ == '__main__':
 
             Eventcutflow.count("GreatCircles")
 
-
             shower = event.mc
             # corsika measures azimuth the other way around, using phi=-az
             shower_dir = set_phi_theta(-shower.az, 90.*u.deg+shower.alt)
             # shower direction is downwards, shower origin up
             shower_org = -shower_dir
 
-            shower_core = np.array([shower.core_x.value, shower.core_y.value])*u.m
+            shower_core = np.array([shower.core_x.value,
+                                    shower.core_y.value])*u.m
 
             try:
                 result1, crossings = fit.fit_origin_crosses()
                 result2            = result1
-                #result2            = fit.fit_origin_minimise(result1)
+                result2            = fit.fit_origin_minimise(result1)
 
                 seed = np.sum([[fit.telescopes["TelX"][tel_id-1],
                                 fit.telescopes["TelY"][tel_id-1]]
@@ -174,14 +177,17 @@ if __name__ == '__main__':
             xi2 = angle(result2, shower_org).to(angle_unit)
 
             print()
-            # print("xi1 = {}".format(xi1))
+            print("xi1 = {}".format(xi1))
             print("xi2 = {}".format(xi2))
-            # xis1.append(xi1)
+            print("x1-xi2 = {}".format(xi1-xi2))
+            xis1.append(xi1)
             xis2.append(xi2)
             # xisb.append(min(xi1, xi2))
 
             NEvents = len(xis2)
             print()
+            print("xi1 res (68-percentile) = {}"
+                  .format(sorted(xis1)[int(NEvents*.68)]))
             print("xi2 res (68-percentile) = {}"
                   .format(sorted(xis2)[int(NEvents*.68)]))
             print()

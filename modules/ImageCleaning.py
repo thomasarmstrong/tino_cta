@@ -117,6 +117,7 @@ class ImageCleaner:
         elif self.mode == "none":
             pix_x, pix_y = tel_geom.pix_x, tel_geom.pix_y
         else:
-            raise UnknownModeException('cleaning mode "{}" not found'.format(mode))
+            raise UnknownModeException(
+                'cleaning mode "{}" not found'.format(self.mode))
 
         return img, pix_x, pix_y

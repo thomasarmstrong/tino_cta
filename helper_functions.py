@@ -43,7 +43,7 @@ def apply_mc_calibration_ASTRI(adcs, tel_id, mode=0, adc_tresh=3500):
 
 def convert_astropy_array(arr, unit=None):
     if unit is None: unit = arr[0].unit
-    return np.array([a.to(unit).value for a in arr])*unit
+    return (np.array([a.to(unit).value for a in arr])*unit).si
 
 
 import argparse
@@ -115,17 +115,15 @@ def tikz_save(arg, **kwargs):
                   figurewidth  = '\\figurewidth', **kwargs)
 
 
-
 def make_mock_event_rate(spectra, binEdges=None, Emin=None, Emax=None,
                          E_unit=u.GeV, NBins=None, logE=True, norm=None):
 
-    rates = [[]]*len(spectra)
-
+    rates = [[] for f in spectra]
 
     if binEdges is None:
         if logE:
-            Emin = np.log10(Emin)
-            Emax = np.log10(Emax)
+            Emin = np.log10(Emin/E_unit)
+            Emax = np.log10(Emax/E_unit)
         binEdges = np.linspace(Emin, Emax, NBins+1, True)
 
     for l_edge, h_edge in zip(binEdges[:-1], binEdges[1:]):
@@ -136,7 +134,6 @@ def make_mock_event_rate(spectra, binEdges=None, Emin=None, Emax=None,
         else:
             bin_centre = (l_edge+h_edge) * E_unit / 2.
             bin_width = (h_edge-l_edge)*E_unit
-
         for i, spectrum in enumerate(spectra):
             bin_events = spectrum(bin_centre) * bin_width
             rates[i].append(bin_events)
@@ -144,31 +141,10 @@ def make_mock_event_rate(spectra, binEdges=None, Emin=None, Emax=None,
     for i, rate in enumerate(rates):
         rate = convert_astropy_array(rate)
         if norm:
-            rate *= norm/np.sum(rate)
+            rate *= norm[i]/np.sum(rate)
         rates[i] = rate
 
-    return rates, binEdges
-
-
-if __name__ == "__main__":
-    def Eminus2(e, unit = u.GeV):
-        return (e/unit)**(-2) / (u.GeV * u.s * u.m**2)
-    import sys
-    ebins = np.linspace(2,8,7,True)
-    rate, binEdges = make_mock_event_rate([Eminus2], logE=int(sys.argv[1]),
-                                          Emin=1e2, Emax=1e8, NBins=16,
-                                          #binEdges=ebins,
-                                          norm=1)
-    print(binEdges)
-    figure = plt.figure()
-    #plt.plot(marker='o',
-    plt.bar(
-        (binEdges[1:]+binEdges[:-1])/2, rate[0].value )
-    plt.yscale('log')
-    if not int(sys.argv[1]):
-        plt.xscale('log')
-    plt.show()
-
+    return (*rates), binEdges
 
 # ================================== #
 # Compute Eq. (17) of Li & Ma (1983) #
@@ -193,3 +169,26 @@ def sigma_lima(Non, Noff, alpha=0.2):
     sigma  = np.sqrt(2.0 * (term1 + term2))
 
     return sigma
+
+
+if __name__ == "__main__":
+
+    def Eminus2(e, unit=u.GeV):
+        return (e/unit)**(-2) / (unit * u.s * u.m**2)
+
+    import sys
+    ebins = np.linspace(2,8,7,True)
+    rate, binEdges = make_mock_event_rate([Eminus2], logE=int(sys.argv[1]),
+                                          Emin=1e2, Emax=1e8, NBins=16,
+                                          #binEdges=ebins,
+                                          norm=1)
+    print(binEdges)
+    figure = plt.figure()
+    #plt.plot(marker='o',
+    plt.bar(
+        (binEdges[1:]+binEdges[:-1])/2, rate[0].value )
+    plt.yscale('log')
+    if not int(sys.argv[1]):
+        plt.xscale('log')
+    plt.show()
+

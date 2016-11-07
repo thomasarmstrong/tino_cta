@@ -95,6 +95,7 @@ if __name__ == '__main__':
     source_orig = None
     fit_origs   = {'g':[], 'p':[]}
     MC_Energy   = {'g':[], 'p':[]}
+    multiplicity = {'g':[], 'p':[]}
 
     events_total         = {'g':0, 'p':0}
     events_passd_telcut1 = {'g':0, 'p':0}
@@ -137,10 +138,10 @@ if __name__ == '__main__':
                     shower direction is downwards, shower origin up '''
                     source_orig = -source_dir
 
+                NTels = len(event.dl0.tels_with_data)
                 '''
                 skip events with less than minimum hit telescopes '''
-                if len(set(event.trig.tels_with_trigger) &
-                       set(event.dl0.tels_with_data)) < min_tel:
+                if NTels < min_tel:
                     continue
                 events_passd_telcut1[cl] += 1
 
@@ -149,8 +150,7 @@ if __name__ == '__main__':
                 tot_signal = 0
                 hillas_dict1 = {}
                 hillas_dict2 = {}
-                for tel_id in set(event.trig.tels_with_trigger) & \
-                              set(event.dl0.tels_with_data):
+                for tel_id in event.dl0.tels_with_data:
                     classifier.total_images += 1
 
                     pmt_signal = apply_mc_calibration_ASTRI(
@@ -262,6 +262,7 @@ if __name__ == '__main__':
 
                 fit_origs[cl].append(result2)
                 MC_Energy[cl].append(event.mc.energy/u.GeV)
+                multiplicity[cl].append(NTels)
 
             if signal_handler.stop:
                 stop = False
@@ -282,8 +283,8 @@ if __name__ == '__main__':
     if args.write:
         from astropy.table import Table
         for cl in ['g', 'p']:
-            Table([off_angles[cl], MC_Energy[cl], phi[cl], the[cl]],
-                  names=("off_angles", "MC_Energy", "phi", "theta")
+            Table([off_angles[cl], MC_Energy[cl], phi[cl], the[cl], NTels[cl]],
+                  names=("off_angles", "MC_Energy", "phi", "theta", "multiplicity")
                   ).write("data/selected_events/selected_events_" +
                           args.mode+"_"+cl+".fits",
                           overwrite=True)

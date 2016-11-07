@@ -1,0 +1,7 @@
+tino_cta.kdev4
+*.fits
+*.log
+*~
+data/
+plots/
+__pycache__
