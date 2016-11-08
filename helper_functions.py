@@ -171,6 +171,62 @@ def sigma_lima(Non, Noff, alpha=0.2):
     return sigma
 
 
+
+
+def plot_hex_and_violine(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
+                         xlabel="", ylabel="", do_hex=True, do_violine=True,
+                         cm=plt.cm.hot):
+
+    val_vs_dep = {}
+    bin_centres = (bin_edges[1:]+bin_edges[:-1])/2.
+    for dep, val in zip(abscissa, ordinate):
+        ''' get the bin number this event belongs into '''
+        ibin = np.digitize(dep, bin_edges)-1
+        ibin = min(ibin, len(bin_centres)-1)
+
+        ''' the central value of the bin is the key for the dictionary '''
+        if bin_centres[ibin] not in val_vs_dep:
+            val_vs_dep[bin_centres[ibin]]  = [val]
+        else:
+            val_vs_dep[bin_centres[ibin]] += [val]
+
+    plt.figure()
+    if do_hex and do_violine:
+        plt.subplot(211)
+    if do_hex:
+        plt.hexbin(abscissa,
+                ordinate,
+                vmax=vmax,
+                gridsize=40,
+                extent=extent,
+                cmap=cm)
+        plt.colorbar()
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+
+    if do_hex and do_violine:
+        plt.subplot(212)
+
+    if do_violine:
+        vals = [a for a in val_vs_dep.values()]
+        keys = [a for a in val_vs_dep.keys()]
+        try:
+            widths=bin_edges[1]-bin_edges[0]
+        except IndexError:
+            widths = 1
+
+        plt.violinplot(vals, keys,
+                    points=60, widths=widths,
+                    showextrema=True, showmedians=True)
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.grid()
+
+
+
+
+
+
 if __name__ == "__main__":
 
     def Eminus2(e, unit=u.GeV):

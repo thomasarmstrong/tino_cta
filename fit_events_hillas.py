@@ -5,6 +5,8 @@ import numpy as np
 
 from glob import glob
 
+from bisect import insort
+
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
@@ -73,7 +75,12 @@ if __name__ == '__main__':
     EnMC  = []
     xis1  = []
     xis2  = []
-    xisb  = []
+    xisd  = []
+
+    tel_signal = []
+    hillas_tilt = []
+    hillas_length = []
+    hillas_width = []
 
     diffs = []
 
@@ -81,7 +88,7 @@ if __name__ == '__main__':
 
     allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
-    for filename in sorted(filenamelist):
+    for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -155,6 +162,15 @@ if __name__ == '__main__':
             # shower direction is downwards, shower origin up
             shower_org = -shower_dir
 
+            for k in fit.circles.keys():
+                c = fit.circles[k]
+                h = hillas_dict[k]
+                tel_signal.append(c.signal)
+                hillas_tilt.append(abs((angle(c.norm, shower_org)*u.rad).to(angle_unit) -
+                                       90*u.deg))
+                hillas_length.append(h.length * u.m)
+                hillas_width.append(h.width * u.m)
+
             shower_core = np.array([shower.core_x.value,
                                     shower.core_y.value])*u.m
 
@@ -180,23 +196,25 @@ if __name__ == '__main__':
             print("xi1 = {}".format(xi1))
             print("xi2 = {}".format(xi2))
             print("x1-xi2 = {}".format(xi1-xi2))
-            xis1.append(xi1)
-            xis2.append(xi2)
-            # xisb.append(min(xi1, xi2))
+
+            insort(xis1, xi1)
+            insort(xis2, xi2)
+            insort(xisd, xi1-xi2)
 
             NEvents = len(xis2)
             print()
             print("xi1 res (68-percentile) = {}"
-                  .format(sorted(xis1)[int(NEvents*.68)]))
+                  .format(xis1[int(NEvents*.68)]))
             print("xi2 res (68-percentile) = {}"
-                  .format(sorted(xis2)[int(NEvents*.68)]))
+                  .format(xis2[int(NEvents*.68)]))
+            print("median difference = {}".format(xisd[NEvents//2]))
             print()
 
             diff = length(pos_fit[:2]-shower_core)
             print("reco = ", diff)
-            diffs.append(diff)
+            insort(diffs, diff)
             print("core res (68-percentile) = {}"
-                  .format(sorted(diffs)[int(len(diffs)*.68)]))
+                  .format(diffs[int(len(diffs)*.68)]))
             print()
             print("Events:", NEvents)
             print()
@@ -216,6 +234,35 @@ if __name__ == '__main__':
     print()
     Imagecutflow()
 
+
+
+
+
+    hillas_tilt = convert_astropy_array(hillas_tilt)
+    size_edges = np.linspace(1, 6, 21)
+    plot_hex_and_violine(np.log10(tel_signal),
+                         np.log10(hillas_tilt/angle_unit),
+                         size_edges,
+                         extent=[0, 5, -5, 1],
+                         xlabel="log10(signal size)",
+                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+    plt.suptitle(args.mode)
+    tikz_save("plots/alpha_vs_signal_{}.tex".format(args.mode))
+    plt.pause(.1)
+
+    hillas_length = convert_astropy_array(hillas_length)
+    hillas_width = convert_astropy_array(hillas_width)
+    lovw_edges = np.linspace(0, 3, 31)
+    plot_hex_and_violine(np.log10(hillas_length/hillas_width),
+                         np.log10(hillas_tilt/angle_unit),
+                         lovw_edges,
+                         extent=[0, 2, -4.5, 1],
+                         xlabel="log10(length/width)",
+                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+    plt.suptitle(args.mode)
+    tikz_save("plots/alpha_vs_lenOVwidth_{}.tex".format(args.mode))
+    plt.show()
+
     '''
     if we don't want to plot anything, we can exit now '''
     if not args.plot:
@@ -226,6 +273,7 @@ if __name__ == '__main__':
     # xisb = convert_astropy_array(xisb)
 
     xis = xis2
+
 
     figure = plt.figure()
     plt.hist(xis, bins=np.linspace(0, 25, 50), log=True)
@@ -263,6 +311,7 @@ if __name__ == '__main__':
         #plt.savefig('plots/'+args.mode+'_xi_diff.pdf')
     #plt.pause(.1)
 
+
     '''
     convert the xi-list into a dict with the number of
     used telescopes as keys '''
@@ -288,12 +337,12 @@ if __name__ == '__main__':
         if math.isnan(xi.value):
             continue
         ''' get the bin number this event belongs into '''
-        ebin = np.digitize(np.log10(en/energy_unit), Energy_edges)-1
+        sbin = np.digitize(np.log10(en/energy_unit), Energy_edges)-1
         ''' the central value of the bin is the key for the dictionary '''
-        if Energy_centres[ebin] not in xi_vs_energy:
-            xi_vs_energy[Energy_centres[ebin]]  = [xi/angle_unit]
+        if Energy_centres[sbin] not in xi_vs_energy:
+            xi_vs_energy[Energy_centres[sbin]]  = [xi/angle_unit]
         else:
-            xi_vs_energy[Energy_centres[ebin]] += [xi/angle_unit]
+            xi_vs_energy[Energy_centres[sbin]] += [xi/angle_unit]
 
 
     '''
@@ -339,12 +388,12 @@ if __name__ == '__main__':
     diff_vs_energy = {}
     for en, diff in zip(EnMC, diffs):
         ''' get the bin number this event belongs into '''
-        ebin = np.digitize(np.log10(en/energy_unit), Energy_edges)-1
+        sbin = np.digitize(np.log10(en/energy_unit), Energy_edges)-1
         ''' the central value of the bin is the key for the dictionary '''
-        if Energy_centres[ebin] not in diff_vs_energy:
-            diff_vs_energy[Energy_centres[ebin]]  = [(diff/dist_unit)]
+        if Energy_centres[sbin] not in diff_vs_energy:
+            diff_vs_energy[Energy_centres[sbin]]  = [(diff/dist_unit)]
         else:
-            diff_vs_energy[Energy_centres[ebin]] += [(diff/dist_unit)]
+            diff_vs_energy[Energy_centres[sbin]] += [(diff/dist_unit)]
 
     '''
     plotting the core position error as violine plots with binning in
