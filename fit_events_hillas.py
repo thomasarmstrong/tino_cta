@@ -54,19 +54,29 @@ if __name__ == '__main__':
     args = make_argparser().parse_args()
 
     filenamelist = glob("{}/gamma/*run{}*gz".format(args.indir, args.runnr))
+    filenamelist = glob("{}/proton/*run{}*gz".format(args.indir, args.runnr))
     if len(filenamelist) == 0:
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
-    # Cleaner = ImageCleaner(mode="none")
-    Cleaner = ImageCleaner(mode=args.mode)
+    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    # allowed_tels = range(34)  # all ASTRI telescopes
 
-    fit = FitGammaHillas()
-    fit.setup_geometry(*load_hessio(filenamelist[0]),
-                       phi=180*u.deg, theta=20*u.deg)
+    cam_geom = {}
+    tel_phi = {}
+    tel_theta = {}
+    tel_orientation = (tel_phi, tel_theta)
+    for i in allowed_tels:
+        tel_phi[i] = 180.*u.deg
+        tel_theta[i] = 20.*u.deg
 
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
+
+    # Cleaner = ImageCleaner(mode="none")
+    Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow)
+
+    fit = FitGammaHillas()
 
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
@@ -83,11 +93,6 @@ if __name__ == '__main__':
     hillas_width = []
 
     diffs = []
-
-    tel_geom = {}
-
-    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    # allowed_tels = range(34)  # all ASTRI telescopes
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -120,27 +125,25 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("calibration")
 
-                if tel_id not in tel_geom:
-                    tel_geom[tel_id] = CameraGeometry.guess(
-                                        fit.cameras(tel_id)['PixX'].to(u.m),
-                                        fit.cameras(tel_id)['PixY'].to(u.m),
-                                        fit.telescopes['FL'][tel_id-1] * u.m)
+                if tel_id not in cam_geom:
+                    cam_geom[tel_id] = CameraGeometry.guess(
+                                        event.meta.pixel_pos[tel_id][0],
+                                        event.meta.pixel_pos[tel_id][1],
+                                        event.meta.optical_foclen[tel_id])
 
                 try:
                     pmt_signal, pix_x, pix_y = \
-                        Cleaner.clean(pmt_signal, tel_geom[tel_id])
+                        Cleaner.clean(pmt_signal, cam_geom[tel_id])
                 except FileNotFoundError as e:
                     print(e)
                     continue
                 except EdgeEventException:
                     continue
 
-                Imagecutflow.count("cleaned")
-
                 if np.sum(pmt_signal) < args.min_charge:
                     continue
 
-                Imagecutflow.count("minCharge")
+                Imagecutflow.count("minCharge_{}".format(args.min_charge))
 
                 try:
                     hillas_dict[tel_id] = hillas_parameters(pix_x, pix_y, pmt_signal)[0]
@@ -152,7 +155,7 @@ if __name__ == '__main__':
 
             Eventcutflow.count("ImagePreparation")
 
-            fit.get_great_circles(hillas_dict)
+            fit.get_great_circles(hillas_dict, event.meta, *tel_orientation)
 
             Eventcutflow.count("GreatCircles")
 
@@ -164,8 +167,9 @@ if __name__ == '__main__':
 
             for k in fit.circles.keys():
                 c = fit.circles[k]
+                print("circle pos", c.pos)
                 h = hillas_dict[k]
-                tel_signal.append(c.signal)
+                tel_signal.append(h.size)
                 hillas_tilt.append(abs((angle(c.norm, shower_org)*u.rad).to(angle_unit) -
                                        90*u.deg))
                 hillas_length.append(h.length * u.m)
@@ -175,14 +179,18 @@ if __name__ == '__main__':
                                     shower.core_y.value])*u.m
 
             try:
-                result1, crossings = fit.fit_origin_crosses()
-                result2            = result1
-                result2            = fit.fit_origin_minimise(result1)
+                result1 = fit.fit_origin_crosses()[0]
+                result2 = fit.fit_origin_minimise(result1)
 
-                seed = np.sum([[fit.telescopes["TelX"][tel_id-1],
-                                fit.telescopes["TelY"][tel_id-1]]
-                              for tel_id in fit.circles.keys()], axis=0) * u.m
+                seed = np.mean([event.meta.tel_pos[tel_id]
+                               for tel_id in fit.circles.keys()], axis=0)[:2]*u.m
+                seed = [0, 0]*u.m
                 pos_fit = fit.fit_core(seed)
+
+                print("seed:", seed)
+                print("pos_fit:", pos_fit)
+                print("mc pos:", shower_core)
+                print()
             except TooFewTelescopesException as e:
                 print(e)
                 continue
@@ -230,13 +238,14 @@ if __name__ == '__main__':
     '''
     print the cutflows for telescopes and camera images '''
     print()
-    Eventcutflow()
+    Eventcutflow("min2Tels")
     print()
     Imagecutflow()
 
-
-
-
+    '''
+    if we don't want to plot anything, we can exit now '''
+    if not args.plot:
+        exit(0)
 
     hillas_tilt = convert_astropy_array(hillas_tilt)
     size_edges = np.linspace(1, 6, 21)
@@ -247,12 +256,13 @@ if __name__ == '__main__':
                          xlabel="log10(signal size)",
                          ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
-    tikz_save("plots/alpha_vs_signal_{}.tex".format(args.mode))
+    if args.write:
+        save_fig("plots/alpha_vs_signal_{}".format(args.mode))
     plt.pause(.1)
 
     hillas_length = convert_astropy_array(hillas_length)
     hillas_width = convert_astropy_array(hillas_width)
-    lovw_edges = np.linspace(0, 3, 31)
+    lovw_edges = np.linspace(0, 3, 16)
     plot_hex_and_violine(np.log10(hillas_length/hillas_width),
                          np.log10(hillas_tilt/angle_unit),
                          lovw_edges,
@@ -260,13 +270,10 @@ if __name__ == '__main__':
                          xlabel="log10(length/width)",
                          ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
-    tikz_save("plots/alpha_vs_lenOVwidth_{}.tex".format(args.mode))
+    if args.write:
+        save_fig("plots/alpha_vs_lenOVwidth_{}".format(args.mode))
     plt.show()
 
-    '''
-    if we don't want to plot anything, we can exit now '''
-    if not args.plot:
-        exit(0)
 
     # xis1 = convert_astropy_array(xis1)
     xis2 = convert_astropy_array(xis2)
@@ -277,38 +284,30 @@ if __name__ == '__main__':
 
     figure = plt.figure()
     plt.hist(xis, bins=np.linspace(0, 25, 50), log=True)
-    plt.xlabel(r"$\xi_1$ / deg")
+    plt.xlabel(r"$\xi$ / deg")
     if args.write:
-        tikz_save('plots/'+args.mode+'_xi1.tex', draw_rectangles=True)
-        plt.savefig('plots/'+args.mode+'_xi1.png')
-        plt.savefig('plots/'+args.mode+'_xi1.pdf')
+        save_fig('plots/xi_{}'.format(args.mode), draw_rectangles=True)
     plt.pause(.1)
 
     #figure = plt.figure()
     #plt.hist(np.log10(xis2/angle_unit), bins=np.linspace(-3, 1, 50))
     #plt.xlabel(r"log($\xi_2$ / deg)")
     #if args.write:
-        #tikz_save('plots/'+args.mode+'_xi2.tex', draw_rectangles=True)
-        #plt.savefig('plots/'+args.mode+'_xi2.png')
-        #plt.savefig('plots/'+args.mode+'_xi2.pdf')
+        #save_fig('plots/'+args.mode+'_xi2', draw_rectangles=True)
     #plt.pause(.1)
 
     #figure = plt.figure()
     #plt.hist(np.log10(xisb/angle_unit), bins=np.linspace(-.5, .5, 50))
     #plt.xlabel(r"$\log(\xi_\mathrm{best} / \deg)$")
     #if args.write:
-        #tikz_save('plots/'+args.mode+'_xi_best.tex', draw_rectangles=True)
-        #plt.savefig('plots/'+args.mode+'_xi_best.png')
-        #plt.savefig('plots/'+args.mode+'_xi_best.pdf')
+        #save_fig('plots/'+args.mode+'_xi_best', draw_rectangles=True)
     #plt.pause(.1)
 
     #figure = plt.figure()
     #plt.hist((xis1-xis2), bins=np.linspace(-.65, .65, 13), log=True)
     #plt.xlabel(r"$(\xi_1 - \xi_2) / \deg)$")
     #if args.write:
-        #tikz_save('plots/'+args.mode+'_xi_diff.tex', draw_rectangles=True)
-        #plt.savefig('plots/'+args.mode+'_xi_diff.png')
-        #plt.savefig('plots/'+args.mode+'_xi_diff.pdf')
+        #save_fig('plots/'+args.mode+'_xi_diff', draw_rectangles=True)
     #plt.pause(.1)
 
 
@@ -344,7 +343,6 @@ if __name__ == '__main__':
         else:
             xi_vs_energy[Energy_centres[sbin]] += [xi/angle_unit]
 
-
     '''
     plotting the angular error as violine plots with binning in
     number of telescopes an shower energy '''
@@ -366,9 +364,7 @@ if __name__ == '__main__':
     plt.ylabel(r"log($\xi_2$ / deg)")
     plt.grid()
     if args.write:
-        tikz_save('plots/'+args.mode+'_xi_vs_E_NTel.tex')
-        plt.savefig('plots/'+args.mode+'_xi_vs_E_NTel.png')
-        plt.savefig('plots/'+args.mode+'_xi_vs_E_NTel.pdf')
+        save_fig('plots/_xi_vs_E_NTel_{}'.format(args.mode))
 
     plt.pause(.1)
 
@@ -416,7 +412,5 @@ if __name__ == '__main__':
     plt.ylabel(r"log($\Delta R$ / m)")
     plt.grid()
     if args.write:
-        tikz_save('plots/'+args.mode+'_dist_vs_E_NTel.tex')
-        plt.savefig('plots/'+args.mode+'_dist_vs_E_NTel.png')
-        plt.savefig('plots/'+args.mode+'_dist_vs_E_NTel.pdf')
+        save_fig('plots/dist_vs_E_NTel_{}'.format(args.mode))
     plt.show()

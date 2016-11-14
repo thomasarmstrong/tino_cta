@@ -123,7 +123,7 @@ if __name__ == "__main__":
     #plt.pause(.1)
 
     SourceIntensity = 1
-    ObsTime = (50*u.h)
+    ObsTime = (1*u.h)
     weight_vsE_g = SourceRate * ObsTime.to(u.s) * Eff_Area_Gammas * SourceIntensity
     weight_vsE_p = BackgrRate * ObsTime.to(u.s) * Eff_Area_Proton
 
@@ -192,7 +192,7 @@ if __name__ == "__main__":
 
         '''
         plot the source and spectra to be assumed in the sensitivity study '''
-        if 1:
+        if 0:
             flux_unit = u.erg / (u.cm**2 * u.s)
             figure = plt.figure()
             plt.subplot(121)
@@ -215,8 +215,8 @@ if __name__ == "__main__":
                      (BackgrRate/((edges_proton[1:]-edges_proton[:-1])*u.GeV)),
                      marker='o')
             plt.yscale('log')
-            plt.show()
-            #plt.pause(.1)
+            #plt.show()
+            plt.pause(.1)
 
         '''
         plot a sky image of the events '''
@@ -227,48 +227,53 @@ if __name__ == "__main__":
                     ph, th in zip(chain(gammas['phi'], proton['phi']),
                                   chain(gammas['theta'], proton['theta']))],
                 [a for a in chain(gammas['theta'], proton['theta'])],
-                bins=50
+                gridsize=41, extent=[-2,2,18,22],
+                bins='log'
                 )
-            plt.axis([-2,2,18,22])
-            plt.colorbar()
+            plt.colorbar().set_label("log(Number of Events)")
             plt.axes().set_aspect('equal')
             plt.xlabel(r"$\sin(\vartheta) \cdot (\varphi-180) / ${:latex}"
                        .format(angle_unit))
             plt.ylabel(r"$\vartheta$ / {:latex}".format(angle_unit))
-            plt.pause(.1)
+            if args.write:
+                tikz_save("plots/skymap_{}.tex".format(args.mode))
+            #plt.pause(.1)
 
         '''
         plot the angular distance of the reconstructed shower direction
         from the pseudo source in different scales '''
         figure = plt.figure()
         #plt.subplot(211)
-        plt.hist([off_angles['p'], off_angles['g']],
-                 weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 range=(0, 5),
-                 bins=25)
-        plt.xlabel(r"$\vartheta / \mathrm{"+str(angle_unit)+"}$")
-        plt.ylabel("expected events in {}".format(ObsTime))
-        #plt.ylim([0, 3000])
+        #plt.hist([off_angles['p'], off_angles['g']],
+                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
+                 #range=(0, 5),
+                 #bins=25)
+        #plt.xlabel(r"$\vartheta / \mathrm{"+str(angle_unit)+"}$")
+        #plt.ylabel("expected events in {}".format(ObsTime))
+        ##plt.ylim([0, 3000])
 
-        if args.write:
-            tikz_save("plots/"+args.mode+"_proto_significance.tex",
-                        draw_rectangles=True)
+        #if args.write:
+            #tikz_save("plots/"+args.mode+"_proto_significance.tex",
+                        #draw_rectangles=True)
 
         #plt.subplot(212)
         #plt.hist([off_angles['p']**2,
                   #off_angles['g']**2],
                  #weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 #range=(0, .75),
-                 #bins=25)
+                 #range=(0, 20),
+                 #bins=10)
         #plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
+        #plt.ylabel("expected events in {}".format(ObsTime))
 
         #plt.subplot(313)
-        #plt.hist([-np.cos(off_angles['p']*u.degree.to(u.rad)),
-                  #-np.cos(off_angles['g']*u.degree.to(u.rad))],
-                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 #range=(-1, -.9999),
-                 #bins=100)
-        #plt.xlabel(r"$-\cos(\vartheta)$")
+        plt.hist([np.clip(np.cos(off_angles['p']*u.degree.to(u.rad)), -1, 1-1e-6),
+                  np.clip(np.cos(off_angles['g']*u.degree.to(u.rad)), -1, 1-1e-6)],
+                 weights=[weight_p, weight_g], rwidth=1, stacked=True,
+                 range=(0.996, 1),
+                 bins=30)
+        plt.xlabel(r"$\cos(\vartheta)$")
+        plt.ylabel("expected events in {}".format(ObsTime))
+        plt.xlim([0.996, 1])
 
         plt.tight_layout()
 
