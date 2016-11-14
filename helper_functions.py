@@ -113,6 +113,12 @@ from matplotlib2tikz import save as tikzsave
 def tikz_save(arg, **kwargs):
     tikzsave(arg, figureheight = '\\figureheight',
                   figurewidth  = '\\figurewidth', **kwargs)
+def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
+    for end in endings:
+        if end == "tex":
+            tikz_save("{}.{}".format(outname, end), **kwargs)
+        else:
+            ptl.savefig("{}.{}".format(outname, end))
 
 
 def make_mock_event_rate(spectra, binEdges=None, Emin=None, Emax=None,
