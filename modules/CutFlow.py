@@ -1,5 +1,6 @@
 from astropy.table import Table
 
+from collections import OrderedDict
 
 class UndefinedCutException(Exception):
     pass
@@ -19,7 +20,7 @@ class CutFlow():
             name : string (default: "CutFlow")
                 name for the specific instance
         '''
-        self.cuts = {}
+        self.cuts = OrderedDict()
         self.name = name
 
     def count(self, cut):
@@ -101,7 +102,7 @@ class CutFlow():
         else:
             return False
 
-    def __call__(self, base_cut=None):
+    def __call__(self, *args, **kwargs):
         '''
             creates an astropy table of the cut names, counted events and
             selection efficiencies
@@ -109,22 +110,22 @@ class CutFlow():
 
             Parameters:
             -----------
-            base_cut : string
-                name of the selection criterion that should be taken as 100 %
-                in efficiency calculation
+            kwargs : keyword arguments
+                arguments to be passed to the get_table function
 
             Returns:
             --------
             t : astropy.Table
                 the table containing the cut names, counted events and
-                efficiencies -- sorted descending by number of counted events
+                efficiencies -- sorted in the order the cuts were added if not
+                specified otherwise
         '''
         print(self.name)
-        t = self.get_table(base_cut=None)
+        t = self.get_table(*args, **kwargs)
         print(t)
         return t
 
-    def get_table(self, base_cut=None):
+    def get_table(self, base_cut=None, sort_column=None, sort_reverse=False):
         '''
             creates an astropy table of the cut names, counted events and
             selection efficiencies
@@ -135,14 +136,20 @@ class CutFlow():
                 name of the selection criterion that should be taken as 100 %
                 in efficiency calculation
                 if not given, the criterion with the highest count is used
+            sort_column : integer (default: None)
+                the index of the column that should be used for sorting the entries
+                by default the table is sorted in the order the cuts were added
+                (index 0: cut name, index 1: number of passed events, index 2: efficiency)
+            sort_reverse : bool (default: False)
+                if true, revert the order of the entries
 
             Returns:
             --------
             t : astropy.Table
                 the table containing the cut names, counted events and
-                efficiencies -- sorted descending by number of counted events
+                efficiencies -- sorted in the order the cuts were added if not
+                specified otherwise
         '''
-
 
         if base_cut is None:
             base_value = max([a[1] for a in self.cuts.values()])
@@ -153,14 +160,15 @@ class CutFlow():
         else:
             base_value = self.cuts[base_cut][1]
 
-
         t = Table([[cut for cut in self.cuts.keys()],
                    [self.cuts[cut][1] for cut in self.cuts.keys()],
                    [self.cuts[cut][1]/base_value for cut in self.cuts.keys()]],
                   names=['Cut Name', 'selected Events', 'Efficiency'])
 
-        t.sort("selected Events")
-        t.reverse()
+        if sort_column:
+            t.sort(t.colnames[sort_column])
+        if sort_reverse:
+            t.reverse()
         return t
 
     add_cut = set_cut
