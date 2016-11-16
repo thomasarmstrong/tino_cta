@@ -23,7 +23,7 @@ from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
 from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
 
 from ctapipe.reco.FitGammaHillas import \
-    FitGammaHillas, TooFewTelescopesException
+    FitGammaHillas, TooFewTelescopesException, MEst
 
 
 path.append(expandvars("$CTA_SOFT/"
@@ -51,10 +51,16 @@ dist_unit   = u.m
 
 if __name__ == '__main__':
 
-    args = make_argparser().parse_args()
+    parser = make_argparser()
+    parser.add_argument('--proton',  action='store_true',
+                        help="do protons instead of gammas")
+    args = parser.parse_args()
 
-    filenamelist = glob("{}/gamma/*run{}*gz".format(args.indir, args.runnr))
-    filenamelist = glob("{}/proton/*run{}*gz".format(args.indir, args.runnr))
+    if args.proton:
+        filenamelist = glob("{}/proton/*run{}*gz".format(args.indir, args.runnr))
+    else:
+        filenamelist = glob("{}/gamma/*run{}*gz".format(args.indir, args.runnr))
+
     if len(filenamelist) == 0:
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
@@ -167,7 +173,6 @@ if __name__ == '__main__':
 
             for k in fit.circles.keys():
                 c = fit.circles[k]
-                print("circle pos", c.pos)
                 h = hillas_dict[k]
                 tel_signal.append(h.size)
                 hillas_tilt.append(abs((angle(c.norm, shower_org)*u.rad).to(angle_unit) -
@@ -187,10 +192,6 @@ if __name__ == '__main__':
                 seed = [0, 0]*u.m
                 pos_fit = fit.fit_core(seed)
 
-                print("seed:", seed)
-                print("pos_fit:", pos_fit)
-                print("mc pos:", shower_core)
-                print()
             except TooFewTelescopesException as e:
                 print(e)
                 continue
