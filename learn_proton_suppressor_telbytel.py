@@ -96,10 +96,7 @@ if __name__ == '__main__':
 
             '''
             get type of event for the classifier '''
-            if filename in filenamelist_proton:
-                Class = "p"
-            else:
-                Class = "g"
+            cl = "g" if "gamma" in filenamelist_class[0] else "p"
 
             '''
             event loop '''
@@ -187,10 +184,10 @@ if __name__ == '__main__':
                                 h_moments.Asymmetry
                                 ])
                 if len(features):
-                    classifier.Features[Class].append(features)
-                    classifier.MCEnergy[Class].append(mc_shower.energy)
+                    classifier.Features[cl].append(features)
+                    classifier.MCEnergy[cl].append(mc_shower.energy)
                     classifier.total_images += len(features)
-                    events[Class] += 1
+                    events[cl] += 1
 
                 if signal_handler.stop:
                     break

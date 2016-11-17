@@ -107,10 +107,7 @@ if __name__ == '__main__':
     for filenamelist_class in [filenamelist_gamma,
                                filenamelist_proton]:
 
-        if "gamma" in filenamelist_class[0]:
-            cl = "g"
-        else:
-            cl = "p"
+        cl = "g" if "gamma" in filenamelist_class[0] else "p"
 
         for filename in sorted(filenamelist_class)[:args.last]:
             print("filename = {}".format(filename))

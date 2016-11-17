@@ -35,7 +35,6 @@ MC energy ranges:
 gammas: 0.1 to 330 TeV
 proton: 0.1 to 600 TeV
 '''
-NBins=100
 edges_gammas = np.concatenate((
     np.linspace(2, 2.5, 15, False),
     np.linspace(2.5, 3, 5, False),
@@ -50,8 +49,9 @@ edges_proton = np.concatenate((
     np.linspace(4, 4.5, 5, False),
     np.linspace(4.5, np.log10(600000), 5)
     ))
-#edges_gammas = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(330*u.TeV.to(u.GeV)), NBins+1)
-#edges_proton = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(600*u.TeV.to(u.GeV)), NBins+1)
+NBins = 100
+# edges_gammas = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(330*u.TeV.to(u.GeV)), NBins+1)
+# edges_proton = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(600*u.TeV.to(u.GeV)), NBins+1)
 
 if __name__ == "__main__":
 
@@ -82,13 +82,10 @@ if __name__ == "__main__":
     Gen_Gammas = make_mock_event_rate(
                     [Eminus2], norm=[NGammas_simulated],
                     binEdges=edges_gammas)[0]
-                    # Emin=0.1*u.TeV, Emax=330*u.TeV, NBins=NBins)
 
     Gen_Proton = make_mock_event_rate(
                     [Eminus2], norm=[NProton_simulated],
                     binEdges=edges_proton)[0]
-                    # Emin=0.1*u.TeV, Emax=600*u.TeV, NBins=NBins)
-
 
     Sel_Gammas = np.histogram(np.log10(gammas['MC_Energy']), bins=edges_gammas)[0]
     Sel_Proton = np.histogram(np.log10(proton['MC_Energy']), bins=edges_proton)[0]
