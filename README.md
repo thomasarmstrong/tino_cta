@@ -24,6 +24,11 @@ The wavelet cleaning algorithm expects a 2D array of a rectangular image. Theref
 non-rectangular image of the ASTRI cameras needs to be cut down for now.<br  />
 The wavelet cleaning is applied as provided by Jérémie.
 
+The wavelet cleaning leaves few isolated pixels or islands that can have a negative
+impact on the Hillas parametrisation. Remove these islands and only leave the biggest
+patch of connected pixels using a method provided by `scipy.ndimage` and implemented by
+Fabio.
+
 #### tailcuts
 Uses the standard 2-step threshold implementation of ctapipe with the two values
 at 5 and 10.<br  />

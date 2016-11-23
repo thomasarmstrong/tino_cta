@@ -1,6 +1,9 @@
 from random import random
 import numpy as np
 
+from scipy import ndimage
+from matplotlib import pyplot as plt
+
 from extract_and_crop_simtel_images import crop_astri_image
 
 from ctapipe.image.cleaning import tailcuts_clean, dilate
@@ -20,6 +23,64 @@ class EdgeEventException(Exception):
     pass
 
 
+def kill_isolpix(array, plot=False):
+    """ Return array with isolated islands removed.
+        Only keeping the biggest islands (largest surface).
+    :param array: Array with completely isolated cells
+    :param struct: Structure array for generating unique regions
+    :return: Filtered array with just the largest island
+    """
+
+    filtered_array = np.copy(array)
+
+    filtered_array[filtered_array < 0.2] = 0
+    mask = filtered_array > 0
+
+    label_im, nb_labels = ndimage.label(mask)  # ,structure=np.ones((5, 5)))
+
+    sums = ndimage.sum(filtered_array, label_im, range(nb_labels + 1))
+    mask_sum = sums < np.max(sums)
+    remove_pixel = mask_sum[label_im]
+
+    filtered_array[remove_pixel] = 0
+
+    if plot:
+        fig, ax = plt.subplots(ncols=3, nrows=1, figsize=(10, 5))
+
+        ax[0].imshow(np.sqrt(array), interpolation='none')
+        ax[0].set_title('input image')
+
+        ax[1].imshow(label_im, interpolation='none')
+        ax[1].set_title('connected regions labels')
+
+        ax[2].imshow(np.sqrt(filtered_array), interpolation='none')
+        ax[2].set_title('cleaned output')
+
+        for i, a in enumerate(ax): a.set_axis_off()
+        plt.show()
+
+    return filtered_array
+
+
+def remove_isolated_pixels(img2d, threshold=0):
+    max_val = np.max(img2d)
+    for idx, foo in enumerate(img2d):
+        for idy, bar in enumerate(foo):
+            threshold = 3
+            is_island = 0
+            if idx > 0:
+                is_island += img2d[idx-1, idy]
+            if idx < len(img2d)-1:
+                is_island += img2d[idx+1, idy]
+            if idy > 0:
+                is_island += img2d[idx, idy-1]
+            if idy < len(foo)-1:
+                is_island += img2d[idx, idy+1]
+
+            if is_island < threshold and bar != max_val:
+                img2d[idx, idy] = 0
+
+
 class ImageCleaner:
 
     def __init__(self, old=False, mode="wave", dilate=False,
@@ -32,24 +93,6 @@ class ImageCleaner:
         self.wavelet_transform_old = WaveletTransformOld()
         self.wavelet_transform_new = WaveletTransformNew()
         self.cutflow = cutflow
-
-    def remove_isolated_pixels(self, img2d, threshold=0):
-        max_val = np.max(img2d)
-        for idx, foo in enumerate(img2d):
-            for idy, bar in enumerate(foo):
-                threshold = 3
-                is_island = 0
-                if idx > 0:
-                    is_island += img2d[idx-1, idy]
-                if idx < len(img2d)-1:
-                    is_island += img2d[idx+1, idy]
-                if idy > 0:
-                    is_island += img2d[idx, idy-1]
-                if idy < len(foo)-1:
-                    is_island += img2d[idx, idy+1]
-
-                if is_island < threshold and bar != max_val:
-                    img2d[idx, idy] = 0
 
     def remove_plateau(self, img):
         img -= np.mean(img)
@@ -70,13 +113,11 @@ class ImageCleaner:
 
             self.cutflow.count("wavelet cleaning")
 
-            ''' wavelet_transform still leaves some isolated pixels;
-                remove '''
-            self.remove_isolated_pixels(cleaned_img)
+            ''' wavelet_transform still leaves some isolated pixels; remove them '''
+            cleaned_img = kill_isolpix(cleaned_img)
 
             if self.old:
-                ''' old wavelet_transform did leave constant background;
-                    remove '''
+                ''' old wavelet_transform did leave constant background; remove '''
                 self.remove_plateau(cleaned_img)
 
             if self.skip_edge_events:
