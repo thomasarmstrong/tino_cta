@@ -175,8 +175,7 @@ if __name__ == '__main__':
                 c = fit.circles[k]
                 h = hillas_dict[k]
                 tel_signal.append(h.size)
-                hillas_tilt.append(abs((angle(c.norm, shower_org)*u.rad).to(angle_unit) -
-                                       90*u.deg))
+                hillas_tilt.append(abs((angle(c.norm, shower_org)*u.rad) - 90*u.deg))
                 hillas_length.append(h.length * u.m)
                 hillas_width.append(h.width * u.m)
 
