@@ -1,9 +1,15 @@
+from os.path import expandvars
+
 import numpy as np
 
 from astropy import units as u
 
 import signal
 class SignalHandler():
+    ''' handles ctrl+c signals; set up via
+        signal_handler = SignalHandler()
+        signal.signal(signal.SIGINT, signal_handler)
+    '''
     def __init__(self):
         self.stop = False
 
@@ -54,7 +60,7 @@ def make_argparser():
     parser.add_argument('-c', '--min_charge', type=int, default=0,
                         help="minimum charge per telescope after cleaning")
     parser.add_argument('-i', '--indir',   type=str,
-                        default="/local/home/tmichael/Data/cta/ASTRI9/")
+                        default=expandvars("$HOME/Data/cta/ASTRI9/"))
     parser.add_argument('-r', '--runnr',   type=str, default="*")
     parser.add_argument('--tail', dest="mode", action='store_const',
                         const="tail", default="wave",
@@ -103,7 +109,7 @@ def draw_image(tel_geom, pmt_signal, moments=None, pix_x=None, pix_y=None):
         plt.pause(.1)
 
         print("[enter] for next event")
-        print("anyting else: break rawing")
+        print("anyting else: break drawing")
         response = input("Choice: ")
         if response != "":
             continue_drawing = False
