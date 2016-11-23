@@ -28,6 +28,10 @@ from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.io.hessio import hessio_event_source
 
+
+path.append(expandvars("$CTA_SOFT/tino_cta"))
+from modules.ImageCleaning import kill_isolpix
+
 global tel_geom
 
 wavelet_transform = WaveletTransform()
@@ -72,70 +76,177 @@ def apply_mc_calibration(adcs, tel_id):
     return (adcs - peds) * gains
 
 
-def transform_and_crop_hex_image(signal,pix_x, pix_y,angle=60*u.deg):
+def unskew_hex_pixel_grid(pix_x, pix_y, angle=60*u.deg):
+    """
+        transform the pixel coordinates of a hexagonal image into an orthogonal image
+
+        Parameters:
+        -----------
+        pix_x, pix_y : 1D numpy arrays
+            the list of x and y coordinates of the hexagonal pixel grid
+        angle : astropy.Quantity (default: 60 degrees)
+            the skewing angle of the hex-grid. should be 60° for regular hexagons
+
+        Returns:
+        --------
+        pix_x, pix_y : 1D numpy arrays
+            the list of x and y coordinates of the slanted, orthogonal pixel grid
+    """
+
     cos_angle = np.cos(angle)
     sin_angle = np.sin(angle)
-    rot_x = pix_x*cos_angle + pix_x*sin_angle
+
+    rot_x = pix_x*(cos_angle + sin_angle)
     rot_y = pix_y*sin_angle - pix_x*cos_angle
-    colors = cm.hot(signal/max(signal))
 
-    max_x = max( rot_x[signal>0] )
-    min_x = min( rot_x[signal>0] )
-    max_y = max( rot_y[signal>0] )
-    min_y = min( rot_y[signal>0] )
-
-    cropped_x = rot_x [(rot_x<max_x) & (rot_x > min_x) & (rot_y < max_y) & (rot_y > min_y)]
-    cropped_y = rot_y [(rot_x<max_x) & (rot_x > min_x) & (rot_y < max_y) & (rot_y > min_y)]
-    cropped_s = signal[(rot_x<max_x) & (rot_x > min_x) & (rot_y < max_y) & (rot_y > min_y)]
-    cropped_c = cm.hot(cropped_s/max(cropped_s))
+    return rot_x, rot_y
 
 
+def reskew_hex_pixel_grid(pix_x, pix_y, angle=60*u.deg):
+    """
+        skews the orthogonal coordinates back to the hexagonal ones
 
-    ''' finding the size of the square patches '''
+        Parameters:
+        -----------
+        pix_x, pix_y : 1D numpy arrays
+            the list of x and y coordinates of the slanted, orthogonal pixel grid
+        angle : astropy.Quantity (default: 60 degrees)
+            the skewing angle of the hex-grid. should be 60° for regular hexagons
+
+        Returns:
+        --------
+        pix_x, pix_y : 1D numpy arrays
+            the list of x and y coordinates of the hexagonal pixel grid
+    """
+
+    cos_angle = np.cos(angle)
+    sin_angle = np.sin(angle)
+
+    rot_x = pix_x / (cos_angle+sin_angle)
+    rot_y = pix_x*cos_angle/(sin_angle*cos_angle + sin_angle**2) + pix_y/sin_angle
+
+    return rot_x, rot_y
+
+
+def reskew_hex_pixel_from_orthogonal_edges(x_edges, y_edges, square_mask):
+    """
+        extracts and skews the pixel coordinates from a 2D orthogonal histogram
+        (i.e. the bin-edges) and skews them into the hexagonal image while selecting only
+        the pixel that are selected by the given mask
+
+        Parameters:
+        -----------
+        x_edges, y_edges : 1darrays
+            the bin edges of the 2D histogram
+        square_mask : 2darray
+            mask that selects the pixels actually belonging to the camera
+
+        Returns:
+        --------
+        unrot_x, unrot_y : 1darrays
+            pixel coordinated reskewed into the hexagonal camera grid
+    """
+
+    unrot_x, unrot_y = [], []
+    for i, x in enumerate((x_edges[:-1]+x_edges[1:])/2):
+        for j, y in enumerate((y_edges[:-1]+y_edges[1:])/2):
+            if square_mask[i][j]:
+                x_unrot, y_unrot = reskew_hex_pixel_grid(x, y)
+                unrot_x.append(x_unrot)
+                unrot_y.append(y_unrot)
+    return unrot_x, unrot_y
+
+
+def get_orthogonal_grid_edges(pix_x, pix_y):
+    """
+        calculate the bin edges of the slanted, orthogonal pixel grid to resample the
+        pixel signals with np.histogramdd right after.
+
+        Parameters:
+        -----------
+        pix_x, pix_y : 1D numpy arrays
+            the list of x and y coordinates of the slanted, orthogonal pixel grid
+
+        Returns:
+        --------
+        x_edges, y_edges : 1D numpy arrays
+            the bin edges for the slanted, orthogonal pixel grid
+    """
+
+    '''
+    finding the size of the square patches '''
     d_x = 99 * u.m
     d_y = 99 * u.m
-    x_base = cropped_x[0]
-    y_base = cropped_y[0]
-    for x, y in zip(cropped_x, cropped_y):
+    x_base = pix_x[0]
+    y_base = pix_y[0]
+    for x, y in zip(pix_x, pix_y):
         if x == x_base: continue
         if abs(y-y_base) < abs(x-x_base):
             d_x = min(d_x, abs(x-x_base))
-    for x, y in zip(cropped_x, cropped_y):
+    for x, y in zip(pix_x, pix_y):
         if y == y_base: continue
         if abs(y-y_base) > abs(x-x_base):
             d_y = min(d_y, abs(y-y_base))
 
-    NBinsx = np.around(abs(max(cropped_x) - min(cropped_x))/d_x) + 2
-    NBinsy = np.around(abs(max(cropped_y) - min(cropped_y))/d_y) + 2
-    x_edges = np.linspace(min(cropped_x), max(cropped_x), NBinsx)
-    y_edges = np.linspace(min(cropped_y), max(cropped_y), NBinsy)
-    square_img, edges = np.histogramdd([cropped_y, cropped_x],
-                                       bins=(y_edges, x_edges), weights=cropped_s )
+    '''
+    with the maximal extension of the axes and the size of the pixels, determine the
+    number of bins in each direction '''
+    NBinsx = np.around(abs(max(pix_x) - min(pix_x))/d_x) + 2
+    NBinsy = np.around(abs(max(pix_y) - min(pix_y))/d_y) + 2
+    x_edges = np.linspace(min(pix_x).value, max(pix_x).value, NBinsx)
+    y_edges = np.linspace(min(pix_y).value, max(pix_y).value, NBinsy)
 
-    img_mean = np.mean(cropped_s)
-    for i, line in enumerate(square_img):
-        for j, v in enumerate(line):
-            if v == 0:
-                square_img[i][j] = np.random.poisson(img_mean)
+    return x_edges, y_edges
 
+fig = None
+def transform_and_crop_hex_image(signal, pix_x, pix_y):
+    rot_x, rot_y = unskew_hex_pixel_grid(pix_x, pix_y)
+    colors = cm.hot(signal/max(signal))
+
+    x_edges, y_edges = get_orthogonal_grid_edges(rot_x, rot_y)
+    square_img, edges = np.histogramdd([rot_x, rot_y],
+                                       bins=(x_edges, y_edges),
+                                       weights=signal)
+
+    square_mask, edges = np.histogramdd([rot_x, rot_y],
+                                        bins=(x_edges, y_edges))
 
     cleaned_img = wavelet_transform(square_img)
+    cleaned_img = kill_isolpix(cleaned_img)
 
-    fig = plt.figure()
+    unrot_img = cleaned_img[square_mask == 1].flatten()
+    unrot_colors = cm.hot(unrot_img/max(unrot_img))
+
+    unrot_x, unrot_y = reskew_hex_pixel_from_orthogonal_edges(x_edges,
+                                                              y_edges,
+                                                              square_mask)
+
+    global fig
+    global cb
+    if fig is None:
+        fig = plt.figure()
+    else:
+        cb.remove()
     fig.add_subplot(221)
-    plt.scatter(pix_x, pix_y,color=colors,marker='H', s=25)
+    plt.scatter(pix_x, pix_y, color=colors, marker='H', s=25)
     plt.gca().set_aspect('equal', adjustable='box')
     fig.add_subplot(222)
-    plt.scatter(rot_x, rot_y,color=colors,marker='s', s=21)
+    plt.scatter(rot_x, rot_y, color=colors, marker='s', s=21)
     plt.gca().set_aspect('equal', adjustable='box')
 
-    ax3 = fig.add_subplot(223)
+    fig.add_subplot(223)
     plt.imshow(cleaned_img, interpolation='none', cmap=cm.hot, origin='lower')
-    #plt.hist2d(cropped_x, cropped_y, bins=(x_edges, y_edges), weights=cropped_s,
-               #cmap=cm.hot)
     plt.gca().set_aspect('equal', adjustable='box')
-    plt.colorbar()
-    plt.show()
+    cb = plt.colorbar()
+
+    fig.add_subplot(224)
+    plt.scatter(unrot_x, unrot_y, color=unrot_colors, marker='H', s=25)
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    plt.pause(.1)
+    response = input("press return to continue")
+    if response != "":
+        exit()
 
 
 
