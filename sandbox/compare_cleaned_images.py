@@ -48,26 +48,10 @@ def apply_mc_calibration_ASTRI(adcs, tel_id, adc_tresh=3500):
     return np.array(calibrated)
 
 
-def get_mc_calibration_coeffs(tel_id):
-    """
-    Get the calibration coefficients from the MC data file to the
-    data.  This is ahack (until we have a real data structure for the
-    calibrated data), it should move into `ctapipe.io.hessio_event_source`.
-
-    returns
-    -------
-    (peds,gains) : arrays of the pedestal and pe/dc ratios.
-    """
-    peds = pyhessio.get_pedestal(tel_id)[0]
-    gains = pyhessio.get_calibration(tel_id)[0]
-    return peds, gains
-
-
-def apply_mc_calibration(adcs, tel_id):
+def apply_mc_calibration(adcs, gains, peds):
     """
     apply basic calibration
     """
-    peds, gains = get_mc_calibration_coeffs(tel_id)
 
     if adcs.ndim > 1:  # if it's per-sample need to correct the peds
         return ((adcs - peds[:, np.newaxis] / adcs.shape[1]) *
@@ -222,26 +206,36 @@ def transform_and_crop_hex_image(signal, pix_x, pix_y):
                                                               square_mask)
 
     global fig
-    global cb
+    global cb1
+    global cb2
     if fig is None:
         fig = plt.figure()
     else:
-        cb.remove()
+        cb1.remove()
+        cb2.remove()
     fig.add_subplot(221)
     plt.scatter(pix_x, pix_y, color=colors, marker='H', s=25)
     plt.gca().set_aspect('equal', adjustable='box')
-    fig.add_subplot(222)
-    plt.scatter(rot_x, rot_y, color=colors, marker='s', s=21)
-    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("noisy image")
 
-    fig.add_subplot(223)
-    plt.imshow(cleaned_img, interpolation='none', cmap=cm.hot, origin='lower')
+    fig.add_subplot(222)
+    plt.hist2d(rot_x, rot_y, bins=(x_edges, y_edges), cmap=cm.hot,
+               weights=signal, vmin=0)
     plt.gca().set_aspect('equal', adjustable='box')
-    cb = plt.colorbar()
+    plt.title("noisy, slanted image")
+    cb1 = plt.colorbar()
+
+    ax = fig.add_subplot(223)
+    plt.imshow(cleaned_img.T, interpolation='none', cmap=cm.hot, origin='lower')
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("cleaned, slanted image")
+    cb2 = plt.colorbar()
+    ax.set_axis_off()
 
     fig.add_subplot(224)
     plt.scatter(unrot_x, unrot_y, color=unrot_colors, marker='H', s=25)
     plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("cleaned, original geometry")
 
     plt.pause(.1)
     response = input("press return to continue")
@@ -306,11 +300,13 @@ if __name__ == '__main__':
             tel_data = {}
             for tel_id in event.dl0.tels_with_data:
                 if False:
-                    data = apply_mc_calibration_ASTRI(event.dl0.tel[tel_id].adc_sums, tel_id)
+                    data = apply_mc_calibration_ASTRI(
+                        event.dl0.tel[tel_id].adc_sums, tel_id)
                 else:
-                    data = event.mc.tel[tel_id].photo_electrons
-                    data = apply_mc_calibration(event.dl0.tel[tel_id].adc_sums[0], tel_id)
-                    #data = event.dl0.tel[tel_id].adc_sums[0]
+                    data = apply_mc_calibration(
+                        event.dl0.tel[tel_id].adc_sums[0],
+                        event.mc.tel[tel_id].dc_to_pe[0],
+                        event.mc.tel[tel_id].pedestal[0] )
                 tel_data[tel_id] = data
 
 
