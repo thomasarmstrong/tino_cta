@@ -4,8 +4,6 @@ import matplotlib.pyplot as plt
 from astropy.table import Table
 from astropy import units as u
 
-import random
-
 from itertools import chain
 
 from helper_functions import *

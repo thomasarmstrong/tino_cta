@@ -27,215 +27,116 @@ from ctapipe.io import CameraGeometry
 from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.io.hessio import hessio_event_source
+from ctapipe.io.geometry_converter import *
 
 
 path.append(expandvars("$CTA_SOFT/tino_cta"))
 from modules.ImageCleaning import kill_isolpix
+from helper_functions import *
+
 
 global tel_geom
 
 wavelet_transform = WaveletTransform()
 
-
-import pyhessio
-def apply_mc_calibration_ASTRI(adcs, tel_id, adc_tresh=3500):
-    """
-    apply basic calibration
-    """
-    gains = pyhessio.get_calibration(tel_id)
-
-    calibrated = [ (adc0-971)*gain0 if adc0 < adc_tresh else (adc1-961)*gain1 for adc0, adc1, gain0, gain1 in zip(adcs[0], adcs[1], gains[0],gains[1]) ]
-    return np.array(calibrated)
-
-
-def apply_mc_calibration(adcs, gains, peds):
-    """
-    apply basic calibration
-    """
-
-    if adcs.ndim > 1:  # if it's per-sample need to correct the peds
-        return ((adcs - peds[:, np.newaxis] / adcs.shape[1]) *
-                gains[:, np.newaxis])
-
-    return (adcs - peds) * gains
-
-
-def unskew_hex_pixel_grid(pix_x, pix_y, angle=60*u.deg):
-    """
-        transform the pixel coordinates of a hexagonal image into an orthogonal image
-
-        Parameters:
-        -----------
-        pix_x, pix_y : 1D numpy arrays
-            the list of x and y coordinates of the hexagonal pixel grid
-        angle : astropy.Quantity (default: 60 degrees)
-            the skewing angle of the hex-grid. should be 60° for regular hexagons
-
-        Returns:
-        --------
-        pix_x, pix_y : 1D numpy arrays
-            the list of x and y coordinates of the slanted, orthogonal pixel grid
-    """
-
-    cos_angle = np.cos(angle)
-    sin_angle = np.sin(angle)
-
-    rot_x = pix_x*(cos_angle + sin_angle)
-    rot_y = pix_y*sin_angle - pix_x*cos_angle
-
-    return rot_x, rot_y
-
-
-def reskew_hex_pixel_grid(pix_x, pix_y, angle=60*u.deg):
-    """
-        skews the orthogonal coordinates back to the hexagonal ones
-
-        Parameters:
-        -----------
-        pix_x, pix_y : 1D numpy arrays
-            the list of x and y coordinates of the slanted, orthogonal pixel grid
-        angle : astropy.Quantity (default: 60 degrees)
-            the skewing angle of the hex-grid. should be 60° for regular hexagons
-
-        Returns:
-        --------
-        pix_x, pix_y : 1D numpy arrays
-            the list of x and y coordinates of the hexagonal pixel grid
-    """
-
-    cos_angle = np.cos(angle)
-    sin_angle = np.sin(angle)
-
-    rot_x = pix_x / (cos_angle+sin_angle)
-    rot_y = pix_x*cos_angle/(sin_angle*cos_angle + sin_angle**2) + pix_y/sin_angle
-
-    return rot_x, rot_y
-
-
-def reskew_hex_pixel_from_orthogonal_edges(x_edges, y_edges, square_mask):
-    """
-        extracts and skews the pixel coordinates from a 2D orthogonal histogram
-        (i.e. the bin-edges) and skews them into the hexagonal image while selecting only
-        the pixel that are selected by the given mask
-
-        Parameters:
-        -----------
-        x_edges, y_edges : 1darrays
-            the bin edges of the 2D histogram
-        square_mask : 2darray
-            mask that selects the pixels actually belonging to the camera
-
-        Returns:
-        --------
-        unrot_x, unrot_y : 1darrays
-            pixel coordinated reskewed into the hexagonal camera grid
-    """
-
-    unrot_x, unrot_y = [], []
-    for i, x in enumerate((x_edges[:-1]+x_edges[1:])/2):
-        for j, y in enumerate((y_edges[:-1]+y_edges[1:])/2):
-            if square_mask[i][j]:
-                x_unrot, y_unrot = reskew_hex_pixel_grid(x, y)
-                unrot_x.append(x_unrot)
-                unrot_y.append(y_unrot)
-    return unrot_x, unrot_y
-
-
-def get_orthogonal_grid_edges(pix_x, pix_y):
-    """
-        calculate the bin edges of the slanted, orthogonal pixel grid to resample the
-        pixel signals with np.histogramdd right after.
-
-        Parameters:
-        -----------
-        pix_x, pix_y : 1D numpy arrays
-            the list of x and y coordinates of the slanted, orthogonal pixel grid
-
-        Returns:
-        --------
-        x_edges, y_edges : 1D numpy arrays
-            the bin edges for the slanted, orthogonal pixel grid
-    """
-
-    '''
-    finding the size of the square patches '''
-    d_x = 99 * u.m
-    d_y = 99 * u.m
-    x_base = pix_x[0]
-    y_base = pix_y[0]
-    for x, y in zip(pix_x, pix_y):
-        if x == x_base: continue
-        if abs(y-y_base) < abs(x-x_base):
-            d_x = min(d_x, abs(x-x_base))
-    for x, y in zip(pix_x, pix_y):
-        if y == y_base: continue
-        if abs(y-y_base) > abs(x-x_base):
-            d_y = min(d_y, abs(y-y_base))
-
-    '''
-    with the maximal extension of the axes and the size of the pixels, determine the
-    number of bins in each direction '''
-    NBinsx = np.around(abs(max(pix_x) - min(pix_x))/d_x) + 2
-    NBinsy = np.around(abs(max(pix_y) - min(pix_y))/d_y) + 2
-    x_edges = np.linspace(min(pix_x).value, max(pix_x).value, NBinsx)
-    y_edges = np.linspace(min(pix_y).value, max(pix_y).value, NBinsy)
-
-    return x_edges, y_edges
-
 fig = None
-def transform_and_crop_hex_image(signal, pix_x, pix_y):
-    rot_x, rot_y = unskew_hex_pixel_grid(pix_x, pix_y)
+from ctapipe.visualization import CameraDisplay
+def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electrons):
+    rot_x, rot_y = unskew_hex_pixel_grid(cam_geom.pix_x, cam_geom.pix_y,
+                                         cam_geom.cam_rotation)
     colors = cm.hot(signal/max(signal))
 
-    x_edges, y_edges = get_orthogonal_grid_edges(rot_x, rot_y)
-    square_img, edges = np.histogramdd([rot_x, rot_y],
-                                       bins=(x_edges, y_edges),
-                                       weights=signal)
+    x_edges, y_edges, x_scale = get_orthogonal_grid_edges(rot_x, rot_y)
 
     square_mask, edges = np.histogramdd([rot_x, rot_y],
                                         bins=(x_edges, y_edges))
 
+    square_img, edges = np.histogramdd([rot_x, rot_y],
+                                       bins=(x_edges, y_edges),
+                                       weights=signal)
+
     cleaned_img = wavelet_transform(square_img)
     cleaned_img = kill_isolpix(cleaned_img)
 
-    unrot_img = cleaned_img[square_mask == 1].flatten()
+    unrot_img = cleaned_img[square_mask == 1]
     unrot_colors = cm.hot(unrot_img/max(unrot_img))
 
-    unrot_x, unrot_y = reskew_hex_pixel_from_orthogonal_edges(x_edges,
-                                                              y_edges,
-                                                              square_mask)
+    '''
+    can be done either like this:
+        unrot_x, unrot_y = reskew_hex_pixel_from_orthogonal_edges(x_edges,
+                                                                  y_edges,
+                                                                  square_mask)
+    or like this : '''
+    grid_x, grid_y = np.meshgrid((x_edges[:-1] + x_edges[1:])/2.,
+                                 (y_edges[:-1] + y_edges[1:])/2.)
+    grid_x /= x_scale
+    unrot_x, unrot_y = reskew_hex_pixel_grid(grid_x.T[square_mask==1]*u.m,
+                                             grid_y.T[square_mask==1]*u.m,
+                                             cam_geom.cam_rotation)
+
+    unrot_geom = CameraGeometry.guess(unrot_x, unrot_y, optical_foclen)
 
     global fig
-    global cb1
-    global cb2
+    global cb1, ax1
+    global cb2, ax2
+    global cb3, ax3
+    global cb4, ax4
+    global cb5, ax5
+    global cb6, ax6
     if fig is None:
         fig = plt.figure()
     else:
+        fig.delaxes(ax1)
+        fig.delaxes(ax2)
+        fig.delaxes(ax3)
+        fig.delaxes(ax4)
+        fig.delaxes(ax5)
+        fig.delaxes(ax6)
         cb1.remove()
         cb2.remove()
-    fig.add_subplot(221)
-    plt.scatter(pix_x, pix_y, color=colors, marker='H', s=25)
-    plt.gca().set_aspect('equal', adjustable='box')
+        cb3.remove()
+        cb5.remove()
+        cb6.remove()
+    ax1 = fig.add_subplot(231)
+    disp1 = CameraDisplay(cam_geom, image=pmt_signal, ax=ax1)
+    disp1.cmap = plt.cm.hot
+    disp1.add_colorbar()
+    cb1 = disp1.colorbar
     plt.title("noisy image")
 
-    fig.add_subplot(222)
+    ax2 = fig.add_subplot(232)
     plt.hist2d(rot_x, rot_y, bins=(x_edges, y_edges), cmap=cm.hot,
-               weights=signal, vmin=0)
+               weights=signal)
     plt.gca().set_aspect('equal', adjustable='box')
     plt.title("noisy, slanted image")
-    cb1 = plt.colorbar()
+    cb2 = plt.colorbar()
 
-    ax = fig.add_subplot(223)
+    ax3 = fig.add_subplot(233)
     plt.imshow(cleaned_img.T, interpolation='none', cmap=cm.hot, origin='lower')
     plt.gca().set_aspect('equal', adjustable='box')
     plt.title("cleaned, slanted image")
-    cb2 = plt.colorbar()
-    ax.set_axis_off()
+    cb3 = plt.colorbar()
+    ax3.set_axis_off()
 
-    fig.add_subplot(224)
-    plt.scatter(unrot_x, unrot_y, color=unrot_colors, marker='H', s=25)
+    ax4 = fig.add_subplot(234)
+    plt.imshow(square_mask.T, interpolation='none', cmap=cm.hot, origin='lower')
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("mask for slanted image")
+    ax4.set_axis_off()
+
+    ax5 = fig.add_subplot(235)
+    disp5 = CameraDisplay(cam_geom, image=photo_electrons, ax=ax5)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("photo-electron image")
+    disp5.add_colorbar()
+    cb5 = disp5.colorbar
+
+    ax6 = fig.add_subplot(236)
+    disp6 = CameraDisplay(unrot_geom, image=unrot_img, ax=ax6)
     plt.gca().set_aspect('equal', adjustable='box')
     plt.title("cleaned, original geometry")
+    disp6.add_colorbar()
+    cb6 = disp6.colorbar
 
     plt.pause(.1)
     response = input("press return to continue")
@@ -255,88 +156,61 @@ if __name__ == '__main__':
     parser.add_argument('--tail', dest="mode", action='store_true')
     args = parser.parse_args()
 
-    filenamelist_gamma  = glob( "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
-    filenamelist_proton = glob( "{}/proton/run{}.*gz".format(args.indir,args.runnr ))
+    filenamelist_gamma  = glob("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
+    filenamelist_proton = glob("{}/proton/run{}.*gz".format(args.indir, args.runnr))
 
-    print(  "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
+    print("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
     if len(filenamelist_gamma) == 0:
         print("no gammas found...")
     if len(filenamelist_proton) == 0:
         print("no protons found...")
 
-    tel_geom = None
+    cam_geom = {}
 
-    allowed_tels=range(34,39)
-    #allowed_tels=range(10), # smallest ASTRI aray
-    #allowed_tels=range(34), # all ASTRI telescopes
+    allowed_tels = range(34, 39)
+    # allowed_tels=range(10), # smallest ASTRI aray
+    # allowed_tels=range(34), # all ASTRI telescopes
 
     for filename in chain(sorted(filenamelist_gamma)[:], sorted(filenamelist_proton)[:]):
+        filename = expandvars(
+                         "$HOME/Data/cta/Prod3/gamma_20deg_180deg_run1000___cta-prod3"
+                         "-demo_desert-2150m-Paranal-demo2sect_cone10.simtel.gz")
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
-                                    allowed_tels=allowed_tels,
-                                    max_events=args.max_events)
-        if tel_geom == None:
-            (h_telescopes, h_cameras, h_optics) = load_hessio(filename)
-            Ver = 'Feb2016'
-            TelVer = 'TelescopeTable_Version{}'.format(Ver)
-            CamVer = 'CameraTable_Version{}_TelID'.format(Ver)
-            OptVer = 'OpticsTable_Version{}_TelID'.format(Ver)
-
-            telescopes = h_telescopes[TelVer]
-            cameras    = lambda tel_id : h_cameras[CamVer+str(tel_id)]
-            optics     = lambda tel_id : h_optics [OptVer+str(tel_id)]
-
-            for tel_idx, tel_id in enumerate(telescopes['TelID']):
-                if tel_id not in allowed_tels:continue
-                tel_geom = CameraGeometry.guess(cameras(tel_id)['PixX'].to(u.m),
-                                                cameras(tel_id)['PixY'].to(u.m),
-                                                telescopes['FL'][tel_idx] * u.m)
-                print(tel_id, tel_geom.pix_type)
-                break
-
+                                     #allowed_tels=allowed_tels,
+                                     max_events=args.max_events)
 
         for event in source:
-            tel_data = {}
+
+            pmt_signal = None
+
             for tel_id in event.dl0.tels_with_data:
+
+                if tel_id not in cam_geom:
+                    cam_geom[tel_id] = CameraGeometry.guess(
+                                        event.inst.pixel_pos[tel_id][0],
+                                        event.inst.pixel_pos[tel_id][1],
+                                        event.inst.optical_foclen[tel_id])
+                if cam_geom[tel_id].pix_type is not "hexagonal":
+                    continue
+
                 if False:
-                    data = apply_mc_calibration_ASTRI(
+                    pmt_signal = apply_mc_calibration_ASTRI(
                         event.dl0.tel[tel_id].adc_sums, tel_id)
                 else:
-                    data = apply_mc_calibration(
+                    pmt_signal = apply_mc_calibration(
                         event.dl0.tel[tel_id].adc_sums[0],
                         event.mc.tel[tel_id].dc_to_pe[0],
-                        event.mc.tel[tel_id].pedestal[0] )
-                tel_data[tel_id] = data
-
-
-            for tel_id, pmt_signal in tel_data.items():
+                        event.mc.tel[tel_id].pedestal[0])
 
                 if False:
                     ''' TODO switch to cleaning module if still desired '''
                 else:
 
-                    transform_and_crop_hex_image(pmt_signal, tel_geom.pix_x, tel_geom.pix_y)
+                    transform_and_clean_hex_image(pmt_signal,
+                                                  cam_geom[tel_id],
+                                                  event.inst.optical_foclen[tel_id],
+                                                  event.mc.tel[tel_id].photo_electron_image)
                     continue
-
-                fig = plt.figure()
-                plt.subplot(231)
-                plt.imshow(cropped_img,interpolation='none')
-                plt.colorbar()
-
-                plt.subplot(232)
-                plt.imshow(cleaned_wave,interpolation='none')
-                plt.colorbar()
-
-                plt.subplot(233)
-                plt.imshow(cleaned_tail,interpolation='none')
-                plt.colorbar()
-
-                plt.subplot(236)
-                plt.imshow(cropped_mask,interpolation='none')
-                plt.colorbar()
-
-                plt.show()
-
-
 

@@ -8,12 +8,11 @@ from extract_and_crop_simtel_images import crop_astri_image
 
 from ctapipe.image.cleaning import tailcuts_clean, dilate
 
-''' old '''
-from datapipe.denoising.wavelets_mrtransform import WaveletTransform as WaveletTransformOld
-''' new '''
-from datapipe.denoising.wavelets_mrfilter import WaveletTransform    as WaveletTransformNew
+from datapipe.denoising.wavelets_mrfilter import WaveletTransform
 
 from .CutFlow import CutFlow
+
+from ctapipe.io import convert_geometry_1d_to_2d, convert_geometry_back
 
 class UnknownModeException(Exception):
     pass
@@ -36,7 +35,7 @@ def kill_isolpix(array, plot=False):
     filtered_array[filtered_array < 0.2] = 0
     mask = filtered_array > 0
 
-    label_im, nb_labels = ndimage.label(mask)  # ,structure=np.ones((5, 5)))
+    label_im, nb_labels = ndimage.label(mask)
 
     sums = ndimage.sum(filtered_array, label_im, range(nb_labels + 1))
     mask_sum = sums < np.max(sums)
@@ -90,26 +89,27 @@ class ImageCleaner:
         self.dilate = dilate
         self.skip_edge_events = skip_edge_events
         self.wave_out_name = "/tmp/wavelet_{}_".format(random())
-        self.wavelet_transform_old = WaveletTransformOld()
-        self.wavelet_transform_new = WaveletTransformNew()
+        self.wavelet_transform = WaveletTransform()
         self.cutflow = cutflow
+
+        if self.mode == "wave":
+            self.clean = self.clean_wave
+        elif self.mode == "tail":
+            self.clean = self.clean_tail
+        elif self.mode == "none":
+            self.clean = self.clean_none
+        else:
+            raise UnknownModeException(
+                'cleaning mode "{}" not found'.format(self.mode))
 
     def remove_plateau(self, img):
         img -= np.mean(img)
         img[img < 0] = 0
 
-    def clean(self, img, tel_geom):
-
-        if self.mode == "wave":
-            # for now wavelet library works only on rectangular images
+    def clean_wave(self, img, cam_geom, foclen):
+        if cam_geom.cam_id == "ASTRI":
             cropped_img = crop_astri_image(img)
-            if self.old:
-                cleaned_img = \
-                    self.wavelet_transform_old(cropped_img, 4,
-                                               self.wave_out_name)
-            else:
-                cleaned_img = \
-                    self.wavelet_transform_new(cropped_img)
+            cleaned_img = self.wavelet_transform(cropped_img)
 
             self.cutflow.count("wavelet cleaning")
 
@@ -133,20 +133,38 @@ class ImageCleaner:
             img = cleaned_img.flatten()
             ''' hillas parameter function requires image and x/y arrays
                 to be of the same dimension '''
-            pix_x = crop_astri_image(tel_geom.pix_x).flatten()
-            pix_y = crop_astri_image(tel_geom.pix_y).flatten()
+            pix_x = crop_astri_image(cam_geom.pix_x).flatten()
+            pix_y = crop_astri_image(cam_geom.pix_y).flatten()
 
-        elif self.mode == "tail":
-            mask = tailcuts_clean(tel_geom, img, 1,
-                                  picture_thresh=10.,
-                                  boundary_thresh=5.)
-            if self.dilate:
-                dilate(tel_geom, mask)
-            img[mask == False] = 0
+        elif cam_geom.pix_type.startswith("hex"):
+            rot_geom, rot_img = convert_geometry_1d_to_2d(
+                                    cam_geom, img, cam_geom.cam_id)
 
+            cleaned_img = self.wavelet_transform(rot_img)
+
+            self.cutflow.count("wavelet cleaning")
+
+            cleaned_img = kill_isolpix(cleaned_img)
+
+            unrot_geom, unrot_img = convert_geometry_back(
+                                    rot_geom, cleaned_img, cam_geom.cam_id, foclen)
+
+            img = unrot_img.flatten()
+            pix_x = unrot_geom.pix_x
+            pix_y = unrot_geom.pix_y
+
+        return img, pix_x, pix_y
+
+    def clean_tail(self, img, cam_geom, foclen):
+        mask = tailcuts_clean(cam_geom, img, 1,
+                              picture_thresh=10.,
+                              boundary_thresh=5.)
+        if self.dilate:
+            dilate(cam_geom, mask)
+        img[mask == False] = 0
+
+        if cam_geom.cam_id == "ASTRI":
             cleaned_img = crop_astri_image(img)
-            pix_x = crop_astri_image(tel_geom.pix_x).flatten()
-            pix_y = crop_astri_image(tel_geom.pix_y).flatten()
 
             if self.skip_edge_events:
                 edge_thresh = np.max(cleaned_img)/5.
@@ -157,30 +175,31 @@ class ImageCleaner:
                         raise EdgeEventException
 
             img = cleaned_img.flatten()
-
-            #'''
-            #events with too much signal at the edge might negatively
-            #influence hillas parametrisation '''
-            #if self.skip_edge_events:
-                #skip_event = False
-                #for pixid in tel_geom.pix_id[mask]:
-                    #if len(tel_geom.neighbors) < 8:
-                        #skip_event = True
-                        #break
-                #if skip_event:
-                    #raise EdgeEventException
-            #'''
-            #since wavelet transform crops pixel lists and returns them
-            #rename them here too for easy return '''
-            #pix_x, pix_y = tel_geom.pix_x, tel_geom.pix_y
-
-            self.cutflow.count("reject edge events")
-
-
-        elif self.mode == "none":
-            pix_x, pix_y = tel_geom.pix_x, tel_geom.pix_y
+            pix_x = crop_astri_image(cam_geom.pix_x).flatten()
+            pix_y = crop_astri_image(cam_geom.pix_y).flatten()
         else:
-            raise UnknownModeException(
-                'cleaning mode "{}" not found'.format(self.mode))
+            pix_x = cam_geom.pix_x
+            pix_y = cam_geom.pix_y
+
+        #'''
+        #events with too much signal at the edge might negatively
+        #influence hillas parametrisation '''
+        #if self.skip_edge_events:
+            #skip_event = False
+            #for pixid in tel_geom.pix_id[mask]:
+                #if len(tel_geom.neighbors) < 8:
+                    #skip_event = True
+                    #break
+            #if skip_event:
+                #raise EdgeEventException
+        #'''
+        #since wavelet transform crops pixel lists and returns them
+        #rename them here too for easy return '''
+        #pix_x, pix_y = tel_geom.pix_x, tel_geom.pix_y
+
+        self.cutflow.count("reject edge events")
 
         return img, pix_x, pix_y
+
+    def clean_none(self, img, cam_geom, foclen):
+        return img, cam_geom.pix_x, cam_geom.pix_y

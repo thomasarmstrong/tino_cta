@@ -14,7 +14,6 @@ from astropy import units as u
 
 from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
-from ctapipe.io.containers import MCShowerData as MCShower
 
 from ctapipe.instrument.InstrumentDescription import load_hessio
 
@@ -23,7 +22,7 @@ from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
 from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
 
 from ctapipe.reco.FitGammaHillas import \
-    FitGammaHillas, TooFewTelescopesException, MEst
+    FitGammaHillas, TooFewTelescopesException
 
 
 path.append(expandvars("$CTA_SOFT/"
@@ -65,8 +64,9 @@ if __name__ == '__main__':
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
-    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
+    allowed_tels = range(34, 40)  # use the array of FlashCams instead
 
     cam_geom = {}
     tel_phi = {}
@@ -126,20 +126,31 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("noCuts")
 
-                pmt_signal = apply_mc_calibration_ASTRI(
-                    event.dl0.tel[tel_id].adc_sums, tel_id)
+                if tel_id not in cam_geom:
+                    cam_geom[tel_id] = CameraGeometry.guess(
+                                        event.inst.pixel_pos[tel_id][0],
+                                        event.inst.pixel_pos[tel_id][1],
+                                        event.inst.optical_foclen[tel_id])
+
+                pmt_signal = []
+                if cam_geom[tel_id] == "ASTRI":
+                    pmt_signal = apply_mc_calibration_ASTRI(
+                                    event.dl0.tel[tel_id].adc_sums,
+                                    event.mc.tel[tel_id].dc_to_pe,
+                                    event.mc.tel[tel_id].pedestal)
+                else:
+                    pmt_signal = apply_mc_calibration(
+                        event.dl0.tel[tel_id].adc_sums[0],
+                        event.mc.tel[tel_id].dc_to_pe[0],
+                        event.mc.tel[tel_id].pedestal[0])
 
                 Imagecutflow.count("calibration")
 
-                if tel_id not in cam_geom:
-                    cam_geom[tel_id] = CameraGeometry.guess(
-                                        event.meta.pixel_pos[tel_id][0],
-                                        event.meta.pixel_pos[tel_id][1],
-                                        event.meta.optical_foclen[tel_id])
-
                 try:
                     pmt_signal, pix_x, pix_y = \
-                        Cleaner.clean(pmt_signal, cam_geom[tel_id])
+                        Cleaner.clean(pmt_signal, cam_geom[tel_id],
+                                      event.inst.optical_foclen[tel_id])
+
                 except FileNotFoundError as e:
                     print(e)
                     continue
@@ -161,7 +172,7 @@ if __name__ == '__main__':
 
             Eventcutflow.count("ImagePreparation")
 
-            fit.get_great_circles(hillas_dict, event.meta, *tel_orientation)
+            fit.get_great_circles(hillas_dict, event.inst, *tel_orientation)
 
             Eventcutflow.count("GreatCircles")
 
@@ -186,7 +197,7 @@ if __name__ == '__main__':
                 result1 = fit.fit_origin_crosses()[0]
                 result2 = fit.fit_origin_minimise(result1)
 
-                seed = np.mean([event.meta.tel_pos[tel_id]
+                seed = np.mean([event.inst.tel_pos[tel_id]
                                for tel_id in fit.circles.keys()], axis=0)[:2]*u.m
                 seed = [0, 0]*u.m
                 pos_fit = fit.fit_core(seed)

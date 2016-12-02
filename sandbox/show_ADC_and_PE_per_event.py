@@ -48,7 +48,7 @@ def display_event(event, calibrate = 0, max_tel = 4, cleaning=None):
         geom = io.CameraGeometry.guess(x, y, event.meta.optical_foclen[tel_id])
         disp = visualization.CameraDisplay(geom, ax=ax,
                                            title="CT{0} DetectorResponse".format(tel_id))
-        
+
         disp.pixels.set_antialiaseds(False)
         disp.autoupdate = False
         disp.cmap = plt.cm.hot
@@ -60,7 +60,7 @@ def display_event(event, calibrate = 0, max_tel = 4, cleaning=None):
             mask = tailcuts_clean(geom, signals, 1,picture_thresh=10.,boundary_thresh=8.)
             dilate(geom, mask)
             signals[mask==False] = 0
-            
+
         moments = hillas_parameters_2(geom.pix_x,
                                     geom.pix_y,
                                     signals)
@@ -70,8 +70,8 @@ def display_event(event, calibrate = 0, max_tel = 4, cleaning=None):
         disp.set_limits_percent(95)
         disp.add_colorbar()
         disps.append(disp)
-        
-        
+
+
         ax = plt.subplot(nn, 2*nn, 2*(ii+1))
 
         geom = io.CameraGeometry.guess(x, y, event.meta.optical_foclen[tel_id])
@@ -97,60 +97,19 @@ def display_event(event, calibrate = 0, max_tel = 4, cleaning=None):
         disp.set_limits_percent(95)
         disp.add_colorbar()
         disps.append(disp)
-        
+
 
     return disps
 
-import pyhessio
-def get_mc_calibration_coeffs(tel_id):
-    """
-    Get the calibration coefficients from the MC data file to the
-    data.  This is ahack (until we have a real data structure for the
-    calibrated data), it should move into `ctapipe.io.hessio_event_source`.
-
-    returns
-    -------
-    (peds,gains) : arrays of the pedestal and pe/dc ratios.
-    """
-    peds = pyhessio.get_pedestal(tel_id)[0]
-    gains = pyhessio.get_calibration(tel_id)[0]
-    return peds, gains
-
-
-def apply_mc_calibration(adcs, tel_id):
-    """
-    apply basic calibration
-    """
-    peds, gains = get_mc_calibration_coeffs(tel_id)
-
-    if adcs.ndim > 1:  # if it's per-sample need to correct the peds
-        return ((adcs - peds[:, np.newaxis] / adcs.shape[1]) *
-                gains[:, np.newaxis])
-
-    return (adcs - peds) * gains
-
-def apply_mc_calibration_ASTRI(adcs, tel_id):
-    """
-    apply basic calibration
-    """
-    
-    peds0 = pyhessio.get_pedestal(tel_id)[0]
-    peds1 = pyhessio.get_pedestal(tel_id)[1]
-    gains0 = pyhessio.get_calibration(tel_id)[0]
-    gains1 = pyhessio.get_calibration(tel_id)[1]
-    
-    calibrated = [ (adc0-971)*gain0 if adc0 < 3500 else (adc1-961)*gain1 for adc0, adc1, gain0, gain1 in zip(adcs[0], adcs[1], gains0,gains1) ]
-    return np.array(calibrated)
-
 
 if __name__ == '__main__':
-    
+
 
 
     parser = argparse.ArgumentParser(description='show single telescope')
     parser.add_argument('-t','--tel', type=int)
     parser.add_argument('-r', '--runnr',   type=str, default="*")
-    parser.add_argument('-i', '--indir',   type=str, 
+    parser.add_argument('-i', '--indir',   type=str,
                         default="/local/home/tmichael/Data/cta/ASTRI9")
     parser.add_argument('-m', '--max-events', type=int, default=10000)
     parser.add_argument('-n', '--max-ntels',  type=int, default=4)
@@ -167,7 +126,7 @@ if __name__ == '__main__':
 
     filenamelist_gamma  = glob( "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
     filenamelist_proton = glob( "{}/proton/run{}.*gz".format(args.indir,args.runnr ))
-    
+
     print(  "{}/gamma/run{}.*gz".format(args.indir,args.runnr ))
     if len(filenamelist_gamma) == 0:
         print("no gammas found")
@@ -178,7 +137,7 @@ if __name__ == '__main__':
 
     for filename in chain(sorted(filenamelist_gamma)[:], sorted(filenamelist_proton)[:]):
         print("filename = {}".format(filename))
-        
+
         source = hessio_event_source(filename,
                                     allowed_tels=[6],#range(10),
                                     max_events=args.max_events)
@@ -189,7 +148,7 @@ if __name__ == '__main__':
             print(event.dl0.tels_with_data)
             if args.tel and args.tel not in event.dl0.tels_with_data: continue
 
-                    
+
             while True:
                 response = get_input()
                 print()

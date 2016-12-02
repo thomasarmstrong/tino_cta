@@ -23,28 +23,34 @@ class SignalHandler():
 
 
 import pyhessio
-def apply_mc_calibration_ASTRI(adcs, tel_id, mode=0, adc_tresh=3500):
+def apply_mc_calibration_ASTRI(adcs, gains, peds, mode=0, adc_tresh=3500):
     """
     apply basic calibration for ASTRI telescopes with two gains
     """
-    gains0 = pyhessio.get_calibration(tel_id)[0]
-    gains1 = pyhessio.get_calibration(tel_id)[1]
+    gains0 = gains[0]
+    gains1 = gains[1]
 
-    if mode == 0:
-        ''' old mode -- pedestal array was broken, had to be put in by hand '''
-        calibrated = [(adc0 - 971)*gain0 if adc0 < adc_tresh
-                      else (adc1 - 961)*gain1 for adc0, adc1, gain0, gain1
-                      in zip(adcs[0], adcs[1], gains0, gains1)]
-    else:
-        ''' new mode -- pedestal values should be fixed now'''
-        peds0 = pyhessio.get_pedestal(tel_id)[0]
-        peds1 = pyhessio.get_pedestal(tel_id)[1]
-        calibrated = [(adc0-ped0)*gain0 if adc0 < adc_tresh
-                      else (adc1-ped1)*gain1
-                      for adc0, adc1, gain0, gain1, ped0, ped1
-                      in zip(adcs[0], adcs[1], gains0, gains1, peds0, peds1)]
+    peds0 = peds[0]
+    peds1 = peds[1]
+
+    calibrated = [(adc0-ped0)*gain0 if adc0 < adc_tresh
+                    else (adc1-ped1)*gain1
+                    for adc0, adc1, gain0, gain1, ped0, ped1
+                    in zip(adcs[0], adcs[1], gains0, gains1, peds0, peds1)]
 
     return np.array(calibrated)
+
+
+def apply_mc_calibration(adcs, gains, peds):
+    """
+    apply basic calibration
+    """
+
+    if adcs.ndim > 1:  # if it's per-sample need to correct the peds
+        return ((adcs - peds[:, np.newaxis] / adcs.shape[1]) *
+                gains[:, np.newaxis])
+
+    return (adcs - peds) * gains
 
 
 def convert_astropy_array(arr, unit=None):
