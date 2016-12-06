@@ -42,7 +42,7 @@ class CutFlow():
         else:
             self.cuts[cut][1] += 1
 
-    def set_cut(self, function, cut):
+    def set_cut(self, cut, function):
         '''
             sets a function that selects on whatever you want to count
             sets the counter corresponding to the selection criterion to 0

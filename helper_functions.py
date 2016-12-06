@@ -4,6 +4,8 @@ import numpy as np
 
 from astropy import units as u
 
+from matplotlib import pyplot as plt
+
 import signal
 class SignalHandler():
     ''' handles ctrl+c signals; set up via
@@ -22,7 +24,6 @@ class SignalHandler():
         self.stop = True
 
 
-import pyhessio
 def apply_mc_calibration_ASTRI(adcs, gains, peds, mode=0, adc_tresh=3500):
     """
     apply basic calibration for ASTRI telescopes with two gains
@@ -78,47 +79,12 @@ def make_argparser():
     parser.add_argument('-p', '--plot',  action='store_true',
                         help="do some plotting")
     parser.add_argument('-d', '--dry', dest='last', action='store_const',
-                        const=1, default=-1,
+                        const=1, default=None,
                         help="only consider first file per type")
     return parser
 
 
 
-from matplotlib import pyplot as plt
-from matplotlib.patches import Ellipse
-from ctapipe import visualization
-continue_drawing = True
-#func_figure = plt.figure()
-def draw_image(tel_geom, pmt_signal, moments=None, pix_x=None, pix_y=None):
-    global continue_drawing
-    global func_figure
-    if continue_drawing:
-        ax = plt.subplot(111)
-        try:
-            disp = visualization.CameraDisplay(tel_geom, ax=ax)
-            disp.image = pmt_signal
-            disp.cmap = plt.cm.hot
-            disp.add_colorbar()
-            if moments:
-                disp.overlay_moments(moments, color='seagreen', linewidth=3)
-        except ValueError:
-            plt.imshow(pmt_signal.reshape(40, 40), interpolation='none',
-                       #extent=(min(pix_x).value, max(pix_x).value,
-                               #min(pix_y).value, max(pix_y).value)
-                       )
-
-            #ellipse = Ellipse(xy=(moments.cen_x, moments.cen_y),
-                              #width=moments.width, height=moments.length,
-                              #angle=np.degrees(moments.phi), fill=False)
-            #ax.add_patch(ellipse)
-
-        plt.pause(.1)
-
-        print("[enter] for next event")
-        print("anyting else: break drawing")
-        response = input("Choice: ")
-        if response != "":
-            continue_drawing = False
 
 
 from matplotlib2tikz import save as tikzsave
@@ -239,30 +205,4 @@ def plot_hex_and_violine(abscissa, ordinate, bin_edges, extent=None, vmin=None, 
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.grid()
-
-
-
-
-
-
-if __name__ == "__main__":
-
-    def Eminus2(e, unit=u.GeV):
-        return (e/unit)**(-2) / (unit * u.s * u.m**2)
-
-    import sys
-    ebins = np.linspace(2,8,7,True)
-    rate, binEdges = make_mock_event_rate([Eminus2], logE=int(sys.argv[1]),
-                                          Emin=1e2, Emax=1e8, NBins=16,
-                                          #binEdges=ebins,
-                                          norm=1)
-    print(binEdges)
-    figure = plt.figure()
-    #plt.plot(marker='o',
-    plt.bar(
-        (binEdges[1:]+binEdges[:-1])/2, rate[0].value )
-    plt.yscale('log')
-    if not int(sys.argv[1]):
-        plt.xscale('log')
-    plt.show()
 

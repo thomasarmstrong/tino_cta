@@ -1,6 +1,8 @@
 from random import random
 import numpy as np
 
+from copy import copy
+
 from scipy import ndimage
 from matplotlib import pyplot as plt
 
@@ -84,7 +86,6 @@ class ImageCleaner:
 
     def __init__(self, old=False, mode="wave", dilate=False,
                  skip_edge_events=True, cutflow=CutFlow("ImageCleaner")):
-        self.old = old
         self.mode = mode
         self.dilate = dilate
         self.skip_edge_events = skip_edge_events
@@ -116,10 +117,6 @@ class ImageCleaner:
             ''' wavelet_transform still leaves some isolated pixels; remove them '''
             cleaned_img = kill_isolpix(cleaned_img)
 
-            if self.old:
-                ''' old wavelet_transform did leave constant background; remove '''
-                self.remove_plateau(cleaned_img)
-
             if self.skip_edge_events:
                 edge_thresh = np.max(cleaned_img)/5.
                 if (cleaned_img[0,:]  > edge_thresh).any() or  \
@@ -130,11 +127,10 @@ class ImageCleaner:
 
             self.cutflow.count("reject edge events")
 
-            img = cleaned_img.flatten()
-            ''' hillas parameter function requires image and x/y arrays
-                to be of the same dimension '''
-            pix_x = crop_astri_image(cam_geom.pix_x).flatten()
-            pix_y = crop_astri_image(cam_geom.pix_y).flatten()
+            new_img = cleaned_img.flatten()
+            new_geom = copy(cam_geom)
+            new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
+            new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
 
         elif cam_geom.pix_type.startswith("hex"):
             rot_geom, rot_img = convert_geometry_1d_to_2d(
@@ -149,11 +145,10 @@ class ImageCleaner:
             unrot_geom, unrot_img = convert_geometry_back(
                                     rot_geom, cleaned_img, cam_geom.cam_id, foclen)
 
-            img = unrot_img.flatten()
-            pix_x = unrot_geom.pix_x
-            pix_y = unrot_geom.pix_y
+            new_img = unrot_img
+            new_geom = unrot_geom
 
-        return img, pix_x, pix_y
+        return new_img, new_geom
 
     def clean_tail(self, img, cam_geom, foclen):
         mask = tailcuts_clean(cam_geom, img, 1,
@@ -163,23 +158,27 @@ class ImageCleaner:
             dilate(cam_geom, mask)
         img[mask == False] = 0
 
+        #img = kill_isolpix(img)
+
         if cam_geom.cam_id == "ASTRI":
-            cleaned_img = crop_astri_image(img)
+            img = crop_astri_image(img)
 
             if self.skip_edge_events:
-                edge_thresh = np.max(cleaned_img)/5.
-                if (cleaned_img[0,:]  > edge_thresh).any() or  \
-                   (cleaned_img[-1,:] > edge_thresh).any() or  \
-                   (cleaned_img[:,0]  > edge_thresh).any() or  \
-                   (cleaned_img[:,-1] > edge_thresh).any():
+                edge_thresh = np.max(img)/5.
+                if (img[0,:]  > edge_thresh).any() or  \
+                   (img[-1,:] > edge_thresh).any() or  \
+                   (img[:,0]  > edge_thresh).any() or  \
+                   (img[:,-1] > edge_thresh).any():
                         raise EdgeEventException
 
-            img = cleaned_img.flatten()
-            pix_x = crop_astri_image(cam_geom.pix_x).flatten()
-            pix_y = crop_astri_image(cam_geom.pix_y).flatten()
+            new_img = img.flatten()
+            new_geom = copy(cam_geom)
+            new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
+            new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
+            new_geom.pix_area = np.ones_like(new_img) * cam_geom.pix_area[0]
         else:
-            pix_x = cam_geom.pix_x
-            pix_y = cam_geom.pix_y
+            new_img = img
+            new_geom = cam_geom
 
         #'''
         #events with too much signal at the edge might negatively
@@ -197,9 +196,9 @@ class ImageCleaner:
         #rename them here too for easy return '''
         #pix_x, pix_y = tel_geom.pix_x, tel_geom.pix_y
 
-        self.cutflow.count("reject edge events")
+        #self.cutflow.count("reject edge events")
 
-        return img, pix_x, pix_y
+        return new_img, new_geom
 
-    def clean_none(self, img, cam_geom, foclen):
-        return img, cam_geom.pix_x, cam_geom.pix_y
+    def clean_none(self, img, cam_geom, *args):
+        return img, cam_geom

@@ -64,20 +64,18 @@ if __name__ == '__main__':
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
-    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = range(34, 40)  # use the array of FlashCams instead
-
     cam_geom = {}
     tel_phi = {}
     tel_theta = {}
     tel_orientation = (tel_phi, tel_theta)
-    for i in allowed_tels:
-        tel_phi[i] = 180.*u.deg
-        tel_theta[i] = 20.*u.deg
 
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
+
+    min_charge = "minCharge_{}".format(args.min_charge)
+    Imagecutflow.set_cut(min_charge, lambda x: x < args.min_charge)
+
+
 
     # Cleaner = ImageCleaner(mode="none")
     Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow)
@@ -93,12 +91,17 @@ if __name__ == '__main__':
     xis2  = []
     xisd  = []
 
+    diffs = []
+
     tel_signal = []
+    tel_signal_pe = []
     hillas_tilt = []
     hillas_length = []
     hillas_width = []
 
-    diffs = []
+    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    # allowed_tels = range(34)  # all ASTRI telescopes
+    allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -131,6 +134,8 @@ if __name__ == '__main__':
                                         event.inst.pixel_pos[tel_id][0],
                                         event.inst.pixel_pos[tel_id][1],
                                         event.inst.optical_foclen[tel_id])
+                    tel_phi[tel_id] = 180.*u.deg
+                    tel_theta[tel_id] = 20.*u.deg
 
                 pmt_signal = []
                 if cam_geom[tel_id] == "ASTRI":
@@ -147,23 +152,44 @@ if __name__ == '__main__':
                 Imagecutflow.count("calibration")
 
                 try:
-                    pmt_signal, pix_x, pix_y = \
+                    pmt_signal, new_geom = \
                         Cleaner.clean(pmt_signal, cam_geom[tel_id],
                                       event.inst.optical_foclen[tel_id])
-
                 except FileNotFoundError as e:
                     print(e)
                     continue
                 except EdgeEventException:
                     continue
 
-                if np.sum(pmt_signal) < args.min_charge:
+                #from ctapipe.visualization import CameraDisplay
+                #fig = plt.figure()
+                #plt.style.use('seaborn-talk')
+
+                #ax2 = fig.add_subplot(121)
+                #disp2 = CameraDisplay(cam_geom[tel_id],
+                                      #image=event.dl0.tel[tel_id].adc_sums[0],
+                                      #ax=ax2)
+                #disp2.cmap = plt.cm.hot
+                #disp2.add_colorbar()
+
+                #ax1 = fig.add_subplot(122)
+                #disp1 = CameraDisplay(new_geom,
+                                      #image=np.sum(pmt_signal, axis=1)
+                                      #if pmt_signal.shape[-1] == 25 else pmt_signal,
+                                      #ax=ax1)
+                #disp1.cmap = plt.cm.hot
+                #disp1.add_colorbar()
+                #plt.title("Camera {}".format(tel_id))
+                #plt.suptitle("{} mode".format(args.mode))
+                #plt.show()
+
+
+                if Imagecutflow.cut(min_charge, np.sum(pmt_signal)):
                     continue
 
-                Imagecutflow.count("minCharge_{}".format(args.min_charge))
-
                 try:
-                    hillas_dict[tel_id] = hillas_parameters(pix_x, pix_y, pmt_signal)[0]
+                    hillas_dict[tel_id] = hillas_parameters(new_geom.pix_x,
+                                                            new_geom.pix_y, pmt_signal)[0]
                 except HillasParameterizationError as e:
                     print(e)
                     continue
@@ -186,6 +212,7 @@ if __name__ == '__main__':
                 c = fit.circles[k]
                 h = hillas_dict[k]
                 tel_signal.append(h.size)
+                tel_signal_pe.append(np.sum(event.mc.tel[k].photo_electron_image))
                 hillas_tilt.append(abs((angle(c.norm, shower_org)*u.rad) - 90*u.deg))
                 hillas_length.append(h.length * u.m)
                 hillas_width.append(h.width * u.m)
@@ -259,6 +286,25 @@ if __name__ == '__main__':
         exit(0)
 
     hillas_tilt = convert_astropy_array(hillas_tilt)
+    hillas_length = convert_astropy_array(hillas_length)
+    hillas_width = convert_astropy_array(hillas_width)
+
+    '''
+    plot the angular error of the hillas ellipsis vs the number of photo electrons '''
+    npe_edges = np.linspace(1, 6, 21)
+    plot_hex_and_violine(np.log10(tel_signal_pe),
+                         np.log10(hillas_tilt/angle_unit),
+                         npe_edges,
+                         extent=[0, 5, -5, 1],
+                         xlabel="log10(number of photo electrons)",
+                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+    plt.suptitle(args.mode)
+    if args.write:
+        save_fig("plots/alpha_vs_photoelecrons_{}".format(args.mode))
+    plt.pause(.1)
+
+    '''
+    plot the angular error of the hillas ellipsis vs the measured signal on the camera '''
     size_edges = np.linspace(1, 6, 21)
     plot_hex_and_violine(np.log10(tel_signal),
                          np.log10(hillas_tilt/angle_unit),
@@ -271,8 +317,8 @@ if __name__ == '__main__':
         save_fig("plots/alpha_vs_signal_{}".format(args.mode))
     plt.pause(.1)
 
-    hillas_length = convert_astropy_array(hillas_length)
-    hillas_width = convert_astropy_array(hillas_width)
+    '''
+    plot the angular error of the hillas ellipsis vs the length/width ratio '''
     lovw_edges = np.linspace(0, 3, 16)
     plot_hex_and_violine(np.log10(hillas_length/hillas_width),
                          np.log10(hillas_tilt/angle_unit),
@@ -291,7 +337,6 @@ if __name__ == '__main__':
     # xisb = convert_astropy_array(xisb)
 
     xis = xis2
-
 
     figure = plt.figure()
     plt.hist(xis, bins=np.linspace(0, 25, 50), log=True)
