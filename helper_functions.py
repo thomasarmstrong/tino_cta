@@ -161,47 +161,81 @@ def plot_hex_and_violine(abscissa, ordinate, bin_edges, extent=None, vmin=None, 
                          xlabel="", ylabel="", do_hex=True, do_violine=True,
                          cm=plt.cm.hot):
 
-    val_vs_dep = {}
-    bin_centres = (bin_edges[1:]+bin_edges[:-1])/2.
-    for dep, val in zip(abscissa, ordinate):
-        ''' get the bin number this event belongs into '''
-        ibin = np.digitize(dep, bin_edges)-1
-        ibin = min(ibin, len(bin_centres)-1)
+    """
+    takes two arrays of coordinates and creates a 2D hexbin plot and a violine plot (or
+    just one of them)
 
-        ''' the central value of the bin is the key for the dictionary '''
-        if bin_centres[ibin] not in val_vs_dep:
-            val_vs_dep[bin_centres[ibin]]  = [val]
-        else:
-            val_vs_dep[bin_centres[ibin]] += [val]
+    Parameters:
+    -----------
+    abscissa, ordinate : arrays
+        the coordinates of the data to plot
+    bin_edges : array
+        bin edges along the abscissa
+    extent : 4-tuple of floats (default: None)
+        extension of the abscissa, ordinate; given as is to plt.hexbin
+    vmin, vmax : floats (defaults: None)
+        lower and upper caps of the bin values to be plotted in plt.hexbin
+    xlabel, ylabel : strings (defaults: "")
+        labels for the two axes of either plot
+    do_hex, do_violine : bools (defaults: True)
+        whether or not to do the respective plots
+    cm : colour map (default: plt.cm.hot)
+        colour map to be used for the hexbin plot
+    """
+
 
     plt.figure()
-    if do_hex and do_violine:
-        plt.subplot(211)
+
+    ''' make a normal 2D hexplot from the given data '''
     if do_hex:
+        ''' if we do both plot types, open a subplot '''
+        if do_violine:
+            plt.subplot(211)
         plt.hexbin(abscissa,
-                ordinate,
-                vmax=vmax,
-                gridsize=40,
-                extent=extent,
-                cmap=cm)
+                   ordinate,
+                   vmin=vmin,
+                   vmax=vmax,
+                   gridsize=40,
+                   extent=extent,
+                   cmap=cm)
         plt.colorbar()
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
 
-    if do_hex and do_violine:
-        plt.subplot(212)
-
+    ''' prepare and draw the data for the violine plot '''
     if do_violine:
+        '''
+        to plot the violines, sort the ordinate values into a dictionary
+        the keys are the central values of the bins given by @bin_edges '''
+        val_vs_dep = {}
+        bin_centres = (bin_edges[1:]+bin_edges[:-1])/2.
+        for dep, val in zip(abscissa, ordinate):
+            ''' get the bin number this event belongs into '''
+            ibin = np.digitize(dep, bin_edges)-1
+            ibin = min(ibin, len(bin_centres)-1)
+
+            ''' the central value of the bin is the key for the dictionary '''
+            if bin_centres[ibin] not in val_vs_dep:
+                val_vs_dep[bin_centres[ibin]]  = [val]
+            else:
+                val_vs_dep[bin_centres[ibin]] += [val]
+
+        ''' if we do both plot types, open a subplot '''
+        if do_hex:
+            plt.subplot(212)
+
         vals = [a for a in val_vs_dep.values()]
         keys = [a for a in val_vs_dep.keys()]
-        try:
-            widths=bin_edges[1]-bin_edges[0]
-        except IndexError:
-            widths = 1
+
+        widths=[]
+        for cen, wid in zip(bin_centres, (bin_edges[1:]-bin_edges[:-1])):
+            if cen in keys:
+                widths.append(wid*.9)
+
 
         plt.violinplot(vals, keys,
-                    points=60, widths=widths,
-                    showextrema=True, showmedians=True)
+                       points=60, widths=widths,
+                       showextrema=True, showmedians=True)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.grid()
