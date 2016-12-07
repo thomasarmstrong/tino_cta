@@ -157,12 +157,12 @@ def sigma_lima(Non, Noff, alpha=0.2):
 
 
 
-def plot_hex_and_violine(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
-                         xlabel="", ylabel="", do_hex=True, do_violine=True,
+def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
+                         xlabel="", ylabel="", do_hex=True, do_violin=True,
                          cm=plt.cm.hot):
 
     """
-    takes two arrays of coordinates and creates a 2D hexbin plot and a violine plot (or
+    takes two arrays of coordinates and creates a 2D hexbin plot and a violin plot (or
     just one of them)
 
     Parameters:
@@ -177,7 +177,7 @@ def plot_hex_and_violine(abscissa, ordinate, bin_edges, extent=None, vmin=None, 
         lower and upper caps of the bin values to be plotted in plt.hexbin
     xlabel, ylabel : strings (defaults: "")
         labels for the two axes of either plot
-    do_hex, do_violine : bools (defaults: True)
+    do_hex, do_violin : bools (defaults: True)
         whether or not to do the respective plots
     cm : colour map (default: plt.cm.hot)
         colour map to be used for the hexbin plot
@@ -189,7 +189,7 @@ def plot_hex_and_violine(abscissa, ordinate, bin_edges, extent=None, vmin=None, 
     ''' make a normal 2D hexplot from the given data '''
     if do_hex:
         ''' if we do both plot types, open a subplot '''
-        if do_violine:
+        if do_violin:
             plt.subplot(211)
         plt.hexbin(abscissa,
                    ordinate,
@@ -202,10 +202,10 @@ def plot_hex_and_violine(abscissa, ordinate, bin_edges, extent=None, vmin=None, 
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
 
-    ''' prepare and draw the data for the violine plot '''
-    if do_violine:
+    ''' prepare and draw the data for the violin plot '''
+    if do_violin:
         '''
-        to plot the violines, sort the ordinate values into a dictionary
+        to plot the violins, sort the ordinate values into a dictionary
         the keys are the central values of the bins given by @bin_edges '''
         val_vs_dep = {}
         bin_centres = (bin_edges[1:]+bin_edges[:-1])/2.
