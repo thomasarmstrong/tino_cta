@@ -282,8 +282,8 @@ if __name__ == '__main__':
         for cl in ['g', 'p']:
             Table([off_angles[cl], MC_Energy[cl], phi[cl], the[cl], NTels[cl]],
                   names=("off_angles", "MC_Energy", "phi", "theta", "multiplicity")
-                  ).write("data/selected_events/selected_events_" +
-                          args.mode+"_"+cl+".fits",
+                  ).write("data/selected_events/selected_events_{}_{}.fits".format(
+                            args.mode, cl),
                           overwrite=True)
 
     for cl in ['g', 'p']:

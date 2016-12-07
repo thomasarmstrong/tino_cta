@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 from astropy import units as u
+from astropy.table import Table
+eps_table = Table(names=("Eps_w", "Eps_t", "diff_Eps", "sig_w", "sig_t", "sig_p"))
+
 
 from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
@@ -72,13 +75,14 @@ if __name__ == '__main__':
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
 
-    min_charge = "minCharge_{}".format(args.min_charge)
-    Imagecutflow.set_cut(min_charge, lambda x: x < args.min_charge)
+    min_charge = "min_charge {}".format(args.min_charge)
+    Imagecutflow.set_cut(min_charge, lambda x: x > args.min_charge)
 
 
 
     # Cleaner = ImageCleaner(mode="none")
-    Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow)
+    Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
+                           skip_edge_events=False, island_cleaning=False)
 
     fit = FitGammaHillas()
 
@@ -100,8 +104,8 @@ if __name__ == '__main__':
     hillas_width = []
 
     # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    allowed_tels = range(34)  # all ASTRI telescopes
+    # allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -137,14 +141,13 @@ if __name__ == '__main__':
                     tel_phi[tel_id] = 180.*u.deg
                     tel_theta[tel_id] = 20.*u.deg
 
-                pmt_signal = []
                 if cam_geom[tel_id] == "ASTRI":
-                    pmt_signal = apply_mc_calibration_ASTRI(
+                    cal_signal = apply_mc_calibration_ASTRI(
                                     event.dl0.tel[tel_id].adc_sums,
                                     event.mc.tel[tel_id].dc_to_pe,
                                     event.mc.tel[tel_id].pedestal)
                 else:
-                    pmt_signal = apply_mc_calibration(
+                    cal_signal = apply_mc_calibration(
                         event.dl0.tel[tel_id].adc_sums[0],
                         event.mc.tel[tel_id].dc_to_pe[0],
                         event.mc.tel[tel_id].pedestal[0])
@@ -153,13 +156,28 @@ if __name__ == '__main__':
 
                 try:
                     pmt_signal, new_geom = \
-                        Cleaner.clean(pmt_signal, cam_geom[tel_id],
+                        Cleaner.clean(cal_signal, cam_geom[tel_id],
                                       event.inst.optical_foclen[tel_id])
+                    pmt_signal_2 = \
+                        Cleaner.clean_tail(cal_signal, cam_geom[tel_id],
+                                           event.inst.optical_foclen[tel_id])[0]
                 except FileNotFoundError as e:
                     print(e)
                     continue
                 except EdgeEventException:
                     continue
+
+
+                sum_cleaned = np.sum(pmt_signal)
+                sum_signal = np.sum(event.mc.tel[tel_id].photo_electron_image)
+                Epsilon_intensity = abs(sum_cleaned - sum_signal) / sum_signal
+
+                sum_cleaned_2 = np.sum(pmt_signal_2)
+                Epsilon_intensity_2 = abs(sum_cleaned_2 - sum_signal) / sum_signal
+                eps_table.add_row([Epsilon_intensity, Epsilon_intensity_2,
+                                   Epsilon_intensity - Epsilon_intensity_2,
+                                   sum_cleaned, sum_cleaned_2, sum_signal])
+                continue
 
                 #from ctapipe.visualization import CameraDisplay
                 #fig = plt.figure()
@@ -184,12 +202,13 @@ if __name__ == '__main__':
                 #plt.show()
 
 
-                if Imagecutflow.cut(min_charge, np.sum(pmt_signal)):
+                if not Imagecutflow.cut(min_charge, np.sum(pmt_signal)):
                     continue
 
                 try:
                     hillas_dict[tel_id] = hillas_parameters(new_geom.pix_x,
-                                                            new_geom.pix_y, pmt_signal)[0]
+                                                            new_geom.pix_y,
+                                                            pmt_signal)[0]
                 except HillasParameterizationError as e:
                     print(e)
                     continue
@@ -280,6 +299,33 @@ if __name__ == '__main__':
     print()
     Imagecutflow()
 
+    print(eps_table)
+
+    eps_table.write("Eps_int_comparison.fits", overwrite=True)
+
+    plot_hex_and_violin(
+            np.log10(eps_table["Eps_w"]),
+            np.log10(eps_table["sig_p"]),
+            None,
+            ylabel="log10(NPE)",
+            xlabel="log10(Eps2 wave)",
+            zlabel="log10(counts)",
+            bins='log',
+            extent=(-3, 0, 1.5, 5),
+            do_violin=False)
+    plt.pause(.1)
+    plot_hex_and_violin(
+            np.log10(eps_table["Eps_t"]),
+            np.log10(eps_table["sig_p"]),
+            None,
+            ylabel="log10(NPE)",
+            xlabel="log10(Eps2 tail)",
+            zlabel="log10(counts)",
+            bins='log',
+            extent=(-3, 0, 1.5, 5),
+            do_violin=False)
+    plt.show()
+
     '''
     if we don't want to plot anything, we can exit now '''
     if not args.plot:
@@ -292,12 +338,12 @@ if __name__ == '__main__':
     '''
     plot the angular error of the hillas ellipsis vs the number of photo electrons '''
     npe_edges = np.linspace(1, 6, 21)
-    plot_hex_and_violine(np.log10(tel_signal_pe),
-                         np.log10(hillas_tilt/angle_unit),
-                         npe_edges,
-                         extent=[0, 5, -5, 1],
-                         xlabel="log10(number of photo electrons)",
-                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+    plot_hex_and_violin(np.log10(tel_signal_pe),
+                        np.log10(hillas_tilt/angle_unit),
+                        npe_edges,
+                        extent=[0, 5, -5, 1],
+                        xlabel="log10(number of photo electrons)",
+                        ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
     if args.write:
         save_fig("plots/alpha_vs_photoelecrons_{}".format(args.mode))
@@ -306,12 +352,12 @@ if __name__ == '__main__':
     '''
     plot the angular error of the hillas ellipsis vs the measured signal on the camera '''
     size_edges = np.linspace(1, 6, 21)
-    plot_hex_and_violine(np.log10(tel_signal),
-                         np.log10(hillas_tilt/angle_unit),
-                         size_edges,
-                         extent=[0, 5, -5, 1],
-                         xlabel="log10(signal size)",
-                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+    plot_hex_and_violin(np.log10(tel_signal),
+                        np.log10(hillas_tilt/angle_unit),
+                        size_edges,
+                        extent=[0, 5, -5, 1],
+                        xlabel="log10(signal size)",
+                        ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
     if args.write:
         save_fig("plots/alpha_vs_signal_{}".format(args.mode))
@@ -320,12 +366,12 @@ if __name__ == '__main__':
     '''
     plot the angular error of the hillas ellipsis vs the length/width ratio '''
     lovw_edges = np.linspace(0, 3, 16)
-    plot_hex_and_violine(np.log10(hillas_length/hillas_width),
-                         np.log10(hillas_tilt/angle_unit),
-                         lovw_edges,
-                         extent=[0, 2, -4.5, 1],
-                         xlabel="log10(length/width)",
-                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+    plot_hex_and_violin(np.log10(hillas_length/hillas_width),
+                        np.log10(hillas_tilt/angle_unit),
+                        lovw_edges,
+                        extent=[0, 2, -4.5, 1],
+                        xlabel="log10(length/width)",
+                        ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
     if args.write:
         save_fig("plots/alpha_vs_lenOVwidth_{}".format(args.mode))
@@ -380,7 +426,7 @@ if __name__ == '__main__':
             xi_vs_tel[ntel].append(xi/angle_unit)
 
     '''
-    create a list of energy bin-edges and -centres for violine plots '''
+    create a list of energy bin-edges and -centres for violin plots '''
     Energy_edges = np.linspace(2, 8, 13)
     Energy_centres = (Energy_edges[1:]+Energy_edges[:-1])/2.
 
@@ -400,7 +446,7 @@ if __name__ == '__main__':
             xi_vs_energy[Energy_centres[sbin]] += [xi/angle_unit]
 
     '''
-    plotting the angular error as violine plots with binning in
+    plotting the angular error as violin plots with binning in
     number of telescopes an shower energy '''
     figure = plt.figure()
     plt.subplot(211)
@@ -448,7 +494,7 @@ if __name__ == '__main__':
             diff_vs_energy[Energy_centres[sbin]] += [(diff/dist_unit)]
 
     '''
-    plotting the core position error as violine plots with binning in
+    plotting the core position error as violin plots with binning in
     number of telescopes an shower energy '''
     figure = plt.figure()
     plt.subplot(211)

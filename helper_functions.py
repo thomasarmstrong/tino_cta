@@ -99,18 +99,18 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
             ptl.savefig("{}.{}".format(outname, end))
 
 
-def make_mock_event_rate(spectra, binEdges=None, Emin=None, Emax=None,
+def make_mock_event_rate(spectra, bin_edges=None, Emin=None, Emax=None,
                          E_unit=u.GeV, NBins=None, logE=True, norm=None):
 
     rates = [[] for f in spectra]
 
-    if binEdges is None:
+    if bin_edges is None:
         if logE:
             Emin = np.log10(Emin/E_unit)
             Emax = np.log10(Emax/E_unit)
-        binEdges = np.linspace(Emin, Emax, NBins+1, True)
+        bin_edges = np.linspace(Emin, Emax, NBins+1, True)
 
-    for l_edge, h_edge in zip(binEdges[:-1], binEdges[1:]):
+    for l_edge, h_edge in zip(bin_edges[:-1], bin_edges[1:]):
         if logE:
             bin_centre = 10**((l_edge+h_edge)/2.) * E_unit
             bin_width = (10**h_edge-10**l_edge)*E_unit
@@ -128,7 +128,7 @@ def make_mock_event_rate(spectra, binEdges=None, Emin=None, Emax=None,
             rate *= norm[i]/np.sum(rate)
         rates[i] = rate
 
-    return (*rates), binEdges
+    return (*rates), bin_edges
 
 # ================================== #
 # Compute Eq. (17) of Li & Ma (1983) #
@@ -158,8 +158,8 @@ def sigma_lima(Non, Noff, alpha=0.2):
 
 
 def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
-                         xlabel="", ylabel="", do_hex=True, do_violin=True,
-                         cm=plt.cm.hot):
+                         xlabel="", ylabel="", zlabel="", do_hex=True, do_violin=True,
+                         cm=plt.cm.hot, **kwargs):
 
     """
     takes two arrays of coordinates and creates a 2D hexbin plot and a violin plot (or
@@ -181,6 +181,8 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         whether or not to do the respective plots
     cm : colour map (default: plt.cm.hot)
         colour map to be used for the hexbin plot
+    kwargs : args dictionary
+        more arguments to be passed to plt.hexbin
     """
 
 
@@ -188,22 +190,31 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
 
     ''' make a normal 2D hexplot from the given data '''
     if do_hex:
+
         ''' if we do both plot types, open a subplot '''
         if do_violin:
             plt.subplot(211)
+
         plt.hexbin(abscissa,
                    ordinate,
                    vmin=vmin,
                    vmax=vmax,
                    gridsize=40,
                    extent=extent,
-                   cmap=cm)
-        plt.colorbar()
+                   cmap=cm,
+                   **kwargs)
+        cb = plt.colorbar()
+        cb.set_label(zlabel)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
 
     ''' prepare and draw the data for the violin plot '''
     if do_violin:
+
+        ''' if we do both plot types, open a subplot '''
+        if do_hex:
+            plt.subplot(212)
+
         '''
         to plot the violins, sort the ordinate values into a dictionary
         the keys are the central values of the bins given by @bin_edges '''
@@ -211,8 +222,9 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         bin_centres = (bin_edges[1:]+bin_edges[:-1])/2.
         for dep, val in zip(abscissa, ordinate):
             ''' get the bin number this event belongs into '''
-            ibin = np.digitize(dep, bin_edges)-1
-            ibin = min(ibin, len(bin_centres)-1)
+            ibin = np.clip(
+                        np.digitize(dep, bin_edges)-1,
+                        0, len(bin_centres)-1)
 
             ''' the central value of the bin is the key for the dictionary '''
             if bin_centres[ibin] not in val_vs_dep:
@@ -220,13 +232,11 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
             else:
                 val_vs_dep[bin_centres[ibin]] += [val]
 
-        ''' if we do both plot types, open a subplot '''
-        if do_hex:
-            plt.subplot(212)
-
         vals = [a for a in val_vs_dep.values()]
         keys = [a for a in val_vs_dep.keys()]
 
+        '''
+        calculate the widths of the violins as 90 % of the corresponding bin width '''
         widths=[]
         for cen, wid in zip(bin_centres, (bin_edges[1:]-bin_edges[:-1])):
             if cen in keys:

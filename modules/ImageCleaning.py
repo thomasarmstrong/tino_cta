@@ -16,6 +16,7 @@ from .CutFlow import CutFlow
 
 from ctapipe.io import convert_geometry_1d_to_2d, convert_geometry_back
 
+
 class UnknownModeException(Exception):
     pass
 
@@ -63,28 +64,9 @@ def kill_isolpix(array, plot=False):
     return filtered_array
 
 
-def remove_isolated_pixels(img2d, threshold=0):
-    max_val = np.max(img2d)
-    for idx, foo in enumerate(img2d):
-        for idy, bar in enumerate(foo):
-            threshold = 3
-            is_island = 0
-            if idx > 0:
-                is_island += img2d[idx-1, idy]
-            if idx < len(img2d)-1:
-                is_island += img2d[idx+1, idy]
-            if idy > 0:
-                is_island += img2d[idx, idy-1]
-            if idy < len(foo)-1:
-                is_island += img2d[idx, idy+1]
-
-            if is_island < threshold and bar != max_val:
-                img2d[idx, idy] = 0
-
-
 class ImageCleaner:
 
-    def __init__(self, old=False, mode="wave", dilate=False,
+    def __init__(self, old=False, mode="wave", dilate=False, island_cleaning=True,
                  skip_edge_events=True, cutflow=CutFlow("ImageCleaner")):
         self.mode = mode
         self.dilate = dilate
@@ -103,6 +85,11 @@ class ImageCleaner:
             raise UnknownModeException(
                 'cleaning mode "{}" not found'.format(self.mode))
 
+        if island_cleaning:
+            self.island_cleaning = kill_isolpix
+        else:
+            self.island_cleaning = lambda x: x
+
     def remove_plateau(self, img):
         img -= np.mean(img)
         img[img < 0] = 0
@@ -115,7 +102,7 @@ class ImageCleaner:
             self.cutflow.count("wavelet cleaning")
 
             ''' wavelet_transform still leaves some isolated pixels; remove them '''
-            cleaned_img = kill_isolpix(cleaned_img)
+            cleaned_img = self.island_cleaning(cleaned_img)
 
             if self.skip_edge_events:
                 edge_thresh = np.max(cleaned_img)/5.
@@ -140,7 +127,7 @@ class ImageCleaner:
 
             self.cutflow.count("wavelet cleaning")
 
-            cleaned_img = kill_isolpix(cleaned_img)
+            cleaned_img = self.island_cleaning(cleaned_img)
 
             unrot_geom, unrot_img = convert_geometry_back(
                                     rot_geom, cleaned_img, cam_geom.cam_id, foclen)
@@ -158,8 +145,6 @@ class ImageCleaner:
             dilate(cam_geom, mask)
         img[mask == False] = 0
 
-        #img = kill_isolpix(img)
-
         if cam_geom.cam_id == "ASTRI":
             img = crop_astri_image(img)
 
@@ -171,7 +156,7 @@ class ImageCleaner:
                    (img[:,-1] > edge_thresh).any():
                         raise EdgeEventException
 
-            new_img = img.flatten()
+            new_img = self.island_cleaning(img).flatten()
             new_geom = copy(cam_geom)
             new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
             new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
