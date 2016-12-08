@@ -123,7 +123,8 @@ if __name__ == '__main__':
             Eventcutflow.count("min2Tels")
 
             print('Scanning input file... count = {}'.format(event.count))
-            print('available telscopes: {}'.format(event.dl0.tels_with_data))
+            print('Event ID: {}'.format(event.dl0.event_id))
+            print('Available telscopes: {}'.format(event.dl0.tels_with_data))
 
             hillas_dict = {}
             # for tel_id, tel in event.mc.tel.items():
