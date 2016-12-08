@@ -84,13 +84,19 @@ def make_argparser():
     return parser
 
 
+try:
+    from matplotlib2tikz import save as tikzsave
+except:
+    print("matplotlib2tikz is not installed")
 
-
-
-from matplotlib2tikz import save as tikzsave
 def tikz_save(arg, **kwargs):
-    tikzsave(arg, figureheight = '\\figureheight',
-                  figurewidth  = '\\figurewidth', **kwargs)
+    try:
+        tikzsave(arg, figureheight = '\\figureheight',
+                      figurewidth  = '\\figurewidth', **kwargs)
+    except:
+        print("matplotlib2tikz is not installed")
+
+
 def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
     for end in endings:
         if end == "tex":
