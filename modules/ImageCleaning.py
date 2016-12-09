@@ -100,7 +100,7 @@ class ImageCleaner:
     def clean_wave(self, img, cam_geom, foclen):
         if cam_geom.cam_id == "ASTRI":
             cropped_img = crop_astri_image(img)
-            cleaned_img = self.wavelet_transform(cropped_img)
+            cleaned_img = self.wavelet_transform.clean_image(cropped_img, raw_option_string="-K -k -C1 -m3 -s3 -n4")
 
             self.cutflow.count("wavelet cleaning")
 
