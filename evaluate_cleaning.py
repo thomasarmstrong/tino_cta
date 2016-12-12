@@ -18,7 +18,8 @@ performance_table = Table(names=("Eps_w", "Eps_t", "diff_Eps",
                                  "alpha_w", "alpha_t",
                                  "hill_width_w", "hill_length_w",
                                  "hill_width_t", "hill_length_t",
-                                 "sig_w", "sig_t", "sig_p"))
+                                 "sig_w", "sig_t", "sig_p",
+                                 "Event_id", "Tel_id"))
 
 
 from ctapipe.io.camera import CameraGeometry
@@ -257,7 +258,8 @@ if __name__ == '__main__':
                                            alpha['w'], alpha['t'],
                                            width['w'], length['w'],
                                            width['t'], length['t'],
-                                           sum_w, sum_t, sum_p])
+                                           sum_w, sum_t, sum_p,
+                                           event.dl0.event_id, tel_id])
 
             '''
             determine and print the 68-percentile of the hillas ellipsis tilt error
