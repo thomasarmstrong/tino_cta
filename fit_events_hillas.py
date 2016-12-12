@@ -161,23 +161,9 @@ if __name__ == '__main__':
                     pmt_signal_2 = \
                         Cleaner.clean_tail(cal_signal, cam_geom[tel_id],
                                            event.inst.optical_foclen[tel_id])[0]
-                except FileNotFoundError as e:
+                except (FileNotFoundError, EdgeEventException) as e:
                     print(e)
                     continue
-                except EdgeEventException:
-                    continue
-
-
-                sum_cleaned = np.sum(pmt_signal)
-                sum_signal = np.sum(event.mc.tel[tel_id].photo_electron_image)
-                Epsilon_intensity = abs(sum_cleaned - sum_signal) / sum_signal
-
-                sum_cleaned_2 = np.sum(pmt_signal_2)
-                Epsilon_intensity_2 = abs(sum_cleaned_2 - sum_signal) / sum_signal
-                eps_table.add_row([Epsilon_intensity, Epsilon_intensity_2,
-                                   Epsilon_intensity - Epsilon_intensity_2,
-                                   sum_cleaned, sum_cleaned_2, sum_signal])
-                continue
 
                 #from ctapipe.visualization import CameraDisplay
                 #fig = plt.figure()
@@ -201,6 +187,18 @@ if __name__ == '__main__':
                 #plt.suptitle("{} mode".format(args.mode))
                 #plt.show()
 
+
+                #sum_cleaned = np.sum(pmt_signal)
+                #sum_signal = np.sum(event.mc.tel[tel_id].photo_electron_image)
+                #Epsilon_intensity = abs(sum_cleaned - sum_signal) / sum_signal
+
+                #sum_cleaned_2 = np.sum(pmt_signal_2)
+                #Epsilon_intensity_2 = abs(sum_cleaned_2 - sum_signal) / sum_signal
+                #eps_table.add_row([Epsilon_intensity, Epsilon_intensity_2,
+                                   #Epsilon_intensity - Epsilon_intensity_2,
+                                   #sum_cleaned, sum_cleaned_2, sum_signal])
+
+                #continue
 
                 if not Imagecutflow.cut(min_charge, np.sum(pmt_signal)):
                     continue
@@ -299,32 +297,30 @@ if __name__ == '__main__':
     print()
     Imagecutflow()
 
-    print(eps_table)
-
-    eps_table.write("Eps_int_comparison.fits", overwrite=True)
-
-    plot_hex_and_violin(
-            np.log10(eps_table["Eps_w"]),
-            np.log10(eps_table["sig_p"]),
-            None,
-            ylabel="log10(NPE)",
-            xlabel="log10(Eps2 wave)",
-            zlabel="log10(counts)",
-            bins='log',
-            extent=(-3, 0, 1.5, 5),
-            do_violin=False)
-    plt.pause(.1)
-    plot_hex_and_violin(
-            np.log10(eps_table["Eps_t"]),
-            np.log10(eps_table["sig_p"]),
-            None,
-            ylabel="log10(NPE)",
-            xlabel="log10(Eps2 tail)",
-            zlabel="log10(counts)",
-            bins='log',
-            extent=(-3, 0, 1.5, 5),
-            do_violin=False)
-    plt.show()
+    #print(eps_table)
+    #eps_table.write("Eps_int_comparison.fits", overwrite=True)
+    #plot_hex_and_violin(
+            #np.log10(eps_table["Eps_w"]),
+            #np.log10(eps_table["sig_p"]),
+            #None,
+            #ylabel="log10(NPE)",
+            #xlabel="log10(Eps2 wave)",
+            #zlabel="log10(counts)",
+            #bins='log',
+            #extent=(-3, 0, 1.5, 5),
+            #do_violin=False)
+    #plt.pause(.1)
+    #plot_hex_and_violin(
+            #np.log10(eps_table["Eps_t"]),
+            #np.log10(eps_table["sig_p"]),
+            #None,
+            #ylabel="log10(NPE)",
+            #xlabel="log10(Eps2 tail)",
+            #zlabel="log10(counts)",
+            #bins='log',
+            #extent=(-3, 0, 1.5, 5),
+            #do_violin=False)
+    #plt.show()
 
     '''
     if we don't want to plot anything, we can exit now '''
