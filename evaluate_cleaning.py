@@ -185,7 +185,8 @@ if __name__ == '__main__':
 
                     ax1 = fig.add_subplot(221)
                     disp1 = CameraDisplay(cam_geom[tel_id],
-                                          image=event.mc.tel[tel_id].photo_electron_image,
+                                          image=np.sqrt(event.mc.tel[tel_id]
+                                                        .photo_electron_image),
                                           ax=ax1)
                     disp1.cmap = plt.cm.hot
                     disp1.add_colorbar()
@@ -201,7 +202,7 @@ if __name__ == '__main__':
 
                     ax3 = fig.add_subplot(223)
                     disp3 = CameraDisplay(new_geom_t,
-                                          image=pmt_signal_t,
+                                          image=np.sqrt(pmt_signal_t),
                                           ax=ax3)
                     disp3.cmap = plt.cm.hot
                     disp3.add_colorbar()
@@ -209,8 +210,10 @@ if __name__ == '__main__':
 
                     ax4 = fig.add_subplot(224)
                     disp4 = CameraDisplay(new_geom_w,
-                                          image=np.sum(pmt_signal_w, axis=1)
-                                          if pmt_signal_w.shape[-1] == 25 else pmt_signal_w,
+                                          image=np.sqrt(
+                                                    np.sum(pmt_signal_w, axis=1)
+                                                    if pmt_signal_w.shape[-1] == 25
+                                                    else pmt_signal_w),
                                           ax=ax4)
                     disp4.cmap = plt.cm.hot
                     disp4.add_colorbar()
