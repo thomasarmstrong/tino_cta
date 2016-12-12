@@ -254,5 +254,7 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
                        showextrema=True, showmedians=True)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
+        plt.xlim([extent[0], (5.*extent[1] - extent[0])/4.])
+        plt.ylim(extent[2:])
         plt.grid()
 
