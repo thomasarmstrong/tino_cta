@@ -14,7 +14,10 @@ from datapipe.denoising.wavelets_mrfilter import WaveletTransform
 
 from .CutFlow import CutFlow
 
-from ctapipe.io import convert_geometry_1d_to_2d, convert_geometry_back
+try:
+    from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, convert_geometry_back
+except:
+    print("Wrong version of ctapipe ; cannot handle hexagonal cameras.")
 
 
 class UnknownModeException(Exception):
@@ -97,7 +100,7 @@ class ImageCleaner:
     def clean_wave(self, img, cam_geom, foclen):
         if cam_geom.cam_id == "ASTRI":
             cropped_img = crop_astri_image(img)
-            cleaned_img = self.wavelet_transform(cropped_img)
+            cleaned_img = self.wavelet_transform.clean_image(cropped_img, raw_option_string="-K -k -C1 -m3 -s3 -n4")
 
             self.cutflow.count("wavelet cleaning")
 
@@ -120,20 +123,23 @@ class ImageCleaner:
             new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
 
         elif cam_geom.pix_type.startswith("hex"):
-            rot_geom, rot_img = convert_geometry_1d_to_2d(
-                                    cam_geom, img, cam_geom.cam_id)
+            try:
+                rot_geom, rot_img = convert_geometry_1d_to_2d(
+                                        cam_geom, img, cam_geom.cam_id)
 
-            cleaned_img = self.wavelet_transform(rot_img)
+                cleaned_img = self.wavelet_transform(rot_img)
 
-            self.cutflow.count("wavelet cleaning")
+                self.cutflow.count("wavelet cleaning")
 
-            cleaned_img = self.island_cleaning(cleaned_img)
+                cleaned_img = self.island_cleaning(cleaned_img)
 
-            unrot_geom, unrot_img = convert_geometry_back(
-                                    rot_geom, cleaned_img, cam_geom.cam_id, foclen)
+                unrot_geom, unrot_img = convert_geometry_back(
+                                        rot_geom, cleaned_img, cam_geom.cam_id, foclen)
 
-            new_img = unrot_img
-            new_geom = unrot_geom
+                new_img = unrot_img
+                new_geom = unrot_geom
+            except:
+                print("Wrong version of ctapipe ; cannot handle hexagonal cameras.")
 
         return new_img, new_geom
 
