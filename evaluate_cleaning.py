@@ -10,6 +10,8 @@ from bisect import insort
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
+from ctapipe.utils import linalg
+
 from ctapipe.visualization import CameraDisplay
 
 from astropy import units as u
@@ -104,7 +106,16 @@ if __name__ == '__main__':
     NTels = []
     EnMC  = []
 
-
+    '''
+    keeping track of the hit distribution transverse to the shower axis on the camera
+    for different energy bins '''
+    from modules.Histogram import nDHistogram
+    pe_vs_dp = {'p': {}, 'w': {}, 't': {}}
+    for k in pe_vs_dp.keys():
+        pe_vs_dp[k] = nDHistogram(
+                    bin_edges=[np.arange(6),
+                               np.linspace(-.1, .1, 42)*u.m],
+                    labels=["log10(signal)", "Delta P"])
 
     # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     allowed_tels = range(34)  # all ASTRI telescopes
@@ -125,6 +136,7 @@ if __name__ == '__main__':
 
             Eventcutflow.count("min2Tels")
 
+            print()
             print('Scanning input file... count = {}'.format(event.count))
             print('Event ID: {}'.format(event.dl0.event_id))
             print('Available telscopes: {}'.format(event.dl0.tels_with_data))
@@ -139,6 +151,8 @@ if __name__ == '__main__':
             for tel_id in event.dl0.tels_with_data:
 
                 Imagecutflow.count("noCuts")
+
+                pmt_signal_p = event.mc.tel[tel_id].photo_electron_image
 
                 '''
                 guessing camera geometry '''
@@ -185,8 +199,7 @@ if __name__ == '__main__':
 
                     ax1 = fig.add_subplot(221)
                     disp1 = CameraDisplay(cam_geom[tel_id],
-                                          image=np.sqrt(event.mc.tel[tel_id]
-                                                        .photo_electron_image),
+                                          image=np.sqrt(pmt_signal_p),
                                           ax=ax1)
                     disp1.cmap = plt.cm.hot
                     disp1.add_colorbar()
@@ -225,6 +238,9 @@ if __name__ == '__main__':
                 do the hillas parametrisation of the two cleaned images '''
                 try:
                     hillas = {}
+                    hillas['p'] = hillas_parameters(cam_geom[tel_id].pix_x,
+                                                    cam_geom[tel_id].pix_y,
+                                                    pmt_signal_p)[0]
                     hillas['w'] = hillas_parameters(new_geom_w.pix_x,
                                                     new_geom_w.pix_y,
                                                     pmt_signal_w)[0]
@@ -237,7 +253,42 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("Hillas")
 
-                ''' get some more parameters and put them in a astropy.table.Table '''
+                '''
+                get some more parameters and put them in a astropy.table.Table '''
+                sum_p = np.sum(pmt_signal_p)
+                sum_w = np.sum(pmt_signal_w)
+                sum_t = np.sum(pmt_signal_t)
+
+                Epsilon_intensity_w = abs(sum_w - sum_p) / sum_p
+                Epsilon_intensity_t = abs(sum_t - sum_p) / sum_p
+
+                for k, signal in {'p': pmt_signal_p,
+                                  'w': pmt_signal_w}.items():
+
+                    p1_x = hillas[k].cen_x
+                    p1_y = hillas[k].cen_y
+                    p2_x = p1_x + hillas[k].length*np.cos(hillas[k].psi + np.pi/2)
+                    p2_y = p1_y + hillas[k].length*np.sin(hillas[k].psi + np.pi/2)
+
+                    T = linalg.normalise(np.array([p1_x-p2_x, p1_y-p2_y]))
+
+                    for p, x, y in zip(signal,
+                                       cam_geom[tel_id].pix_x/u.m,
+                                       cam_geom[tel_id].pix_y/u.m):
+                        D = [p1_x-x, p1_y-y]
+
+                        dl = D[0]*T[0] + D[1]*T[1]
+                        if abs(dl) > 2*hillas[k].length:
+                            continue
+
+                        dp = D[0]*T[1] - D[1]*T[0]
+                        dp *= u.m
+
+                        pe_vs_dp[k].fill([np.log10(sum_p), dp], p)
+
+
+
+
                 alpha = {}
                 length = {}
                 width = {}
@@ -250,12 +301,6 @@ if __name__ == '__main__':
                     length[k] = h.length * u.m
                     width[k] = h.width * u.m
 
-                sum_w = np.sum(pmt_signal_w)
-                sum_p = np.sum(event.mc.tel[tel_id].photo_electron_image)
-                Epsilon_intensity_w = abs(sum_w - sum_p) / sum_p
-
-                sum_t = np.sum(pmt_signal_t)
-                Epsilon_intensity_t = abs(sum_t - sum_p) / sum_p
                 performance_table.add_row([Epsilon_intensity_w, Epsilon_intensity_t,
                                            Epsilon_intensity_w - Epsilon_intensity_t,
                                            alpha['w'], alpha['t'],
@@ -287,6 +332,68 @@ if __name__ == '__main__':
 
     if args.write:
         performance_table.write("Eps_int_comparison.fits", overwrite=True)
+
+
+    from matplotlib.colors import LogNorm
+    pe_vs_dp_p = pe_vs_dp['p'].normalise()
+    pe_vs_dp_w = pe_vs_dp['w'].normalise()
+    plt.figure()
+    plt.subplot(121)
+    plt.imshow(pe_vs_dp_p.data[1:-1, 1:-1],
+               extent=(pe_vs_dp_p.bin_edges[1][0].value,
+                       pe_vs_dp_p.bin_edges[1][-1].value,
+                       pe_vs_dp_p.bin_edges[0][0],
+                       pe_vs_dp_p.bin_edges[0][-1]),
+               cmap=plt.cm.hot,
+               origin='lower',
+               aspect='auto',
+               interpolation='none')
+    plt.title("photo electrons")
+    plt.colorbar()
+
+    plt.subplot(122)
+    plt.imshow(pe_vs_dp_w.data[1:-1, 1:-1],
+               extent=(pe_vs_dp_p.bin_edges[1][0].value,
+                       pe_vs_dp_p.bin_edges[1][-1].value,
+                       pe_vs_dp_p.bin_edges[0][0],
+                       pe_vs_dp_p.bin_edges[0][-1]),
+               cmap=plt.cm.hot,
+               origin='lower',
+               aspect='auto',
+               interpolation='none')
+    plt.title("wavelet cleaned")
+    plt.colorbar()
+    plt.pause(.1)
+
+    pe_bin = 3
+    plt.figure()
+    plt.style.use('t_slides')
+
+    plt.subplot(131)
+    plt.semilogy((pe_vs_dp_p.bin_edges[1][1:]+pe_vs_dp_p.bin_edges[1][:-1])/2,
+                 pe_vs_dp_w.norm[pe_bin][1:-1])
+    plt.title("hit pixel")
+    plt.xlabel("perpendicular offset / m")
+    plt.ylabel("number of hit pmt")
+
+    plt.subplot(132)
+    plt.semilogy((pe_vs_dp_p.bin_edges[1][1:]+pe_vs_dp_p.bin_edges[1][:-1])/2,
+                 pe_vs_dp_p.data[pe_bin][1:-1])
+    plt.title("photo electrons")
+    plt.xlabel("perpendicular offset / m")
+    plt.ylabel("average pmt signal")
+
+    plt.subplot(133)
+    plt.semilogy((pe_vs_dp_p.bin_edges[1][1:]+pe_vs_dp_p.bin_edges[1][:-1])/2,
+                 pe_vs_dp_w.data[pe_bin][1:-1])
+    plt.title("wavelet cleaned")
+    plt.xlabel("perpendicular offset / m")
+    plt.ylabel("average pmt signal")
+
+    plt.suptitle("total signal: 10^{} to 10^{}".format(pe_vs_dp_p.bin_edges[0][pe_bin-1],
+                                                       pe_vs_dp_p.bin_edges[0][pe_bin]))
+
+    plt.show()
 
     '''
     if we don't want to plot anything, we can exit now '''
