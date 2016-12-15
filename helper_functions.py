@@ -201,6 +201,8 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         lower and upper caps of the bin values to be plotted in plt.hexbin
     xlabel, ylabel : strings (defaults: "")
         labels for the two axes of either plot
+    zlabel : string (default: "")
+        label for the colorbar of the hexbin plot
     do_hex, do_violin : bools (defaults: True)
         whether or not to do the respective plots
     cm : colour map (default: plt.cm.hot)
@@ -274,8 +276,10 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         plt.ylabel(ylabel)
         ''' adding a colour bar to tex hexbin plot reduces its total width to 4/5
         adjusting the extent of the violin plot to sync up with the hexbin plot '''
-        plt.xlim([extent[0], (5.*extent[1] - extent[0])/4.])
+        if not np.isnan(extent[:2]).any():
+            plt.xlim([extent[0], (5.*extent[1] - extent[0])/4.])
         ''' for good measure also sync the vertical extent '''
-        plt.ylim(extent[2:])
+        if not np.isnan(extent[2:]).any():
+            plt.ylim(extent[2:])
         plt.grid()
 
