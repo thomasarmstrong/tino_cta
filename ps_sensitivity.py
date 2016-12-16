@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+plt.style.use('seaborn-talk')
+plt.style.use('t_slides')
 
 from astropy.table import Table
 from astropy import units as u
@@ -8,25 +10,8 @@ from itertools import chain
 
 from helper_functions import *
 
+from modules.Sensitivity import *
 
-def crab_source_rate(E):
-    '''
-    Crab source rate:   dN/dE = 3e-7  * (E/TeV)**-2.48 / (TeV * m² * s)
-    norm and spectral index reverse engineered from HESS plot... '''
-    return 3e-7 * (E/u.TeV)**-2.48 / (u.TeV * u.m**2 * u.s)
-
-
-def CR_background_rate(E):
-    '''
-    Cosmic Ray background rate: dN/dE = 0.215 * (E/TeV)**-8./3 / (TeV * m² * s * sr)
-    norm and spectral index reverse engineered from "random" CR plot... '''
-    return 100 * 0.1**(8./3) * (E/u.TeV)**(-8./3) / (u.TeV * u.m**2 * u.s * u.sr)
-
-
-def Eminus2(e, unit=u.GeV):
-    '''
-    boring old E^-2 spectrum '''
-    return (e/unit)**(-2) / (unit * u.s * u.m**2)
 
 '''
 MC energy ranges:
@@ -59,8 +44,6 @@ if __name__ == "__main__":
                         "selected_events_"+args.mode+"_g.fits")
     proton = Table.read("data/selected_events/"
                         "selected_events_"+args.mode+"_p.fits")
-    off_angles = {'p': proton['off_angles'],
-                  'g': gammas['off_angles']}
 
     NGammas_selected = len(gammas['off_angles'])
     NProton_selected = len(proton['off_angles'])
@@ -77,113 +60,137 @@ if __name__ == "__main__":
     NGammas_simulated = NGammas_per_File *  9
     NProton_simulated = NProton_per_File * 51
 
-    Gen_Gammas = make_mock_event_rate(
-                    [Eminus2], norm=[NGammas_simulated],
-                    binEdges=edges_gammas)[0]
-
-    Gen_Proton = make_mock_event_rate(
-                    [Eminus2], norm=[NProton_simulated],
-                    binEdges=edges_proton)[0]
-
-    Sel_Gammas = np.histogram(np.log10(gammas['MC_Energy']), bins=edges_gammas)[0]
-    Sel_Proton = np.histogram(np.log10(proton['MC_Energy']), bins=edges_proton)[0]
-
-    Efficiency_Gammas = Sel_Gammas / Gen_Gammas
-    Efficiency_Proton = Sel_Proton / Gen_Proton
-
-    tot_Area_Gammas = np.pi * (1000*u.m)**2
-    tot_Area_Proton = np.pi * (2000*u.m)**2
-
-    Eff_Area_Gammas = Efficiency_Gammas * tot_Area_Gammas
-    Eff_Area_Proton = Efficiency_Proton * tot_Area_Proton
-
-
-    #fig = plt.figure()
-    #plt.plot(edges_gammas[:-1], Efficiency_Gammas)
-    #plt.title("Efficiency_Gammas")
-    #plt.pause(.1)
-
-
     print("gammas selected / simulated", NGammas_selected, NGammas_simulated)
     print("proton selected / simulated", NProton_selected, NProton_simulated)
 
-    SourceRate = make_mock_event_rate([crab_source_rate], binEdges=edges_gammas)[0]
-    BackgrRate = make_mock_event_rate([CR_background_rate], binEdges=edges_proton)[0]
-    BackgrRate *= Omega_Proton
+    SensCalc = Sensitivity_PointSource(gammas['MC_Energy'], proton['MC_Energy'],
+                                       edges_gammas, edges_proton)
 
-    #fig = plt.figure()
-    #plt.plot(edges_gammas[:-1], SourceRate)
-    #plt.title("SourceRate")
-    #plt.suptitle("sum: {}".format(sum(SourceRate)))
-    #plt.pause(.1)
+    Eff_Area_Gammas, Eff_Area_Proton = SensCalc.get_effective_areas(
+                                                    NGammas_simulated, NProton_simulated)
 
-    SourceIntensity = 1
-    ObsTime = (1*u.h)
-    weight_vsE_g = SourceRate * ObsTime.to(u.s) * Eff_Area_Gammas * SourceIntensity
-    weight_vsE_p = BackgrRate * ObsTime.to(u.s) * Eff_Area_Proton
+    exp_events_per_E_g, exp_events_per_E_p = \
+        SensCalc.get_expected_events(source_rate=crab_source_rate)
 
-    NExpGammas = sum(weight_vsE_g)
-    NExpProton = sum(weight_vsE_p)
-
-    #fig = plt.figure()
-    #plt.plot(edges_gammas[:-1], weight_vsE_g)
-    #plt.title("weight_vsE_g")
-    #plt.suptitle("sum: {}".format(sum(weight_vsE_g)))
-    #plt.pause(.1)
-
-
-    weight_g = []
-    weight_p = []
-    for ev in gammas['MC_Energy']:
-        weight_g.append(weight_vsE_g[np.digitize(np.log10(ev), edges_gammas) - 1])
-    for ev in proton['MC_Energy']:
-        weight_p.append(weight_vsE_p[np.digitize(np.log10(ev), edges_proton) - 1])
-
-    weight_g = np.array(weight_g) / sum(weight_g) * NExpGammas
-    weight_p = np.array(weight_p) / sum(weight_p) * NExpProton
+    NExpGammas = sum(exp_events_per_E_g)
+    NExpProton = sum(exp_events_per_E_p)
 
     print("expected gammas:", NExpGammas)
     print("expected proton:", NExpProton)
-    #off_angles['p'] = []
-    #flat_weight = 100/NProtExp
-    #weight_p = []
-    #for i in np.linspace(np.cos(5*u.deg), 1, NProtExp*flat_weight):
-        #off_angles['p'].append(np.arccos(i)*u.rad.to(u.deg))
-        #weight_p.append(1./flat_weight)
-    #off_angles['p'] = np.array(off_angles['p'])
-    #print(len(weight_p))
-    #print(len(off_angles['p']))
 
+    if args.plot and args.verbose:
+        plt.figure()
+        plt.semilogy((edges_gammas[1:] + edges_gammas[:-1])/2,
+                     Eff_Area_Gammas, "b", label='Gammas')
+        plt.semilogy((edges_proton[1:] + edges_proton[:-1])/2,
+                     Eff_Area_Proton, "r", label='Protons')
+        plt.title("Effective Area")
+        plt.xlabel(r"$\log_{10}(E/\mathrm{GeV})$")
+        plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
+        plt.pause(.1)
 
+    weight_g, weight_p = SensCalc.scale_events_to_expected_events()
+
+    min_N = 10
+    max_prot_ratio = .05
 
     Rsig = .3
     Rmax = 5
     alpha = 1/(((Rmax/Rsig)**2)-1)
-    Non = 0
-    Noff = 0
-    for s, w, e in zip(chain(gammas['off_angles'], proton['off_angles']),
-                       chain(weight_g, weight_p),
-                       chain(gammas["MC_Energy"], proton["MC_Energy"])
-                       ):
-        if .1 < np.log10(e * u.GeV.to(u.TeV)) < .12:
-            continue
-        if s < Rsig:
-            Non += w
-        elif s < Rmax:
-            Noff += w
-    scale = 609
-    Non *= 1./scale
-    Noff *= 1./scale
-    print("Non:", Non)
-    print("Noff:", Noff)
-    print(alpha)
-    print("sigma:", sigma_lima(Non, Noff, alpha=alpha))
 
+    sensitivities = []
+    for elow, ehigh in zip(edges_gammas[:-1], edges_gammas[1:]):
+        Non_g = 0
+        Noff_g = 0
+        Non_p = 0
+        Noff_p = 0
+
+        elow = 10**elow
+        ehigh= 10**ehigh
+
+        for s, w in zip(gammas['off_angles'][(elow < gammas["MC_Energy"]) &
+                                             (gammas["MC_Energy"] < ehigh)],
+                        weight_g[(elow < gammas["MC_Energy"]) &
+                                 (gammas["MC_Energy"] < ehigh)]
+                        ):
+            if s < Rsig:
+                Non_g += w
+            elif s < Rmax:
+                Noff_g += w
+
+        for s, w in zip(proton['off_angles'][(elow < proton["MC_Energy"]) &
+                                             (proton["MC_Energy"] < ehigh)],
+                        weight_p[(elow < proton["MC_Energy"]) &
+                                 (proton["MC_Energy"] < ehigh)]
+                        ):
+            if s < Rsig:
+                Non_p += w
+            elif s < Rmax:
+                Noff_p += w
+
+        if Non_g == 0:
+            continue
+
+        scale = minimize(diff_to_5_sigma, [1e-3],
+                         args=(Non_g, Non_p, Noff_g, Noff_p, alpha),
+                         # method='BFGS',
+                         method='L-BFGS-B', bounds=[(1e-4, None)],
+                         options={'disp': False}
+                         ).x[0]
+        if scale < 0:
+            continue
+
+        print("e low {}\te high {}".format(np.log10(elow),
+                                           np.log10(ehigh)))
+
+        Non_g *= scale
+        Noff_g *= scale
+        N_g = (Non_g+Noff_g)
+        N_p = Non_p+Noff_p
+
+        if N_g+N_p < min_N:
+            print("  N_tot too small: {}, {}, {}, {}".format(Non_g, Noff_g,
+                                                             Non_p, Noff_p))
+            scale_a = (min_N-N_p) / N_g
+            print("  scale_a:", scale_a)
+            scale *= scale_a
+            Non_g *= scale_a
+            Noff_g *= scale_a
+            N_g = (Non_g+Noff_g)
+
+        if Non_p / (Non_g+Non_p) > max_prot_ratio:
+            print("  too high proton contamination: {}, {}".format(Non_g, Non_p))
+            scale_r = (1-max_prot_ratio) * Non_p / Non_g
+            print("  scale_r:", scale_r)
+            scale *= scale_r
+            Non_g *= scale_r
+            Noff_g *= scale_r
+            N_g = (Non_g+Noff_g)
+
+        flux = Eminus2((elow+ehigh)/2.).to(u.erg / (u.m**2*u.s))
+        sensitivity = flux*scale
+        sensitivities.append([(np.log10(elow)+np.log10(ehigh))/2, sensitivity.value])
+        print("sensitivity: ", sensitivity)
+        print("Non:", Non_g+Non_p)
+        print("Noff:", Noff_g+Noff_p)
+        print(alpha)
+        print("sigma:", sigma_lima(Non_g+Non_p, Noff_g+Noff_p, alpha=alpha))
+
+        if N_g < 0:
+            print("{}, {}, {}, {}".format(Non_g, Noff_g, Non_p, Noff_p))
+
+        print()
 
     if args.plot:
-        plt.style.use('seaborn-talk')
-        plt.style.use('t_slides')
         angle_unit = u.deg
+        bin_centres_g = (edges_gammas[1:]+edges_gammas[:-1])/2.
+
+        ''' the point-source sensitivity binned in energy '''
+        plt.figure()
+        plt.semilogy(
+            [a[0] for a in sensitivities],
+            [a[1] for a in sensitivities])
+        plt.show()
 
         '''
         plot the source and spectra to be assumed in the sensitivity study '''
@@ -222,7 +229,7 @@ if __name__ == "__main__":
                     ph, th in zip(chain(gammas['phi'], proton['phi']),
                                   chain(gammas['theta'], proton['theta']))],
                 [a for a in chain(gammas['theta'], proton['theta'])],
-                gridsize=41, extent=[-2,2,18,22],
+                gridsize=41, extent=[-2, 2, 18, 22],
                 bins='log'
                 )
             plt.colorbar().set_label("log(Number of Events)")
@@ -231,7 +238,7 @@ if __name__ == "__main__":
                        .format(angle_unit))
             plt.ylabel(r"$\vartheta$ / {:latex}".format(angle_unit))
             if args.write:
-                tikz_save("plots/skymap_{}.tex".format(args.mode))
+                save_fig("plots/skymap_{}".format(args.mode))
             #plt.pause(.1)
 
         '''
@@ -261,15 +268,20 @@ if __name__ == "__main__":
         #plt.ylabel("expected events in {}".format(ObsTime))
 
         #plt.subplot(313)
-        plt.hist([np.clip(np.cos(off_angles['p']*u.degree.to(u.rad)), -1, 1-1e-6),
-                  np.clip(np.cos(off_angles['g']*u.degree.to(u.rad)), -1, 1-1e-6)],
+        plt.hist([1-np.clip(np.cos(proton['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6),
+                  1-np.clip(np.cos(gammas['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6)],
                  weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 range=(0.996, 1),
+                 range=(0, 5e-3),
                  bins=30)
-        plt.xlabel(r"$\cos(\vartheta)$")
+        plt.xlabel(r"$1-\cos(\vartheta)$")
         plt.ylabel("expected events in {}".format(ObsTime))
-        plt.xlim([0.996, 1])
+        plt.xlim([0, 5e-3])
 
         plt.tight_layout()
 
         plt.show()
+
+
+
+
+

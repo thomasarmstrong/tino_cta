@@ -96,6 +96,8 @@ def make_argparser():
                         help="write output -- e.g. plots, classifiers, events")
     parser.add_argument('-p', '--plot',  action='store_true',
                         help="do some plotting")
+    parser.add_argument('-v', '--verbose',  action='store_true',
+                        help="do things more explicit -- plotting, logging etc.")
     parser.add_argument('-d', '--dry', dest='last', action='store_const',
                         const=1, default=None,
                         help="only consider first file per type")
@@ -106,6 +108,7 @@ try:
     from matplotlib2tikz import save as tikzsave
 except:
     print("matplotlib2tikz is not installed")
+
 
 def tikz_save(arg, **kwargs):
     try:
@@ -123,67 +126,9 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
             ptl.savefig("{}.{}".format(outname, end))
 
 
-def make_mock_event_rate(spectra, bin_edges=None, Emin=None, Emax=None,
-                         E_unit=u.GeV, NBins=None, logE=True, norm=None):
-
-    rates = [[] for f in spectra]
-
-    if bin_edges is None:
-        if logE:
-            Emin = np.log10(Emin/E_unit)
-            Emax = np.log10(Emax/E_unit)
-        bin_edges = np.linspace(Emin, Emax, NBins+1, True)
-
-    for l_edge, h_edge in zip(bin_edges[:-1], bin_edges[1:]):
-        if logE:
-            bin_centre = 10**((l_edge+h_edge)/2.) * E_unit
-            bin_width = (10**h_edge-10**l_edge)*E_unit
-
-        else:
-            bin_centre = (l_edge+h_edge) * E_unit / 2.
-            bin_width = (h_edge-l_edge)*E_unit
-        for i, spectrum in enumerate(spectra):
-            bin_events = spectrum(bin_centre) * bin_width
-            rates[i].append(bin_events)
-
-    for i, rate in enumerate(rates):
-        rate = convert_astropy_array(rate)
-        if norm:
-            rate *= norm[i]/np.sum(rate)
-        rates[i] = rate
-
-    return (*rates), bin_edges
-
-# ================================== #
-# Compute Eq. (17) of Li & Ma (1983) #
-# ================================== #
-def sigma_lima(Non, Noff, alpha=0.2):
-    """
-    Compute Eq. (17) of Li & Ma (1983).
-
-    Parameters:
-     Non   - Number of on counts
-     Noff  - Number of off counts
-    Keywords:
-     alpha - Ratio of on-to-off exposure
-    """
-
-    alpha1 = alpha + 1.0
-    sum    = Non + Noff
-    arg1   = Non / sum
-    arg2   = Noff / sum
-    term1  = Non  * np.log((alpha1/alpha)*arg1)
-    term2  = Noff * np.log(alpha1*arg2)
-    sigma  = np.sqrt(2.0 * (term1 + term2))
-
-    return sigma
-
-
-
-
 def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
-                         xlabel="", ylabel="", zlabel="", do_hex=True, do_violin=True,
-                         cm=plt.cm.hot, **kwargs):
+                        xlabel="", ylabel="", zlabel="", do_hex=True, do_violin=True,
+                        cm=plt.cm.hot, **kwargs):
 
     """
     takes two arrays of coordinates and creates a 2D hexbin plot and a violin plot (or
