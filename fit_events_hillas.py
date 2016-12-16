@@ -307,7 +307,6 @@ if __name__ == '__main__':
     '''
     plot the angular error of the hillas ellipsis vs the number of photo electrons '''
     npe_edges = np.linspace(1, 6, 21)
-    print(npe_edges)
     plot_hex_and_violin(np.log10(tel_signal_pe),
                         np.log10(hillas_tilt/angle_unit),
                         npe_edges,
