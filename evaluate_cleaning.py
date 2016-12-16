@@ -251,7 +251,7 @@ if __name__ == '__main__':
                 Imagecutflow.count("Hillas")
 
                 '''
-                get some more parameters and put them in a astropy.table.Table '''
+                get some more parameters and put them in an astropy.table.Table '''
                 sum_p = np.sum(pmt_signal_p)
                 sum_w = np.sum(pmt_signal_w)
                 sum_t = np.sum(pmt_signal_t)
@@ -294,8 +294,8 @@ if __name__ == '__main__':
                     dl = D[0]*T[0] + D[1]*T[1]
                     dp = D[0]*T[1] - D[1]*T[0]
 
-                    for pe, pp in zip(signal[abs(dl) > 2*hillas[k].length],
-                                      dp[abs(dl) > 2*hillas[k].length]):
+                    for pe, pp in zip(signal[abs(dl) > 1*hillas['p'].length],
+                                      dp[abs(dl) > 1*hillas['p'].length]):
 
                         pe_vs_dp[k].fill([np.log10(sum_p), pp*u.m], pe)
 
@@ -322,6 +322,12 @@ if __name__ == '__main__':
 
 
     print(performance_table)
+
+    sig_p = performance_table["sig_p"]
+    for log_sig in pe_vs_dp.bin_edges[0][:-1]:
+        print("signal range: {} -- {}\t number of tels {}".format(
+            log_sig, log_sig+1,
+            len(sig_p[(sig_p < 10**(log_sig+1)) & (sig_p > 10**log_sig)])))
 
     if args.write:
         performance_table.write("Eps_int_comparison.fits", overwrite=True)
@@ -367,7 +373,7 @@ if __name__ == '__main__':
                                  pe_vs_dp_p.bin_edges[0][pe_bin]))
 
             plt.subplot(131)
-            plt.semilogy(bin_centres, pe_vs_dp_w.norm[pe_bin][1:-1])
+            plt.plot(bin_centres, pe_vs_dp_w.norm[pe_bin][1:-1])
             plt.title("hit pixel")
             plt.xlabel("perpendicular offset / m")
             plt.ylabel("number of hit pmt")
