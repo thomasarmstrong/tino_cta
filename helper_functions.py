@@ -274,7 +274,7 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
                        showextrema=True, showmedians=True)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        ''' adding a colour bar to tex hexbin plot reduces its total width to 4/5
+        ''' adding a colour bar to tex hexbin plot reduces its width to 4/5
         adjusting the extent of the violin plot to sync up with the hexbin plot '''
         if not np.isnan(extent[:2]).any():
             plt.xlim([extent[0], (5.*extent[1] - extent[0])/4.])
