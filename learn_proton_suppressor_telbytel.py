@@ -6,7 +6,6 @@ path.append(expandvars("$CTA_SOFT/"
             "jeremie_cta/sap-cta-data-pipeline/"))
 path.append(expandvars("$CTA_SOFT/"
             "jeremie_cta/snippets/ctapipe/"))
-from datapipe.classifiers.EventClassifier import EventClassifier
 
 
 from ctapipe.reco.FitGammaHillas import \
@@ -25,11 +24,13 @@ from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.instrument.InstrumentDescription import load_hessio
 
+from ctapipe.image.hillas import HillasParameterizationError, \
+    hillas_parameters_1 as hillas_parameters
+
 from modules.ImageCleaning import ImageCleaner, \
                                   EdgeEventException, UnknownModeException
 from modules.CutFlow import CutFlow
-
-from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
+from modules.EventClassifier import EventClassifier
 
 
 if __name__ == '__main__':
@@ -44,9 +45,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     filenamelist_gamma  = glob("{}/gamma/run{}.*gz"
-                               .format(args.indir, args.runnr))[:1]
+                               .format(args.indir, args.runnr))
     filenamelist_proton = glob("{}/proton/run{}.*gz"
-                               .format(args.indir, args.runnr))[:8]
+                               .format(args.indir, args.runnr))
 
     print("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
     if len(filenamelist_gamma) == 0:
@@ -69,7 +70,8 @@ if __name__ == '__main__':
     simple hillas-based shower reco '''
     fit = FitGammaHillas()
 
-
+    '''
+    counting events and where they might have gone missing '''
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
 
@@ -82,12 +84,14 @@ if __name__ == '__main__':
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    events = {'g':0, 'p':0}
+    events = {'g': 0, 'p': 0}
 
-    allowed_tels=range(10)  # smallest ASTRI array
-    # allowed_tels=range(34)  # all ASTRI telescopes
-    for filenamelist_class in [filenamelist_gamma, filenamelist_proton]:
-        for filename in sorted(filenamelist_class)[:args.last]:
+    allowed_tels = range(10)  # smallest ASTRI array
+    # allowed_tels = range(34)  # all ASTRI telescopes
+    for filenamelist_class in [sorted(filenamelist_gamma)[:3],
+                               sorted(filenamelist_proton)[:20]]:
+        signal_handler.stop = False
+        for filename in filenamelist_class[:args.last]:
             print("filename = {}".format(filename))
 
             source = hessio_event_source(filename,
@@ -185,7 +189,7 @@ if __name__ == '__main__':
                                 moments.size,
                                 NTels,
                                 moments.width, moments.length,
-                                #moments.asymmetry
+                                # moments.asymmetry
                                 moments.skewness,
                                 moments.kurtosis
                                 ])
@@ -198,9 +202,18 @@ if __name__ == '__main__':
                 if signal_handler.stop:
                     break
             if signal_handler.stop:
-                stop = False
                 break
 
+    feature_labels = ["impact_dist",
+                      "tot_signal",
+                      "max_signal",
+                      "size",
+                      "NTels",
+                      "width",
+                      "length",
+                      "skewness",
+                      "kurtosis"
+                      ]
 
     print("total images:", classifier.total_images)
     print("selected images:", classifier.selected_images)
@@ -221,7 +234,7 @@ if __name__ == '__main__':
 
     '''
     extract and show the importance of the various training features '''
-    classifier.show_importances()
+    classifier.show_importances(feature_labels)
     plt.pause(.5)
 
     if args.store:

@@ -2,8 +2,10 @@ from astropy.table import Table
 
 from collections import OrderedDict
 
+
 class UndefinedCutException(Exception):
     pass
+
 
 class PureCountingCutException(Exception):
     pass

@@ -1,7 +1,7 @@
 import numpy as np
+from itertools import chain
 import astropy.units as u
 from scipy.optimize import minimize
-
 
 def convert_astropy_array(arr, unit=None):
     if unit is None:
@@ -99,11 +99,16 @@ def diff_to_5_sigma(scale, Non_g, Non_p, Noff_g, Noff_p, alpha):
 
 class Sensitivity_PointSource():
     def __init__(self, mc_energy_gamma, mc_energy_proton,
-                 bin_edges_gamma, bin_edges_proton):
+                 bin_edges_gamma, bin_edges_proton,
+                 energy_unit=u.GeV, flux_unit=u.erg / (u.m**2*u.s)):
+
         self.mc_energy_gam = mc_energy_gamma
         self.mc_energy_pro = mc_energy_proton
         self.bin_edges_gam = bin_edges_gamma
         self.bin_edges_pro = bin_edges_proton
+
+        self.energy_unit = energy_unit
+        self.flux_unit = flux_unit
 
     def get_effective_areas(self, n_simulated_gam, n_simulated_pro,
                             spectrum_gammas=Eminus2, spectrum_proton=Eminus2,
@@ -133,6 +138,8 @@ class Sensitivity_PointSource():
     def get_expected_events(self, source_rate=Eminus2, background_rate=CR_background_rate,
                             extension_gamma=None, extension_proton=6*u.deg,
                             observation_time=50*u.h):
+        # for book keeping
+        self.observation_time = observation_time
 
         SourceRate = make_mock_event_rate([source_rate],
                                           bin_edges=self.bin_edges_gam)[0]
@@ -157,9 +164,6 @@ class Sensitivity_PointSource():
 
     def scale_events_to_expected_events(self):
 
-        self.exp_events_per_E_gam
-        self.exp_events_per_E_pro
-
         weight_g = []
         weight_p = []
         for ev in self.mc_energy_gam:
@@ -176,3 +180,104 @@ class Sensitivity_PointSource():
 
         return self.weight_g, self.weight_p
 
+    def get_sensitivity(self, off_angles_g, off_angles_p,
+                        min_N=10, max_prot_ratio=.05, Rsig=.3, Rmax=5, verbose=True):
+
+        ''' the area-ratio of the on- and off-region '''
+        alpha = 1/(((Rmax/Rsig)**2)-1)
+
+        ''' sensitivities go in here '''
+        sensitivities = []
+
+        for elow, ehigh in zip(10**(self.bin_edges_gam[:-1]),
+                               10**(self.bin_edges_gam[1:])):
+            Non_g = 0
+            Noff_g = 0
+            Non_p = 0
+            Noff_p = 0
+
+            for s, w in zip(chain(off_angles_g[(self.mc_energy_gam > elow) &
+                                               (self.mc_energy_gam < ehigh)],
+                                  off_angles_p[(self.mc_energy_pro > elow) &
+                                               (self.mc_energy_pro < ehigh)]),
+                            chain(self.weight_g[(self.mc_energy_gam > elow) &
+                                                (self.mc_energy_gam < ehigh)],
+                                  self.weight_p[(self.mc_energy_pro > elow) &
+                                               (self.mc_energy_pro < ehigh)])
+                            ):
+                if s < Rsig:
+                    Non_g += w
+                elif s < Rmax:
+                    Noff_g += w
+
+            if Non_g == 0:
+                continue
+
+            scale = minimize(diff_to_5_sigma, [1e-3],
+                            args=(Non_g, Non_p, Noff_g, Noff_p, alpha),
+                            # method='BFGS',
+                            method='L-BFGS-B', bounds=[(1e-4, None)],
+                            options={'disp': False}
+                            ).x[0]
+
+            if verbose:
+                print("e low {}\te high {}".format(np.log10(elow),
+                                                   np.log10(ehigh)))
+
+            Non_g *= scale
+            Noff_g *= scale
+
+            scale_a = check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale,
+                                  min_N, verbose)
+            Non_g *= scale_a
+            Noff_g *= scale_a
+            scale *= scale_a
+
+
+            scale_r = check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, scale,
+                                           max_prot_ratio, verbose)
+
+            Non_g *= scale_r
+            Noff_g *= scale_r
+            scale *= scale_r
+
+            flux = Eminus2((elow+ehigh)/2.).to(self.flux_unit)
+            sensitivity = flux*scale
+            sensitivities.append([(np.log10(elow)+np.log10(ehigh))/2, sensitivity.value])
+            if verbose:
+                print("sensitivity: ", sensitivity)
+                print("Non:", Non_g+Non_p)
+                print("Noff:", Noff_g+Noff_p)
+                print("  {}, {}, {}, {}".format(Non_g, Noff_g, Non_p, Noff_p))
+                print("alpha:", alpha)
+                print("sigma:", sigma_lima(Non_g+Non_p, Noff_g+Noff_p, alpha=alpha))
+
+                print()
+
+        return sensitivities
+
+
+def check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale, min_N, verbose=True):
+    if Non_g+Noff_g+Non_p+Noff_p < min_N:
+        scale_a = (min_N-Non_p-Noff_p) / (Non_g+Noff_g)
+
+        if verbose:
+            print("  N_tot too small: {}, {}, {}, {}".format(Non_g, Noff_g,
+                                                             Non_p, Noff_p))
+            print("  scale_a:", scale_a)
+
+        return scale_a
+    else:
+        return 1
+
+
+def check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, scale,
+                                   max_prot_ratio, verbose=True):
+    if Non_p / (Non_g+Non_p) > max_prot_ratio:
+        scale_r = (1-max_prot_ratio) * Non_p / Non_g
+        if verbose:
+            print("  too high proton contamination: {}, {}".format(Non_g, Non_p))
+            print("  scale_r:", scale_r)
+        return scale_r
+    else:
+        return 1

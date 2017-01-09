@@ -51,9 +51,6 @@ if __name__ == "__main__":
     NReuse_Gammas = 10
     NReuse_Proton = 20
 
-    ''' solid angle under which protons have been generated '''
-    Omega_Proton = 2*np.pi*(1 - np.cos(6*u.deg))*u.rad**2
-
     NGammas_per_File = 5000 * NReuse_Gammas
     NProton_per_File = 5000 * NReuse_Proton
 
@@ -66,8 +63,8 @@ if __name__ == "__main__":
     SensCalc = Sensitivity_PointSource(gammas['MC_Energy'], proton['MC_Energy'],
                                        edges_gammas, edges_proton)
 
-    Eff_Area_Gammas, Eff_Area_Proton = SensCalc.get_effective_areas(
-                                                    NGammas_simulated, NProton_simulated)
+    Eff_Area_Gammas, Eff_Area_Proton = SensCalc.get_effective_areas(NGammas_simulated,
+                                                                    NProton_simulated)
 
     exp_events_per_E_g, exp_events_per_E_p = \
         SensCalc.get_expected_events(source_rate=crab_source_rate)
@@ -91,95 +88,99 @@ if __name__ == "__main__":
 
     weight_g, weight_p = SensCalc.scale_events_to_expected_events()
 
-    min_N = 10
-    max_prot_ratio = .05
+    if 1:
+        sensitivities = SensCalc.get_sensitivity(gammas['off_angles'], proton['off_angles'])
+    else:
+        min_N = 10
+        max_prot_ratio = .05
 
-    Rsig = .3
-    Rmax = 5
-    alpha = 1/(((Rmax/Rsig)**2)-1)
+        Rsig = .3
+        Rmax = 5
+        alpha = 1/(((Rmax/Rsig)**2)-1)
 
-    sensitivities = []
-    for elow, ehigh in zip(edges_gammas[:-1], edges_gammas[1:]):
-        Non_g = 0
-        Noff_g = 0
-        Non_p = 0
-        Noff_p = 0
+        sensitivities = []
+        for elow, ehigh in zip(edges_gammas[:-1], edges_gammas[1:]):
+            Non_g = 0
+            Noff_g = 0
+            Non_p = 0
+            Noff_p = 0
 
-        elow = 10**elow
-        ehigh= 10**ehigh
+            elow  = 10**elow
+            ehigh = 10**ehigh
 
-        for s, w in zip(gammas['off_angles'][(elow < gammas["MC_Energy"]) &
-                                             (gammas["MC_Energy"] < ehigh)],
-                        weight_g[(elow < gammas["MC_Energy"]) &
-                                 (gammas["MC_Energy"] < ehigh)]
-                        ):
-            if s < Rsig:
-                Non_g += w
-            elif s < Rmax:
-                Noff_g += w
+            for s, w in zip(gammas['off_angles'][(elow < gammas["MC_Energy"]) &
+                                                (gammas["MC_Energy"] < ehigh)],
+                            weight_g[(elow < gammas["MC_Energy"]) &
+                                    (gammas["MC_Energy"] < ehigh)]
+                            ):
+                if s < Rsig:
+                    Non_g += w
+                elif s < Rmax:
+                    Noff_g += w
 
-        for s, w in zip(proton['off_angles'][(elow < proton["MC_Energy"]) &
-                                             (proton["MC_Energy"] < ehigh)],
-                        weight_p[(elow < proton["MC_Energy"]) &
-                                 (proton["MC_Energy"] < ehigh)]
-                        ):
-            if s < Rsig:
-                Non_p += w
-            elif s < Rmax:
-                Noff_p += w
+            for s, w in zip(proton['off_angles'][(elow < proton["MC_Energy"]) &
+                                                (proton["MC_Energy"] < ehigh)],
+                            weight_p[(elow < proton["MC_Energy"]) &
+                                    (proton["MC_Energy"] < ehigh)]
+                            ):
+                if s < Rsig:
+                    Non_p += w
+                elif s < Rmax:
+                    Noff_p += w
 
-        if Non_g == 0:
-            continue
+            if Non_g == 0:
+                continue
 
-        scale = minimize(diff_to_5_sigma, [1e-3],
-                         args=(Non_g, Non_p, Noff_g, Noff_p, alpha),
-                         # method='BFGS',
-                         method='L-BFGS-B', bounds=[(1e-4, None)],
-                         options={'disp': False}
-                         ).x[0]
-        if scale < 0:
-            continue
+            scale = minimize(diff_to_5_sigma, [1e-4],
+                            args=(Non_g, Non_p, Noff_g, Noff_p, alpha),
+                            # method='BFGS',
+                            method='L-BFGS-B', bounds=[(1e-4, None)],
+                            options={'disp': False}
+                            ).x[0]
+            if scale < 0:
+                continue
 
-        print("e low {}\te high {}".format(np.log10(elow),
-                                           np.log10(ehigh)))
+            print("e low {}\te high {}".format(np.log10(elow),
+                                            np.log10(ehigh)))
+            print("scale:", scale)
 
-        Non_g *= scale
-        Noff_g *= scale
-        N_g = (Non_g+Noff_g)
-        N_p = Non_p+Noff_p
-
-        if N_g+N_p < min_N:
-            print("  N_tot too small: {}, {}, {}, {}".format(Non_g, Noff_g,
-                                                             Non_p, Noff_p))
-            scale_a = (min_N-N_p) / N_g
-            print("  scale_a:", scale_a)
-            scale *= scale_a
-            Non_g *= scale_a
-            Noff_g *= scale_a
+            Non_g *= scale
+            Noff_g *= scale
             N_g = (Non_g+Noff_g)
+            N_p = Non_p+Noff_p
 
-        if Non_p / (Non_g+Non_p) > max_prot_ratio:
-            print("  too high proton contamination: {}, {}".format(Non_g, Non_p))
-            scale_r = (1-max_prot_ratio) * Non_p / Non_g
-            print("  scale_r:", scale_r)
-            scale *= scale_r
-            Non_g *= scale_r
-            Noff_g *= scale_r
-            N_g = (Non_g+Noff_g)
+            if N_g+N_p < min_N:
+                print("  N_tot too small: {}, {}, {}, {}".format(Non_g, Noff_g,
+                                                                Non_p, Noff_p))
+                scale_a = (min_N-N_p) / N_g
+                print("  scale_a:", scale_a)
+                scale *= scale_a
+                Non_g *= scale_a
+                Noff_g *= scale_a
+                N_g = (Non_g+Noff_g)
 
-        flux = Eminus2((elow+ehigh)/2.).to(u.erg / (u.m**2*u.s))
-        sensitivity = flux*scale
-        sensitivities.append([(np.log10(elow)+np.log10(ehigh))/2, sensitivity.value])
-        print("sensitivity: ", sensitivity)
-        print("Non:", Non_g+Non_p)
-        print("Noff:", Noff_g+Noff_p)
-        print(alpha)
-        print("sigma:", sigma_lima(Non_g+Non_p, Noff_g+Noff_p, alpha=alpha))
+            print("scale:", scale)
 
-        if N_g < 0:
-            print("{}, {}, {}, {}".format(Non_g, Noff_g, Non_p, Noff_p))
+            if Non_p / (Non_g+Non_p) > max_prot_ratio:
+                print("  too high proton contamination: {}, {}".format(Non_g, Non_p))
+                scale_r = (1-max_prot_ratio) * Non_p / Non_g
+                print("  scale_r:", scale_r)
+                scale *= scale_r
+                Non_g *= scale_r
+                Noff_g *= scale_r
+                N_g = (Non_g+Noff_g)
 
-        print()
+            flux = Eminus2((elow+ehigh)/2.).to(u.erg / (u.m**2*u.s))
+            sensitivity = flux*scale
+            sensitivities.append([(np.log10(elow)+np.log10(ehigh))/2, sensitivity.value])
+            print("sensitivity: ", sensitivity)
+            print("Non:", Non_g+Non_p)
+            print("Noff:", Noff_g+Noff_p)
+            print("  {}, {}, {}, {}".format(Non_g, Noff_g, Non_p, Noff_p))
+            print("alpha:", alpha)
+            print("sigma:", sigma_lima(Non_g+Non_p, Noff_g+Noff_p, alpha=alpha))
+
+            print()
 
     if args.plot:
         angle_unit = u.deg
@@ -190,7 +191,9 @@ if __name__ == "__main__":
         plt.semilogy(
             [a[0] for a in sensitivities],
             [a[1] for a in sensitivities])
-        plt.show()
+        plt.xlabel('log(E / GeV)')
+        plt.ylabel(r'$\Phi E^2 /$ {:latex}'.format(SensCalc.flux_unit))
+        plt.pause(.1)
 
         '''
         plot the source and spectra to be assumed in the sensitivity study '''
@@ -221,8 +224,9 @@ if __name__ == "__main__":
             plt.pause(.1)
 
         '''
-        plot a sky image of the events '''
-        if True:
+        plot a sky image of the events
+        MISSLEADING since not weighted to anything'''
+        if False:
             fig2 = plt.figure()
             plt.hexbin(
                 [(ph-180)*np.sin(th*u.deg) for
@@ -259,23 +263,33 @@ if __name__ == "__main__":
                         #draw_rectangles=True)
 
         #plt.subplot(212)
-        #plt.hist([off_angles['p']**2,
-                  #off_angles['g']**2],
-                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 #range=(0, 20),
-                 #bins=10)
-        #plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
-        #plt.ylabel("expected events in {}".format(ObsTime))
+        if True:
+            NProtons = np.sum(proton['off_angles'][(proton['off_angles']**2) < 10])
+            proton_weight_flat = np.ones(50) * NProtons/50
+            proton_angle_flat = np.linspace(0,10,50,False)
+            proton_angle = proton_angle_flat
+            proton_weight = proton_weight_flat
+        else:
+            proton_angle = proton['off_angles']**2
+            proton_weight = weight_p
+
+        plt.hist([proton_angle,
+                  gammas['off_angles']**2],
+                 weights=[proton_weight, weight_g], rwidth=1, stacked=True,
+                 range=(0, 10),
+                 bins=50)
+        plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
+        plt.ylabel("expected events in {}".format(SensCalc.observation_time))
 
         #plt.subplot(313)
-        plt.hist([1-np.clip(np.cos(proton['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6),
-                  1-np.clip(np.cos(gammas['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6)],
-                 weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 range=(0, 5e-3),
-                 bins=30)
-        plt.xlabel(r"$1-\cos(\vartheta)$")
-        plt.ylabel("expected events in {}".format(ObsTime))
-        plt.xlim([0, 5e-3])
+        #plt.hist([1-np.clip(np.cos(proton['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6),
+                  #1-np.clip(np.cos(gammas['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6)],
+                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
+                 #range=(0, 5e-3),
+                 #bins=30)
+        #plt.xlabel(r"$1-\cos(\vartheta)$")
+        #plt.ylabel("expected events in {}".format(SensCalc.observation_time))
+        #plt.xlim([0, 5e-3])
 
         plt.tight_layout()
 
