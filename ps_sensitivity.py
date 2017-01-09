@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-talk')
-plt.style.use('t_slides')
+#plt.style.use('t_slides')
 
 from astropy.table import Table
 from astropy import units as u

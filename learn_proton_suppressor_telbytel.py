@@ -19,6 +19,8 @@ import argparse
 from itertools import chain
 
 from ctapipe.utils import linalg
+
+from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.instrument.InstrumentDescription import load_hessio
@@ -33,16 +35,18 @@ from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
 if __name__ == '__main__':
 
     parser = make_argparser()
-    parser.add_argument('-o', '--out_path', type=str,
+    parser.add_argument('-o', '--out_dir', type=str,
                         default='data/classify_pickle/classifier')
-    parser.add_argument('--check', action='store_true')
-    parser.add_argument('--store', action='store_true')
+    parser.add_argument('--check', action='store_true',
+                        help="run a self check on the classification")
+    parser.add_argument('--store', action='store_true',
+                        help="save the classifier as pickled data")
     args = parser.parse_args()
 
     filenamelist_gamma  = glob("{}/gamma/run{}.*gz"
-                               .format(args.indir, args.runnr))
+                               .format(args.indir, args.runnr))[:1]
     filenamelist_proton = glob("{}/proton/run{}.*gz"
-                               .format(args.indir, args.runnr))
+                               .format(args.indir, args.runnr))[:8]
 
     print("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
     if len(filenamelist_gamma) == 0:
@@ -52,30 +56,26 @@ if __name__ == '__main__':
         print("no protons found")
         exit()
 
-    '''
-    prepare InstrumentDescription '''
-    InstrDesc = load_hessio(filenamelist_gamma[0])
+    cam_geom = {}
+    tel_phi = {}
+    tel_theta = {}
+    tel_orientation = (tel_phi, tel_theta)
 
     '''
     wrapper for the scikit learn classifier '''
     classifier = EventClassifier()
-    classifier.setup_geometry(*InstrDesc,
-                              phi=180*u.deg, theta=20*u.deg)
-    classifier.cleaner = ImageCleaner(args.mode)
 
     '''
     simple hillas-based shower reco '''
     fit = FitGammaHillas()
-    fit.setup_geometry(*InstrDesc,
-                       phi=180*u.deg, theta=20*u.deg)
+
+
+    Eventcutflow = CutFlow("EventCutFlow")
+    Imagecutflow = CutFlow("ImageCutFlow")
 
     '''
-    class that wraps tail cuts and wavelet cleaning for ASTRI telescopes '''
-    Cleaner = ImageCleaner(mode=args.mode)
-
-    '''
-    to have geometry information accessible here as well '''
-    tel_geom = classifier.tel_geom
+    class that wraps tail cuts and wavelet cleaning '''
+    Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow)
 
     '''
     catch ctr-c signal to exit current loop and still display results '''
@@ -84,15 +84,15 @@ if __name__ == '__main__':
 
     events = {'g':0, 'p':0}
 
+    allowed_tels=range(10)  # smallest ASTRI array
+    # allowed_tels=range(34)  # all ASTRI telescopes
     for filenamelist_class in [filenamelist_gamma, filenamelist_proton]:
         for filename in sorted(filenamelist_class)[:args.last]:
             print("filename = {}".format(filename))
 
-            source = hessio_event_source(
-                        filename,
-                        allowed_tels=range(10),  # smallest ASTRI aray
-                        # allowed_tels=range(34),  # all ASTRI telescopes
-                        max_events=args.max_events)
+            source = hessio_event_source(filename,
+                                         allowed_tels=allowed_tels,
+                                         max_events=args.max_events)
 
             '''
             get type of event for the classifier '''
@@ -108,37 +108,50 @@ if __name__ == '__main__':
                 '''
                 telescope loop '''
                 tot_signal = 0
-                hillas_dict1 = {}
-                hillas_dict2 = {}
-                for tel_id in set(event.trig.tels_with_trigger) & \
-                              set(event.dl0.tels_with_data):
+                max_signal = 0
+                hillas_dict = {}
+                for tel_id in event.dl0.tels_with_data:
                     classifier.total_images += 1
 
                     pmt_signal = apply_mc_calibration_ASTRI(
-                                event.dl0.tel[tel_id].adc_sums, tel_id)
+                                    event.dl0.tel[tel_id].adc_sums,
+                                    event.mc.tel[tel_id].dc_to_pe,
+                                    event.mc.tel[tel_id].pedestal)
+
+                    max_signal = np.max(pmt_signal)
+
+                    '''
+                    guessing camera geometry '''
+                    if tel_id not in cam_geom:
+                        cam_geom[tel_id] = CameraGeometry.guess(
+                                            event.inst.pixel_pos[tel_id][0],
+                                            event.inst.pixel_pos[tel_id][1],
+                                            event.inst.optical_foclen[tel_id])
+                        tel_phi[tel_id] = 180.*u.deg
+                        tel_theta[tel_id] = 20.*u.deg
+
+
+
                     '''
                     trying to clean the image '''
                     try:
-                        pmt_signal, pix_x, pix_y = \
-                            Cleaner.clean(pmt_signal, tel_geom[tel_id])
+                        pmt_signal, new_geom = \
+                            Cleaner.clean(pmt_signal, cam_geom[tel_id],
+                                          event.inst.optical_foclen[tel_id])
                     except FileNotFoundError as e:
                         print(e)
                         continue
                     except EdgeEventException:
                         continue
-                    except UnknownModeException as e:
-                        print(e)
-                        print("asked for unknown mode... what are you doing?")
-                        exit(-1)
 
                     '''
                     trying to do the hillas reconstruction of the images '''
                     try:
-                        moments, h_moments = hillas_parameters(pix_x, pix_y,
-                                                               pmt_signal)
+                        moments = hillas_parameters(new_geom.pix_x,
+                                                    new_geom.pix_y,
+                                                    pmt_signal)
 
-                        hillas_dict1[tel_id] = moments
-                        hillas_dict2[tel_id] = h_moments
+                        hillas_dict[tel_id] = moments
                         tot_signal += moments.size
 
                     except HillasParameterizationError as e:
@@ -148,27 +161,19 @@ if __name__ == '__main__':
 
                 '''
                 telescope loop done, now do the core fit '''
-                fit.get_great_circles(hillas_dict1)
-                seed = np.sum([[fit.telescopes["TelX"][tel_id-1],
-                                fit.telescopes["TelY"][tel_id-1]]
-                        for tel_id in fit.circles.keys()], axis=0) * u.m
+                fit.get_great_circles(hillas_dict,
+                                      event.inst, tel_phi, tel_theta)
+                seed = [0, 0]*u.m
                 pos_fit = fit.fit_core(seed)
 
                 '''
                 now prepare the features for the classifier '''
                 features = []
-                NTels = len(hillas_dict1)
-                for tel_id in hillas_dict1.keys():
-                    tel_idx = np.searchsorted(
-                                classifier.telescopes['TelID'],
-                                tel_id)
-                    tel_pos = np.array([
-                        classifier.telescopes["TelX"][tel_idx],
-                        classifier.telescopes["TelY"][tel_idx]
-                                        ]) * u.m
+                NTels = len(hillas_dict)
+                for tel_id in hillas_dict.keys():
+                    tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
 
-                    moments = hillas_dict1[tel_id]
-                    h_moments = hillas_dict2[tel_id]
+                    moments = hillas_dict[tel_id]
 
                     impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                     impact_dist_rec = linalg.length(tel_pos-pos_fit)
@@ -176,17 +181,18 @@ if __name__ == '__main__':
                                 impact_dist_rec / u.m,
                                 impact_dist_sim / u.m,
                                 tot_signal,
+                                max_signal,
                                 moments.size,
                                 NTels,
                                 moments.width, moments.length,
-                                h_moments.Skewness,
-                                h_moments.Kurtosis,
-                                h_moments.Asymmetry
+                                #moments.asymmetry
+                                moments.skewness,
+                                moments.kurtosis
                                 ])
                 if len(features):
                     classifier.Features[cl].append(features)
                     classifier.MCEnergy[cl].append(mc_shower.energy)
-                    classifier.total_images += len(features)
+                    classifier.selected_images += len(features)
                     events[cl] += 1
 
                 if signal_handler.stop:
@@ -220,10 +226,10 @@ if __name__ == '__main__':
 
     if args.store:
         classifier.learn()
-        classifier.save(args.out_path+"_"+args.mode+"_rec-sim-dist.pkl")
+        classifier.save(args.out_dir+"_"+args.mode+"_rec-sim-dist.pkl")
 
     if args.check:
-        classifier.self_check(min_tel=4, split_size=50, write=args.write,
+        classifier.self_check(min_tel=4, split_size=10, write=args.write,
                               out_token=args.mode+"_rec-sim-dist")
 
 
