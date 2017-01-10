@@ -301,20 +301,3 @@ class EventClassifier:
             plt.savefig("plots/"+out_token+"_classification.png")
 
         plt.show()
-
-    def remove_isolated_pixels(self, img, threshold=0):
-        max_val = np.max(img)
-        for idx, foo in enumerate(img):
-            for idy, bar in enumerate(foo):
-                threshold=3
-                is_island=0
-                if idx>0:
-                    is_island += img[idx-1,idy]
-                if idx<len(img)-1:
-                    is_island += img[idx+1,idy]
-                if idy>0:
-                    is_island += img[idx,idy-1]
-                if idy<len(foo)-1:
-                    is_island += img[idx,idy+1]
-
-                if is_island < threshold and bar != max_val: img[idx,idy] = 0

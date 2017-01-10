@@ -88,8 +88,8 @@ if __name__ == '__main__':
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    for filenamelist_class in [sorted(filenamelist_gamma)[:3],
-                               sorted(filenamelist_proton)[:20]]:
+    for filenamelist_class in [sorted(filenamelist_gamma)[:10],
+                               sorted(filenamelist_proton)[:50]]:
         signal_handler.stop = False
         for filename in filenamelist_class[:args.last]:
             print("filename = {}".format(filename))
@@ -189,9 +189,9 @@ if __name__ == '__main__':
                                 moments.size,
                                 NTels,
                                 moments.width, moments.length,
-                                # moments.asymmetry
                                 moments.skewness,
-                                moments.kurtosis
+                                moments.kurtosis,
+                                moments.asymmetry
                                 ])
                 if len(features):
                     classifier.Features[cl].append(features)
@@ -212,7 +212,8 @@ if __name__ == '__main__':
                       "width",
                       "length",
                       "skewness",
-                      "kurtosis"
+                      "kurtosis",
+                      "asymmetry"
                       ]
 
     print("total images:", classifier.total_images)
