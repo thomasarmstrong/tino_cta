@@ -12,7 +12,7 @@ for Protons in an energy range from 0.1 TeV to 600 TeV as a diffuse flux 6° aro
 pointing direction.
 
 ## Reconstruction Workflow
-The reconstruction is done by the `FitGammaHillas` class that was already merged into
+The reconstruction is done by the `FitGammaHillas` class that has already been merged into
 ctapipe. <br  />
 Only events with at least 2 telescopes are considered.<br  />
 
@@ -49,11 +49,15 @@ The position of the image core (x and y) and the tilt of the Hillas ellipsis (`�
 From these parameters (position `c` and tilt `ψ`), a second position, `b`, on the camera
 can be calculated. Both these points should lie on the shower axis. <br  />
 
+![shower_reco_camera_frame](https://cloud.githubusercontent.com/assets/18286015/21807318/75c52498-d73e-11e6-868a-c1a7d4413a49.png)
+
 #### GreatCircle
 The two positions on the camera correspond to two directions in the sky. These two
 directions define a plane (or `GreatCircle`) in the horizontal frame.
 Since the shower on the image passes through the two points `c` and `b` on the camera,
 the shower should also lie in the plane of the `GreatCircle`. <br  />
+The distribution of the angle between the shower and the `GreatCircle` can be seen in the following figure:
+
 
 #### Direction Reconstruction
 Two cameras will see the shower from different directions. The `GreatCircle` defined by
@@ -66,6 +70,8 @@ to a length of 1) with a weight provided by:
 * the cosine of the angle between the two planes that were crossed
 * the total size of each cleaned image of the two cameras used for the two `GreatCircle`
 * the ratios of the Hillas length and width from the two cameras.
+
+![shower_reco_horizontal_frame](https://cloud.githubusercontent.com/assets/18286015/21807321/780f10a6-d73e-11e6-8e8b-1f616c31c9fd.png)
 
 #### Shower Core Reconstruction
 For the impact position, the `trace` of each `GreatCircle` is defined as the cross section
