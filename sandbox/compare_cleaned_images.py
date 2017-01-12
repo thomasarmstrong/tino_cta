@@ -27,7 +27,7 @@ from ctapipe.io import CameraGeometry
 from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.io.hessio import hessio_event_source
-from ctapipe.io.geometry_converter import *
+from ctapipe.image.geometry_converter import *
 
 
 path.append(expandvars("$CTA_SOFT/tino_cta"))
@@ -48,33 +48,20 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
 
     x_edges, y_edges, x_scale = get_orthogonal_grid_edges(rot_x, rot_y)
 
-    square_mask, edges = np.histogramdd([rot_x, rot_y],
-                                        bins=(x_edges, y_edges))
+    new_geom, new_signal = convert_geometry_1d_to_2d(
+        cam_geom, pmt_signal, cam_geom.cam_id)
 
-    square_img, edges = np.histogramdd([rot_x, rot_y],
-                                       bins=(x_edges, y_edges),
-                                       weights=signal)
+    unrot_geom, unrot_signal = convert_geometry_back(
+        new_geom, new_signal, cam_geom.cam_id,
+        event.inst.optical_foclen[tel_id])
 
-    cleaned_img = wavelet_transform(square_img)
+    square_mask = new_geom.mask
+
+    cleaned_img = wavelet_transform(new_signal, raw_option_string="-K -m3 -s3 -n4")
     cleaned_img = kill_isolpix(cleaned_img)
 
     unrot_img = cleaned_img[square_mask == 1]
     unrot_colors = cm.hot(unrot_img/max(unrot_img))
-
-    '''
-    can be done either like this:
-        unrot_x, unrot_y = reskew_hex_pixel_from_orthogonal_edges(x_edges,
-                                                                  y_edges,
-                                                                  square_mask)
-    or like this : '''
-    grid_x, grid_y = np.meshgrid((x_edges[:-1] + x_edges[1:])/2.,
-                                 (y_edges[:-1] + y_edges[1:])/2.)
-    grid_x /= x_scale
-    unrot_x, unrot_y = reskew_hex_pixel_grid(grid_x.T[square_mask==1]*u.m,
-                                             grid_y.T[square_mask==1]*u.m,
-                                             cam_geom.cam_rotation)
-
-    unrot_geom = CameraGeometry.guess(unrot_x, unrot_y, optical_foclen)
 
     global fig
     global cb1, ax1

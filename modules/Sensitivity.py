@@ -13,7 +13,7 @@ def convert_astropy_array(arr, unit=None):
 def crab_source_rate(E):
     '''
     Crab source rate:   dN/dE = 3e-7  * (E/TeV)**-2.48 / (TeV * m² * s)
-    (unbroken power law...)
+    (watch out: unbroken power law... not really true)
     norm and spectral index reverse engineered from HESS plot... '''
     return 3e-7 * (E/u.TeV)**-2.48 / (u.TeV * u.m**2 * u.s)
 

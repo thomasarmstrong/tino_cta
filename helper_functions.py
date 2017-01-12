@@ -5,6 +5,8 @@ import numpy as np
 from astropy import units as u
 
 from matplotlib import pyplot as plt
+plt.style.use('seaborn-talk')
+plt.style.use('t_slides')
 
 import signal
 class SignalHandler():
@@ -123,7 +125,7 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
         if end == "tex":
             tikz_save("{}.{}".format(outname, end), **kwargs)
         else:
-            ptl.savefig("{}.{}".format(outname, end))
+            plt.savefig("{}.{}".format(outname, end))
 
 
 def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
@@ -208,18 +210,17 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
 
         '''
         calculate the widths of the violins as 90 % of the corresponding bin width '''
-        widths=[]
+        widths = []
         for cen, wid in zip(bin_centres, (bin_edges[1:]-bin_edges[:-1])):
             if cen in keys:
                 widths.append(wid*.9)
-
 
         plt.violinplot(vals, keys,
                        points=60, widths=widths,
                        showextrema=True, showmedians=True)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        ''' adding a colour bar to tex hexbin plot reduces its width to 4/5
+        ''' adding a colour bar to the hexbin plot reduces its width by 1/5
         adjusting the extent of the violin plot to sync up with the hexbin plot '''
         if not np.isnan(extent[:2]).any():
             plt.xlim([extent[0], (5.*extent[1] - extent[0])/4.])

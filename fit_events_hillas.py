@@ -20,9 +20,10 @@ from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.instrument.InstrumentDescription import load_hessio
 
-from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
+from ctapipe.utils import linalg
 
-from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
+from ctapipe.image.hillas import HillasParameterizationError, \
+                                 hillas_parameters_4 as hillas_parameters
 
 from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
@@ -41,10 +42,6 @@ from modules.CutFlow import CutFlow
 from helper_functions import *
 
 
-old = False
-# old = True
-
-
 ''' your favourite units here '''
 angle_unit  = u.deg
 energy_unit = u.GeV
@@ -54,6 +51,10 @@ dist_unit   = u.m
 if __name__ == '__main__':
 
     parser = make_argparser()
+    parser.add_argument('-o', '--outdir',   type=str, default="plots")
+    parser.add_argument('--photon',  action='store_true',
+                        help="use the mc photo-electrons container "
+                        "instead of the PMT signal")
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
     parser.add_argument('--add_offset', action='store_true',
@@ -79,12 +80,12 @@ if __name__ == '__main__':
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
 
-    min_charge = "min_charge_>{}".format(args.min_charge)
-    Imagecutflow.set_cut(min_charge, lambda x: x > args.min_charge)
+    Eventcutflow.set_cut("noCuts", None)
+    Eventcutflow.set_cut("min2Tels", lambda x: x >= 2)
 
+    min_charge = "min charge >= {}".format(args.min_charge)
+    Imagecutflow.set_cut(min_charge, lambda x: x >= args.min_charge)
 
-
-    # Cleaner = ImageCleaner(mode="none")
     Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
                            skip_edge_events=False, island_cleaning=True)
 
@@ -109,10 +110,12 @@ if __name__ == '__main__':
     hillas_length = []
     hillas_width = []
 
-    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    allowed_tels = range(34)  # all ASTRI telescopes
+    allowed_tels = None
+    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
+
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -123,19 +126,14 @@ if __name__ == '__main__':
 
             Eventcutflow.count("noCuts")
 
-            if len(event.dl0.tels_with_data) < 2:
+            if not Eventcutflow.cut("min2Tels", len(event.dl0.tels_with_data)):
                 continue
-
-            Eventcutflow.count("min2Tels")
 
             print('Scanning input file... count = {}'.format(event.count))
             print('Event ID: {}'.format(event.dl0.event_id))
             print('Available telscopes: {}'.format(event.dl0.tels_with_data))
 
             hillas_dict = {}
-            # for tel_id, tel in event.mc.tel.items():
-                # pmt_signal = tel.photo_electrons
-
             for tel_id in event.dl0.tels_with_data:
 
                 Imagecutflow.count("noCuts")
@@ -145,29 +143,34 @@ if __name__ == '__main__':
                                         event.inst.pixel_pos[tel_id][0],
                                         event.inst.pixel_pos[tel_id][1],
                                         event.inst.optical_foclen[tel_id])
-                    tel_phi[tel_id] = 180.*u.deg
+                    tel_phi[tel_id] = 0.*u.deg
                     tel_theta[tel_id] = 20.*u.deg
 
-                if cam_geom[tel_id] == "ASTRI":
-                    cal_signal = apply_mc_calibration_ASTRI(
-                                    event.dl0.tel[tel_id].adc_sums,
-                                    event.mc.tel[tel_id].dc_to_pe,
-                                    event.mc.tel[tel_id].pedestal)
+                if args.photon:
+                    pmt_signal = event.mc.tel[tel_id].photo_electron_image
+                    new_geom = cam_geom[tel_id]
                 else:
-                    cal_signal = apply_mc_calibration(
-                        event.dl0.tel[tel_id].adc_sums[0],
-                        event.mc.tel[tel_id].dc_to_pe[0],
-                        event.mc.tel[tel_id].pedestal[0])
+                    if cam_geom[tel_id] == "ASTRI":
+                        cal_signal = apply_mc_calibration_ASTRI(
+                                        event.dl0.tel[tel_id].adc_sums,
+                                        event.mc.tel[tel_id].dc_to_pe,
+                                        event.mc.tel[tel_id].pedestal)
+                    else:
+                        cal_signal = apply_mc_calibration(
+                            event.dl0.tel[tel_id].adc_sums[0],
+                            event.mc.tel[tel_id].dc_to_pe[0],
+                            event.mc.tel[tel_id].pedestal[0])
 
-                Imagecutflow.count("calibration")
+                    Imagecutflow.count("calibration")
 
-                try:
-                    pmt_signal, new_geom = \
-                        Cleaner.clean(cal_signal+5 if args.add_offset else cal_signal,
-                                      cam_geom[tel_id], event.inst.optical_foclen[tel_id])
-                except (FileNotFoundError, EdgeEventException) as e:
-                    print(e)
-                    continue
+                    try:
+                        pmt_signal, new_geom = \
+                            Cleaner.clean(cal_signal+5 if args.add_offset else cal_signal,
+                                          cam_geom[tel_id],
+                                          event.inst.optical_foclen[tel_id])
+                    except (FileNotFoundError, EdgeEventException) as e:
+                        continue
+                # end if args.photons
 
                 if not Imagecutflow.cut(min_charge, np.sum(pmt_signal)):
                     continue
@@ -175,7 +178,7 @@ if __name__ == '__main__':
                 try:
                     hillas_dict[tel_id] = hillas_parameters(new_geom.pix_x,
                                                             new_geom.pix_y,
-                                                            pmt_signal)[0]
+                                                            pmt_signal)
                 except HillasParameterizationError as e:
                     print(e)
                     continue
@@ -189,40 +192,37 @@ if __name__ == '__main__':
             Eventcutflow.count("GreatCircles")
 
             shower = event.mc
-            # corsika measures azimuth the other way around, using phi=-az
-            shower_dir = set_phi_theta(-shower.az, 90.*u.deg+shower.alt)
-            # shower direction is downwards, shower origin up
-            shower_org = -shower_dir
+            shower_org = linalg.set_phi_theta(shower.az, 90.*u.deg-shower.alt)
 
             for k in fit.circles.keys():
                 c = fit.circles[k]
                 h = hillas_dict[k]
                 tel_signal.append(h.size)
                 tel_signal_pe.append(np.sum(event.mc.tel[k].photo_electron_image))
-                hillas_tilt.append(abs((angle(c.norm, shower_org)*u.rad) - 90*u.deg))
-                hillas_length.append(h.length * u.m)
-                hillas_width.append(h.width * u.m)
+                hillas_tilt.append(abs(linalg.angle(c.norm, shower_org)*u.rad - 90*u.deg))
+                hillas_length.append(h.length)
+                hillas_width.append(h.width)
 
-            shower_core = np.array([shower.core_x.value,
-                                    shower.core_y.value])*u.m
+            shower_core = convert_astropy_array([shower.core_x, shower.core_y])
 
             try:
                 result1 = fit.fit_origin_crosses()[0]
                 result2 = fit.fit_origin_minimise(result1)
 
-                seed = np.mean([event.inst.tel_pos[tel_id]
-                               for tel_id in fit.circles.keys()], axis=0)[:2]*u.m
-                seed = [0, 0]*u.m
+                seed = (0, 0)*dist_unit
                 pos_fit = fit.fit_core(seed)
 
             except TooFewTelescopesException as e:
                 print(e)
                 continue
 
-            Eventcutflow.count("Reco")
+            xi1 = linalg.angle(result1, shower_org).to(angle_unit)
+            xi2 = linalg.angle(result2, shower_org).to(angle_unit)
 
-            xi1 = angle(result1, shower_org).to(angle_unit)
-            xi2 = angle(result2, shower_org).to(angle_unit)
+            if np.isnan([xi1.value, xi2.value]).any():
+                continue
+
+            Eventcutflow.count("Reco")
 
             print()
             print("xi1 = {}".format(xi1))
@@ -235,28 +235,28 @@ if __name__ == '__main__':
 
             NEvents = len(xis2_sorted)
             print()
-            print("xi1 res (68-percentile) = {}"
+            print("xi1 res (68-percentile) = {:4.3f}"
                   .format(xis1_sorted[int(NEvents*.68)]))
-            print("xi2 res (68-percentile) = {}"
+            print("xi2 res (68-percentile) = {:4.3f}"
                   .format(xis2_sorted[int(NEvents*.68)]))
-            print("median difference = {}".format(xisd_sorted[NEvents//2]))
+            print("median difference = {:.4g} (d<0 ⇒ xi1 is better)"
+                  .format(xisd_sorted[NEvents//2]))
             print()
 
-            diff = length(pos_fit[:2]-shower_core)
+            diff = linalg.length(pos_fit[:2]-shower_core)
             print("reco = ", diff)
             insort(diffs_sorted, diff)
-            print("core res (68-percentile) = {}"
+            print("core res (68-percentile) = {:4.3f}"
                   .format(diffs_sorted[int(len(diffs_sorted)*.68)]))
             print()
             print("Events:", NEvents)
             print()
 
-            '''
-            save reco performance unsorted '''
+            # save reco performance unsorted
             xis2.append(xi2)
             diffs.append(diff)
-            '''
-            save number of telescopes and MC energy for this event '''
+
+            # save number of telescopes and MC energy for this event
             NTels.append(len(fit.circles))
             EnMC.append(event.mc.energy)
 
@@ -269,31 +269,6 @@ if __name__ == '__main__':
     Eventcutflow("min2Tels")
     print()
     Imagecutflow(sort_column=1)
-
-    #print(eps_table)
-    #eps_table.write("Eps_int_comparison.fits", overwrite=True)
-    #plot_hex_and_violin(
-            #np.log10(eps_table["Eps_w"]),
-            #np.log10(eps_table["sig_p"]),
-            #None,
-            #ylabel="log10(NPE)",
-            #xlabel="log10(Eps2 wave)",
-            #zlabel="log10(counts)",
-            #bins='log',
-            #extent=(-3, 0, 1.5, 5),
-            #do_violin=False)
-    #plt.pause(.1)
-    #plot_hex_and_violin(
-            #np.log10(eps_table["Eps_t"]),
-            #np.log10(eps_table["sig_p"]),
-            #None,
-            #ylabel="log10(NPE)",
-            #xlabel="log10(Eps2 tail)",
-            #zlabel="log10(counts)",
-            #bins='log',
-            #extent=(-3, 0, 1.5, 5),
-            #do_violin=False)
-    #plt.show()
 
     '''
     if we don't want to plot anything, we can exit now '''
@@ -315,7 +290,7 @@ if __name__ == '__main__':
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
     if args.write:
-        save_fig("plots/alpha_vs_photoelecrons_{}".format(args.mode))
+        save_fig("{}/reco_alpha_vs_photoelecrons_{}".format(args.outdir, args.mode))
     plt.pause(.1)
 
     '''
@@ -329,7 +304,7 @@ if __name__ == '__main__':
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
     if args.write:
-        save_fig("plots/alpha_vs_signal_{}".format(args.mode))
+        save_fig("{}/reco_alpha_vs_signal_{}".format(args.outdir, args.mode))
     plt.pause(.1)
 
     '''
@@ -343,8 +318,8 @@ if __name__ == '__main__':
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
     if args.write:
-        save_fig("plots/alpha_vs_lenOVwidth_{}".format(args.mode))
-    plt.show()
+        save_fig("{}/reco_alpha_vs_lenOVwidth_{}".format(args.outdir, args.mode))
+    plt.pause(.1)
 
 
     # xis1 = convert_astropy_array(xis1)
@@ -354,10 +329,10 @@ if __name__ == '__main__':
     xis = xis2
 
     figure = plt.figure()
-    plt.hist(xis, bins=np.linspace(0, 25, 50), log=True)
+    plt.hist(xis, bins=np.linspace(0, .1, 50), log=True)
     plt.xlabel(r"$\xi$ / deg")
     if args.write:
-        save_fig('plots/xi_{}'.format(args.mode), draw_rectangles=True)
+        save_fig('{}/reco_xi_{}'.format(args.outdir, args.mode), draw_rectangles=True)
     plt.pause(.1)
 
     #figure = plt.figure()
@@ -435,7 +410,7 @@ if __name__ == '__main__':
     plt.ylabel(r"log($\xi_2$ / deg)")
     plt.grid()
     if args.write:
-        save_fig('plots/_xi_vs_E_NTel_{}'.format(args.mode))
+        save_fig('{}/reco_xi_vs_E_NTel_{}'.format(args.outdir, args.mode))
 
     plt.pause(.1)
 
@@ -483,5 +458,5 @@ if __name__ == '__main__':
     plt.ylabel(r"log($\Delta R$ / m)")
     plt.grid()
     if args.write:
-        save_fig('plots/dist_vs_E_NTel_{}'.format(args.mode))
+        save_fig('{}/reco_dist_vs_E_NTel_{}'.format(args.outdir, args.mode))
     plt.show()

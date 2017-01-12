@@ -36,8 +36,10 @@ from modules.EventClassifier import EventClassifier
 if __name__ == '__main__':
 
     parser = make_argparser()
-    parser.add_argument('-o', '--out_dir', type=str,
-                        default='data/classify_pickle/classifier')
+    parser.add_argument('-o', '--outdir', type=str,
+                        default='data/classify_pickle')
+    parser.add_argument('--figdir', type=str,
+                        default='plots')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     parser.add_argument('--store', action='store_true',
@@ -88,8 +90,8 @@ if __name__ == '__main__':
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    for filenamelist_class in [sorted(filenamelist_gamma)[:10],
-                               sorted(filenamelist_proton)[:50]]:
+    for filenamelist_class in [sorted(filenamelist_gamma),
+                               sorted(filenamelist_proton)]:
         signal_handler.stop = False
         for filename in filenamelist_class[:args.last]:
             print("filename = {}".format(filename))
@@ -182,16 +184,17 @@ if __name__ == '__main__':
                     impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                     impact_dist_rec = linalg.length(tel_pos-pos_fit)
                     features.append([
+                                # impact_dist_sim / u.m,
                                 impact_dist_rec / u.m,
-                                impact_dist_sim / u.m,
+                                impact_dist_rec / u.m,
                                 tot_signal,
                                 max_signal,
                                 moments.size,
                                 NTels,
-                                moments.width, moments.length,
+                                moments.width/u.m,
+                                moments.length/u.m,
                                 moments.skewness,
-                                moments.kurtosis,
-                                moments.asymmetry
+                                moments.kurtosis
                                 ])
                 if len(features):
                     classifier.Features[cl].append(features)
@@ -212,8 +215,7 @@ if __name__ == '__main__':
                       "width",
                       "length",
                       "skewness",
-                      "kurtosis",
-                      "asymmetry"
+                      "kurtosis"
                       ]
 
     print("total images:", classifier.total_images)
@@ -236,15 +238,25 @@ if __name__ == '__main__':
     '''
     extract and show the importance of the various training features '''
     classifier.show_importances(feature_labels)
+    if args.write:
+        save_fig('{}/classification_importance_{}_rec-rec_c{}'
+                 .format(args.figdir, args.mode, args.min_charge))
     plt.pause(.5)
 
     if args.store:
         classifier.learn()
-        classifier.save(args.out_dir+"_"+args.mode+"_rec-sim-dist.pkl")
+        classifier.save("{}/classifier_{}_rec-rec-dist_c{}.pkl"
+                        .format(args.outdir, args.mode, args.min_charge))
 
     if args.check:
-        classifier.self_check(min_tel=4, split_size=10, write=args.write,
-                              out_token=args.mode+"_rec-sim-dist")
+        classifier.self_check(min_tel=4, split_size=10)
+        plt.tight_layout()
+
+        if args.write:
+            save_fig('{}/classification_performance_{}_rec-rec_c{}'
+                     .format(args.figdir, args.mode, args.min_charge))
+
+        plt.show()
 
 
 

@@ -138,8 +138,7 @@ class EventClassifier:
             plt.xticks(bins, feature_labels, rotation=17)
 
     def self_check(self, min_tel=3, agree_threshold=.75, clf=None,
-                   split_size=None, verbose=True, write=False,
-                   out_token='wave'):
+                   split_size=None, verbose=True):
         import matplotlib.pyplot as plt
 
         right_ratios = self.create_empty_class_dict(self.class_list)
@@ -280,7 +279,6 @@ class EventClassifier:
         tax.set_xlabel("log(E/GeV)")
         tax.set_ylabel("events")
 
-
         tax = ax[2, 0]
         tax.hist(right_ratios['g'], bins=20, range=(0, 1), normed=True)
         tax.set_title("fraction of classifiers per event agreeing to gamma")
@@ -292,12 +290,3 @@ class EventClassifier:
         tax.set_title("fraction of classifiers per event agreeing to proton")
         tax.set_xlabel("agree ratio")
         tax.set_ylabel("PDF")
-
-        plt.tight_layout()
-        if write:
-            tikz_save("plots/"+out_token+"_classification.tex",
-                      draw_rectangles=True)
-            plt.savefig("plots/"+out_token+"_classification.pdf")
-            plt.savefig("plots/"+out_token+"_classification.png")
-
-        plt.show()

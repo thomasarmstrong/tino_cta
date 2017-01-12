@@ -100,7 +100,7 @@ class ImageCleaner:
         if cam_geom.cam_id == "ASTRI":
             cropped_img = crop_astri_image(img)
             cleaned_img = self.wavelet_transform.clean_image(
-                            cropped_img, raw_option_string="-K -k -C1 -m3 -s3 -n4")
+                            cropped_img, raw_option_string="-K -C1 -m3 -s3 -n4")
 
             self.cutflow.count("wavelet cleaning")
 
@@ -114,8 +114,7 @@ class ImageCleaner:
                    (cleaned_img[:,0]  > edge_thresh).any() or  \
                    (cleaned_img[:,-1] > edge_thresh).any():
                         raise EdgeEventException
-
-            self.cutflow.count("reject edge events")
+                self.cutflow.count("wavelet edge")
 
             new_img = cleaned_img.flatten()
             new_geom = copy(cam_geom)
@@ -152,6 +151,8 @@ class ImageCleaner:
             dilate(cam_geom, mask)
         img[mask == False] = 0
 
+        self.cutflow.count("tailcut cleaning")
+
         if cam_geom.cam_id == "ASTRI":
             img = crop_astri_image(img)
 
@@ -162,6 +163,7 @@ class ImageCleaner:
                    (img[:,0]  > edge_thresh).any() or  \
                    (img[:,-1] > edge_thresh).any():
                         raise EdgeEventException
+                self.cutflow.count("tailcut edge")
 
             new_img = self.island_cleaning(img).flatten()
             new_geom = copy(cam_geom)

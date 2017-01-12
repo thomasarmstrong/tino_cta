@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-talk')
-#plt.style.use('t_slides')
+plt.style.use('t_slides')
 
 from astropy.table import Table
 from astropy import units as u
@@ -88,109 +88,38 @@ if __name__ == "__main__":
 
     weight_g, weight_p = SensCalc.scale_events_to_expected_events()
 
-    if 1:
-        sensitivities = SensCalc.get_sensitivity(gammas['off_angles'], proton['off_angles'])
-    else:
-        min_N = 10
-        max_prot_ratio = .05
+    sensitivities = SensCalc.get_sensitivity(gammas['off_angles'], proton['off_angles'])
 
-        Rsig = .3
-        Rmax = 5
-        alpha = 1/(((Rmax/Rsig)**2)-1)
+    # now for tailcut
+    gammas_t = Table.read("data/selected_events/"
+                          "selected_events_tail_g.fits")
+    proton_t = Table.read("data/selected_events/"
+                          "selected_events_tail_p.fits")
 
-        sensitivities = []
-        for elow, ehigh in zip(edges_gammas[:-1], edges_gammas[1:]):
-            Non_g = 0
-            Noff_g = 0
-            Non_p = 0
-            Noff_p = 0
+    SensCalc_t = Sensitivity_PointSource(gammas_t['MC_Energy'], proton_t['MC_Energy'],
+                                         edges_gammas, edges_proton)
+    SensCalc_t.get_effective_areas(NGammas_simulated, NProton_simulated)
+    SensCalc_t.get_expected_events(source_rate=crab_source_rate)
+    SensCalc_t.scale_events_to_expected_events()
+    sensitivities_t = SensCalc_t.get_sensitivity(gammas_t['off_angles'],
+                                                 proton_t['off_angles'])
 
-            elow  = 10**elow
-            ehigh = 10**ehigh
-
-            for s, w in zip(gammas['off_angles'][(elow < gammas["MC_Energy"]) &
-                                                (gammas["MC_Energy"] < ehigh)],
-                            weight_g[(elow < gammas["MC_Energy"]) &
-                                    (gammas["MC_Energy"] < ehigh)]
-                            ):
-                if s < Rsig:
-                    Non_g += w
-                elif s < Rmax:
-                    Noff_g += w
-
-            for s, w in zip(proton['off_angles'][(elow < proton["MC_Energy"]) &
-                                                (proton["MC_Energy"] < ehigh)],
-                            weight_p[(elow < proton["MC_Energy"]) &
-                                    (proton["MC_Energy"] < ehigh)]
-                            ):
-                if s < Rsig:
-                    Non_p += w
-                elif s < Rmax:
-                    Noff_p += w
-
-            if Non_g == 0:
-                continue
-
-            scale = minimize(diff_to_5_sigma, [1e-4],
-                            args=(Non_g, Non_p, Noff_g, Noff_p, alpha),
-                            # method='BFGS',
-                            method='L-BFGS-B', bounds=[(1e-4, None)],
-                            options={'disp': False}
-                            ).x[0]
-            if scale < 0:
-                continue
-
-            print("e low {}\te high {}".format(np.log10(elow),
-                                            np.log10(ehigh)))
-            print("scale:", scale)
-
-            Non_g *= scale
-            Noff_g *= scale
-            N_g = (Non_g+Noff_g)
-            N_p = Non_p+Noff_p
-
-            if N_g+N_p < min_N:
-                print("  N_tot too small: {}, {}, {}, {}".format(Non_g, Noff_g,
-                                                                Non_p, Noff_p))
-                scale_a = (min_N-N_p) / N_g
-                print("  scale_a:", scale_a)
-                scale *= scale_a
-                Non_g *= scale_a
-                Noff_g *= scale_a
-                N_g = (Non_g+Noff_g)
-
-            print("scale:", scale)
-
-            if Non_p / (Non_g+Non_p) > max_prot_ratio:
-                print("  too high proton contamination: {}, {}".format(Non_g, Non_p))
-                scale_r = (1-max_prot_ratio) * Non_p / Non_g
-                print("  scale_r:", scale_r)
-                scale *= scale_r
-                Non_g *= scale_r
-                Noff_g *= scale_r
-                N_g = (Non_g+Noff_g)
-
-            flux = Eminus2((elow+ehigh)/2.).to(u.erg / (u.m**2*u.s))
-            sensitivity = flux*scale
-            sensitivities.append([(np.log10(elow)+np.log10(ehigh))/2, sensitivity.value])
-            print("sensitivity: ", sensitivity)
-            print("Non:", Non_g+Non_p)
-            print("Noff:", Noff_g+Noff_p)
-            print("  {}, {}, {}, {}".format(Non_g, Noff_g, Non_p, Noff_p))
-            print("alpha:", alpha)
-            print("sigma:", sigma_lima(Non_g+Non_p, Noff_g+Noff_p, alpha=alpha))
-
-            print()
-
+    # do some plotting
     if args.plot:
         angle_unit = u.deg
         bin_centres_g = (edges_gammas[1:]+edges_gammas[:-1])/2.
 
-        ''' the point-source sensitivity binned in energy '''
+        # the point-source sensitivity binned in energy
         plt.figure()
         plt.semilogy(
             [a[0] for a in sensitivities],
-            [a[1] for a in sensitivities])
+            [a[1] for a in sensitivities],
+            label=args.mode)
+        plt.semilogy(
+            [a[0] for a in sensitivities_t],
+            [a[1] for a in sensitivities_t],
+            label="tail")
+        plt.legend()
         plt.xlabel('log(E / GeV)')
         plt.ylabel(r'$\Phi E^2 /$ {:latex}'.format(SensCalc.flux_unit))
         plt.pause(.1)
@@ -243,7 +172,6 @@ if __name__ == "__main__":
             plt.ylabel(r"$\vartheta$ / {:latex}".format(angle_unit))
             if args.write:
                 save_fig("plots/skymap_{}".format(args.mode))
-            #plt.pause(.1)
 
         '''
         plot the angular distance of the reconstructed shower direction
@@ -280,7 +208,7 @@ if __name__ == "__main__":
                  bins=50)
         plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
         plt.ylabel("expected events in {}".format(SensCalc.observation_time))
-
+        plt.ylim([0,5])
         #plt.subplot(313)
         #plt.hist([1-np.clip(np.cos(proton['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6),
                   #1-np.clip(np.cos(gammas['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6)],
