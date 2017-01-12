@@ -3,5 +3,5 @@
 *.log
 *~
 data/
-plots/
+plots*
 __pycache__
