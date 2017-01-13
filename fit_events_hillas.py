@@ -12,8 +12,6 @@ from matplotlib import cm
 
 from astropy import units as u
 from astropy.table import Table
-eps_table = Table(names=("Eps_w", "Eps_t", "diff_Eps", "sig_w", "sig_t", "sig_p"))
-
 
 from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
@@ -27,7 +25,6 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 
 from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
-
 
 path.append(expandvars("$CTA_SOFT/"
             "jeremie_cta/sap-cta-data-pipeline"))
@@ -86,18 +83,20 @@ if __name__ == '__main__':
     min_charge = "min charge >= {}".format(args.min_charge)
     Imagecutflow.set_cut(min_charge, lambda x: x >= args.min_charge)
 
-    Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
-                           skip_edge_events=False, island_cleaning=True)
+    Cleaner = {"wave": ImageCleaner(mode="wave", cutflow=Imagecutflow,
+                                    skip_edge_events=False, island_cleaning=True),
+               "tail": ImageCleaner(mode="tail", cutflow=Imagecutflow,
+                                    skip_edge_events=False, island_cleaning=True)}
 
     fit = FitGammaHillas()
 
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    NTels = []
-    EnMC  = []
-    xis2  = []
-    diffs = []
+    reco_table = Table(names=("NTels", "EnMC", "xi", "DR"), dtype=('i', 'f', 'f', 'f'))
+    reco_table["EnMC"].unit = energy_unit
+    reco_table["xi"].unit = angle_unit
+    reco_table["DR"].unit = dist_unit
 
     xis1_sorted  = []
     xis2_sorted  = []
@@ -165,9 +164,8 @@ if __name__ == '__main__':
 
                     try:
                         pmt_signal, new_geom = \
-                            Cleaner.clean(cal_signal+5 if args.add_offset else cal_signal,
-                                          cam_geom[tel_id],
-                                          event.inst.optical_foclen[tel_id])
+                            Cleaner[args.mode].clean(cal_signal, cam_geom[tel_id],
+                                                     event.inst.optical_foclen[tel_id])
                     except (FileNotFoundError, EdgeEventException) as e:
                         continue
                 # end if args.photons
@@ -218,16 +216,20 @@ if __name__ == '__main__':
 
             xi1 = linalg.angle(result1, shower_org).to(angle_unit)
             xi2 = linalg.angle(result2, shower_org).to(angle_unit)
+            diff = linalg.length(pos_fit[:2]-shower_core)
 
             if np.isnan([xi1.value, xi2.value]).any():
                 continue
 
             Eventcutflow.count("Reco")
 
+            reco_table.add_row([len(fit.circles), event.mc.energy.to(energy_unit),
+                                xi1.to(angle_unit), diff.to(dist_unit)])
+
             print()
-            print("xi1 = {}".format(xi1))
-            print("xi2 = {}".format(xi2))
-            print("x1-xi2 = {}".format(xi1-xi2))
+            print("xi1 = {:4.3f}".format(xi1))
+            print("xi2 = {:4.3f}".format(xi2))
+            print("x1-xi2 = {:4.3f}".format(xi1-xi2))
 
             insort(xis1_sorted, xi1)
             insort(xis2_sorted, xi2)
@@ -235,15 +237,14 @@ if __name__ == '__main__':
 
             NEvents = len(xis2_sorted)
             print()
-            print("xi1 res (68-percentile) = {:4.3f}"
-                  .format(xis1_sorted[int(NEvents*.68)]))
+            print("xi1 res (68-percentile) = {:4.3f} {}"
+                  .format(np.percentile(reco_table["xi"], 68), angle_unit))
             print("xi2 res (68-percentile) = {:4.3f}"
                   .format(xis2_sorted[int(NEvents*.68)]))
             print("median difference = {:.4g} (d<0 ⇒ xi1 is better)"
                   .format(xisd_sorted[NEvents//2]))
             print()
 
-            diff = linalg.length(pos_fit[:2]-shower_core)
             print("reco = ", diff)
             insort(diffs_sorted, diff)
             print("core res (68-percentile) = {:4.3f}"
@@ -251,14 +252,6 @@ if __name__ == '__main__':
             print()
             print("Events:", NEvents)
             print()
-
-            # save reco performance unsorted
-            xis2.append(xi2)
-            diffs.append(diff)
-
-            # save number of telescopes and MC energy for this event
-            NTels.append(len(fit.circles))
-            EnMC.append(event.mc.energy)
 
             if signal_handler.stop: break
         if signal_handler.stop: break
@@ -290,6 +283,8 @@ if __name__ == '__main__':
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
     if args.write:
+        reco_table.write("data/reconstructed_events/rec_events_{}.hdf5"
+                         .format(args.mode), format="hdf5")
         save_fig("{}/reco_alpha_vs_photoelecrons_{}".format(args.outdir, args.mode))
     plt.pause(.1)
 
@@ -309,24 +304,29 @@ if __name__ == '__main__':
 
     '''
     plot the angular error of the hillas ellipsis vs the length/width ratio '''
-    lovw_edges = np.linspace(0, 3, 16)
+    lovw_edges = np.linspace(0, 1.5, 16)
     plot_hex_and_violin(np.log10(hillas_length/hillas_width),
                         np.log10(hillas_tilt/angle_unit),
                         lovw_edges,
-                        extent=[0, 2, -4.5, 1],
+                        extent=[0, 1.5, -4.5, 1],
                         xlabel="log10(length/width)",
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
+
+    lovw_edges = np.linspace(0, 1, 16)
+    plot_hex_and_violin(1-hillas_width/hillas_length,
+                        np.log10(hillas_tilt/angle_unit),
+                        lovw_edges,
+                        extent=[0, 1, -4.5, 1],
+                        xlabel="1-width/length",
+                        ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+    plt.suptitle(args.mode)
+
     if args.write:
-        save_fig("{}/reco_alpha_vs_lenOVwidth_{}".format(args.outdir, args.mode))
+        save_fig("{}/reco_alpha_vs_eccentricity_{}".format(args.outdir, args.mode))
     plt.pause(.1)
 
-
-    # xis1 = convert_astropy_array(xis1)
-    xis2 = convert_astropy_array(xis2)
-    # xisb = convert_astropy_array(xisb)
-
-    xis = xis2
+    xis = reco_table["xi"]
 
     figure = plt.figure()
     plt.hist(xis, bins=np.linspace(0, .1, 50), log=True)
@@ -335,68 +335,38 @@ if __name__ == '__main__':
         save_fig('{}/reco_xi_{}'.format(args.outdir, args.mode), draw_rectangles=True)
     plt.pause(.1)
 
-    #figure = plt.figure()
-    #plt.hist(np.log10(xis2/angle_unit), bins=np.linspace(-3, 1, 50))
-    #plt.xlabel(r"log($\xi_2$ / deg)")
-    #if args.write:
-        #save_fig('plots/'+args.mode+'_xi2', draw_rectangles=True)
-    #plt.pause(.1)
-
-    #figure = plt.figure()
-    #plt.hist(np.log10(xisb/angle_unit), bins=np.linspace(-.5, .5, 50))
-    #plt.xlabel(r"$\log(\xi_\mathrm{best} / \deg)$")
-    #if args.write:
-        #save_fig('plots/'+args.mode+'_xi_best', draw_rectangles=True)
-    #plt.pause(.1)
-
-    #figure = plt.figure()
-    #plt.hist((xis1-xis2), bins=np.linspace(-.65, .65, 13), log=True)
-    #plt.xlabel(r"$(\xi_1 - \xi_2) / \deg)$")
-    #if args.write:
-        #save_fig('plots/'+args.mode+'_xi_diff', draw_rectangles=True)
-    #plt.pause(.1)
-
-
-    '''
-    convert the xi-list into a dict with the number of
-    used telescopes as keys '''
+    # convert the xi-list into a dict with the number of used telescopes as keys
     xi_vs_tel = {}
-    for xi, ntel in zip(xis, NTels):
-        if math.isnan(xi.value):
-            continue
+    for xi, ntel in reco_table["xi", "NTels"]:
         if ntel not in xi_vs_tel:
-            xi_vs_tel[ntel] = [xi/angle_unit]
+            xi_vs_tel[ntel] = [xi]
         else:
-            xi_vs_tel[ntel].append(xi/angle_unit)
+            xi_vs_tel[ntel].append(xi)
 
-    '''
-    create a list of energy bin-edges and -centres for violin plots '''
+    # create a list of energy bin-edges and -centres for violin plots
     Energy_edges = np.linspace(2, 8, 13)
     Energy_centres = (Energy_edges[1:]+Energy_edges[:-1])/2.
 
-    '''
-    convert the xi-list in to an energy-binned dict with
-    the bin centre as keys '''
+    # convert the xi-list in to an energy-binned dict with the bin centre as keys
     xi_vs_energy = {}
-    for en, xi in zip(EnMC, xis):
-        if math.isnan(xi.value):
-            continue
-        ''' get the bin number this event belongs into '''
-        sbin = np.digitize(np.log10(en/energy_unit), Energy_edges)-1
-        ''' the central value of the bin is the key for the dictionary '''
-        if Energy_centres[sbin] not in xi_vs_energy:
-            xi_vs_energy[Energy_centres[sbin]]  = [xi/angle_unit]
-        else:
-            xi_vs_energy[Energy_centres[sbin]] += [xi/angle_unit]
+    for en, xi in reco_table["EnMC", "xi"]:
 
-    '''
-    plotting the angular error as violin plots with binning in
-    number of telescopes an shower energy '''
+        # get the bin number this event belongs into
+        sbin = np.digitize(np.log10(en), Energy_edges)-1
+
+        # the central value of the bin is the key for the dictionary
+        if Energy_centres[sbin] not in xi_vs_energy:
+            xi_vs_energy[Energy_centres[sbin]]  = [xi]
+        else:
+            xi_vs_energy[Energy_centres[sbin]] += [xi]
+
+    # plotting the angular error as violin plots with binning in
+    # number of telescopes and shower energy
     figure = plt.figure()
     plt.subplot(211)
     plt.violinplot([np.log10(a) for a in xi_vs_tel.values()],
                    [a for a in xi_vs_tel.keys()],
-                   points=60, widths=.75, showextrema=True, showmedians=True)
+                   points=60, widths=.75, showextrema=False, showmedians=True)
     plt.xlabel("Number of Telescopes")
     plt.ylabel(r"log($\xi_2$ / deg)")
     plt.grid()
@@ -405,7 +375,7 @@ if __name__ == '__main__':
     plt.violinplot([np.log10(a) for a in xi_vs_energy.values()],
                    [a for a in xi_vs_energy.keys()],
                    points=60, widths=(Energy_edges[1]-Energy_edges[0])/1.5,
-                   showextrema=True, showmedians=True)
+                   showextrema=False, showmedians=True)
     plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\xi_2$ / deg)")
     plt.grid()
@@ -414,37 +384,36 @@ if __name__ == '__main__':
 
     plt.pause(.1)
 
-    '''
-    convert the diffs-list into a dict with the number of
-    used telescopes as keys '''
+    # convert the diffs-list into a dict with the number of used telescopes as keys
     diff_vs_tel = {}
-    for diff, ntel in zip(diffs, NTels):
+    for diff, ntel in reco_table["DR", "NTels"]:
         if ntel not in diff_vs_tel:
-            diff_vs_tel[ntel] = [(diff/dist_unit)]
+            diff_vs_tel[ntel] = [diff]
         else:
-            diff_vs_tel[ntel].append((diff/dist_unit))
+            diff_vs_tel[ntel].append(diff)
 
     '''
     convert the diffs-list in to an energy-binned dict with
     the bin centre as keys '''
     diff_vs_energy = {}
-    for en, diff in zip(EnMC, diffs):
-        ''' get the bin number this event belongs into '''
-        sbin = np.digitize(np.log10(en/energy_unit), Energy_edges)-1
-        ''' the central value of the bin is the key for the dictionary '''
-        if Energy_centres[sbin] not in diff_vs_energy:
-            diff_vs_energy[Energy_centres[sbin]]  = [(diff/dist_unit)]
-        else:
-            diff_vs_energy[Energy_centres[sbin]] += [(diff/dist_unit)]
+    for en, diff in reco_table["EnMC", "DR"]:
 
-    '''
-    plotting the core position error as violin plots with binning in
-    number of telescopes an shower energy '''
+        # get the bin number this event belongs into
+        sbin = np.digitize(np.log10(en), Energy_edges)-1
+
+        # the central value of the bin is the key for the dictionary
+        if Energy_centres[sbin] not in diff_vs_energy:
+            diff_vs_energy[Energy_centres[sbin]]  = [diff]
+        else:
+            diff_vs_energy[Energy_centres[sbin]] += [diff]
+
+    # plotting the core position error as violin plots with binning in
+    # number of telescopes an shower energy
     figure = plt.figure()
     plt.subplot(211)
     plt.violinplot([np.log10(a) for a in diff_vs_tel.values()],
                    [a for a in diff_vs_tel.keys()],
-                   points=60, widths=.75, showextrema=True, showmedians=True)
+                   points=60, widths=.75, showextrema=False, showmedians=True)
     plt.xlabel("Number of Telescopes")
     plt.ylabel(r"log($\Delta R$ / m)")
     plt.grid()
@@ -453,7 +422,7 @@ if __name__ == '__main__':
     plt.violinplot([np.log10(a) for a in diff_vs_energy.values()],
                    [a for a in diff_vs_energy.keys()],
                    points=60, widths=(Energy_edges[1]-Energy_edges[0])/1.5,
-                   showextrema=True, showmedians=True)
+                   showextrema=False, showmedians=True)
     plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\Delta R$ / m)")
     plt.grid()

@@ -6,7 +6,7 @@ from astropy import units as u
 
 from matplotlib import pyplot as plt
 plt.style.use('seaborn-talk')
-plt.style.use('t_slides')
+#plt.style.use('t_slides')
 
 import signal
 class SignalHandler():
@@ -217,7 +217,7 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
 
         plt.violinplot(vals, keys,
                        points=60, widths=widths,
-                       showextrema=True, showmedians=True)
+                       showextrema=False, showmedians=True)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         ''' adding a colour bar to the hexbin plot reduces its width by 1/5

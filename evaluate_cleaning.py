@@ -15,7 +15,7 @@ from ctapipe.utils import linalg
 from ctapipe.visualization import CameraDisplay
 
 from astropy import units as u
-from astropy.table import Table
+from astropy.table import Table, vstack, hstack
 performance_table = Table(names=("Eps_w", "Eps_t",
                                  "alpha_w", "alpha_t",
                                  "hill_width_w", "hill_length_w",
@@ -23,6 +23,7 @@ performance_table = Table(names=("Eps_w", "Eps_t",
                                  "sig_w", "sig_t", "sig_p",
                                  "Event_id", "Tel_id", "N_Tels"))
 
+import seaborn as sns
 
 from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
@@ -31,7 +32,8 @@ from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
 
-from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
+from ctapipe.image.hillas import HillasParameterizationError, \
+                                 hillas_parameters_2 as hillas_parameters
 
 from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
@@ -179,8 +181,8 @@ if __name__ == '__main__':
                         Cleaner['w'].clean(cal_signal+5 if args.add_offset else cal_signal,
                                            cam_geom[tel_id], event.inst.optical_foclen[tel_id])
                     pmt_signal_t, new_geom_t = \
-                        Cleaner['t'].clean_tail(cal_signal.copy(), cam_geom[tel_id],
-                                                event.inst.optical_foclen[tel_id])
+                        Cleaner['t'].clean(cal_signal.copy(), cam_geom[tel_id],
+                                           event.inst.optical_foclen[tel_id])
                     geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id]}
                 except (FileNotFoundError, EdgeEventException) as e:
                     print(e)
@@ -192,16 +194,18 @@ if __name__ == '__main__':
                     hillas = {}
                     hillas['p'] = hillas_parameters(cam_geom[tel_id].pix_x,
                                                     cam_geom[tel_id].pix_y,
-                                                    pmt_signal_p)[0]
+                                                    pmt_signal_p)
                     hillas['w'] = hillas_parameters(new_geom_w.pix_x,
                                                     new_geom_w.pix_y,
-                                                    pmt_signal_w)[0]
+                                                    pmt_signal_w)
                     hillas['t'] = hillas_parameters(new_geom_t.pix_x,
                                                     new_geom_t.pix_y,
-                                                    pmt_signal_t)[0]
+                                                    pmt_signal_t)
                 except HillasParameterizationError as e:
                     print(e)
                     continue
+
+                Imagecutflow.count("Hillas")
 
                 '''
                 do some plotting '''
@@ -248,8 +252,6 @@ if __name__ == '__main__':
                     plt.suptitle("Camera {}".format(tel_id))
                     plt.show()
 
-                Imagecutflow.count("Hillas")
-
                 '''
                 get some more parameters and put them in an astropy.table.Table '''
                 sum_p = np.sum(pmt_signal_p)
@@ -271,8 +273,8 @@ if __name__ == '__main__':
                     c = fit.circles[tel_id]
 
                     alpha[k] = abs((angle(c.norm, shower_org)*u.rad) - 90*u.deg).to(u.deg)
-                    length[k] = h.length * u.m
-                    width[k] = h.width * u.m
+                    length[k] = h.length
+                    width[k] = h.width
 
                 for k, signal in {'p': pmt_signal_p,
                                   'w': pmt_signal_w}.items():
@@ -281,13 +283,13 @@ if __name__ == '__main__':
 
                     p1_x = h.cen_x
                     p1_y = h.cen_y
-                    p2_x = p1_x + h.length*np.cos(h.psi + np.pi/2)
-                    p2_y = p1_y + h.length*np.sin(h.psi + np.pi/2)
+                    p2_x = p1_x + h.length*np.cos(h.psi + np.pi/2*u.rad)
+                    p2_y = p1_y + h.length*np.sin(h.psi + np.pi/2*u.rad)
 
-                    T = linalg.normalise(np.array([p1_x-p2_x, p1_y-p2_y]))
+                    T = linalg.normalise(np.array([(p1_x-p2_x)/u.m, (p1_y-p2_y)/u.m]))
 
-                    x = geom[k].pix_x/u.m
-                    y = geom[k].pix_y/u.m
+                    x = geom[k].pix_x
+                    y = geom[k].pix_y
 
                     D = [p1_x-x, p1_y-y]
 
@@ -297,9 +299,20 @@ if __name__ == '__main__':
                     for pe, pp in zip(signal[abs(dl) > 1*hillas['p'].length],
                                       dp[abs(dl) > 1*hillas['p'].length]):
 
-                        pe_vs_dp[k].fill([np.log10(sum_p), pp*u.m], pe)
+                        pe_vs_dp[k].fill([np.log10(sum_p), pp], pe)
 
-                ''' now fill the table '''
+                '''
+                if there is any nan values, skip '''
+                if np.isnan([Epsilon_intensity_w,
+                             Epsilon_intensity_t,
+                             alpha['w'].value,
+                             alpha['t'].value,
+                             width['w'].value, length['w'].value,
+                             width['t'].value, length['t'].value]).any():
+                    continue
+
+                '''
+                now fill the table '''
                 performance_table.add_row([Epsilon_intensity_w, Epsilon_intensity_t,
                                            alpha['w'], alpha['t'],
                                            width['w'], length['w'],
@@ -320,94 +333,124 @@ if __name__ == '__main__':
             if signal_handler.stop: break
         if signal_handler.stop: break
 
+    '''
+    print the cutflow '''
+    print()
+    Imagecutflow()
 
-    print(performance_table)
+    tab1 = performance_table["sig_p", "alpha_t"]
+    tab2 = performance_table["sig_p", "alpha_w"]
+    tab1.rename_column("alpha_t", "alpha")
+    tab2.rename_column("alpha_w", "alpha")
 
+    data = vstack([tab1, tab2])
+
+    npe_edges = np.linspace(1, 6, 21)
+    npe_centres = (npe_edges[1:]+npe_edges[:-1])/2.
+    data["log10(sig_p)"] = npe_centres[
+            np.clip(
+                np.digitize(np.log10(data["sig_p"]), npe_edges)-1,
+                0, len(npe_edges)-1)
+            ]
+
+    data["log10(alpha)"] = np.log10(data["alpha"])
+
+    data["mode"] = ['tail']*len(tab1) + ['wave']*len(tab2)
+
+    sns.violinplot(x="log10(sig_p)", y="log10(alpha)", hue="mode", data=data.to_pandas(),
+                   palette="Set3", inner="quartiles", split=True)
+    plt.show()
+
+
+    '''
+    print how many telescopes participated in each log-signal bin '''
     sig_p = performance_table["sig_p"]
-    for log_sig in pe_vs_dp.bin_edges[0][:-1]:
-        print("signal range: {} -- {}\t number of tels {}".format(
-            log_sig, log_sig+1,
-            len(sig_p[(sig_p < 10**(log_sig+1)) & (sig_p > 10**log_sig)])))
+    for k in ['p', 't', 'w']:
+        print("type:", k)
+        for log_sig in pe_vs_dp[k].bin_edges[0][:-1]:
+            print("signal range: {} -- {}\t number of tels {}".format(
+                log_sig, log_sig+1,
+                len(sig_p[(sig_p < 10**(log_sig+1)) & (sig_p > 10**log_sig)])))
+        print()
 
     if args.write:
         performance_table.write("Eps_int_comparison.fits", overwrite=True)
-
-    pe_vs_dp_p = pe_vs_dp['p'].normalise()
-    pe_vs_dp_w = pe_vs_dp['w'].normalise()
-    plt.figure()
-    plt.subplot(121)
-    plt.imshow(pe_vs_dp_p.data[1:-1, 1:-1],
-               extent=(pe_vs_dp_p.bin_edges[1][0].value,
-                       pe_vs_dp_p.bin_edges[1][-1].value,
-                       pe_vs_dp_p.bin_edges[0][0],
-                       pe_vs_dp_p.bin_edges[0][-1]),
-               cmap=plt.cm.hot,
-               origin='lower',
-               aspect='auto',
-               interpolation='none')
-    plt.title("photo electrons")
-    plt.colorbar()
-
-    plt.subplot(122)
-    plt.imshow(pe_vs_dp_w.data[1:-1, 1:-1],
-               extent=(pe_vs_dp_p.bin_edges[1][0].value,
-                       pe_vs_dp_p.bin_edges[1][-1].value,
-                       pe_vs_dp_p.bin_edges[0][0],
-                       pe_vs_dp_p.bin_edges[0][-1]),
-               cmap=plt.cm.hot,
-               origin='lower',
-               aspect='auto',
-               interpolation='none')
-    plt.title("wavelet cleaned")
-    plt.colorbar()
-    plt.pause(.1)
-
-    for pe_bin in [2,3,4,5]:
-        if np.sum(pe_vs_dp_w.norm[pe_bin][1:-1]) > 0:
-            fig = plt.figure()
-            plt.style.use('t_slides')
-            bin_centres = (pe_vs_dp_p.bin_edges[1][1:]+pe_vs_dp_p.bin_edges[1][:-1])/2
-
-            plt.suptitle("total signal: 10^{} to 10^{}"
-                         .format(pe_vs_dp_p.bin_edges[0][pe_bin-1],
-                                 pe_vs_dp_p.bin_edges[0][pe_bin]))
-
-            plt.subplot(131)
-            plt.plot(bin_centres, pe_vs_dp_w.norm[pe_bin][1:-1])
-            plt.title("hit pixel")
-            plt.xlabel("perpendicular offset / m")
-            plt.ylabel("number of hit pmt")
-
-        if np.sum(pe_vs_dp_p.data[pe_bin][1:-1]) > 0:
-            plt.subplot(132)
-            plt.semilogy(bin_centres, pe_vs_dp_p.data[pe_bin][1:-1], 'b', label='PE')
-            plt.semilogy(bin_centres, pe_vs_dp_w.data[pe_bin][1:-1], 'r', label='wave')
-            plt.title("PMT signal")
-            plt.xlabel("perpendicular offset / m")
-            plt.ylabel("average pmt signal")
-            plt.legend()
-
-        if np.sum(pe_vs_dp_w.data[pe_bin][1:-1]) > 0:
-            plt.subplot(133)
-
-            ratio = np.zeros_like(pe_vs_dp_w.data[pe_bin][1:-1])
-            ratio[pe_vs_dp_p.data[pe_bin][1:-1]>0] = \
-                pe_vs_dp_w.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1]>0] / \
-                pe_vs_dp_p.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1]>0]
-
-            plt.plot(bin_centres, ratio)
-            plt.title("signal ratio")
-            plt.xlabel("perpendicular offset / m")
-            plt.ylabel("wave signal / real signal")
-
-            plt.pause(.1)
-
-    plt.show()
 
     '''
     if we don't want to plot anything, we can exit now '''
     if not args.plot:
         exit(0)
+
+    if args.verbose:
+        pe_vs_dp_p = pe_vs_dp['p'].normalise()
+        pe_vs_dp_w = pe_vs_dp['w'].normalise()
+        plt.figure()
+        plt.subplot(121)
+        plt.imshow(pe_vs_dp_p.data[1:-1, 1:-1],
+                   extent=(pe_vs_dp_p.bin_edges[1][0].value,
+                           pe_vs_dp_p.bin_edges[1][-1].value,
+                           pe_vs_dp_p.bin_edges[0][0],
+                           pe_vs_dp_p.bin_edges[0][-1]),
+                   cmap=plt.cm.hot,
+                   origin='lower',
+                   aspect='auto',
+                   interpolation='none')
+        plt.title("photo electrons")
+        plt.colorbar()
+
+        plt.subplot(122)
+        plt.imshow(pe_vs_dp_w.data[1:-1, 1:-1],
+                   extent=(pe_vs_dp_p.bin_edges[1][0].value,
+                           pe_vs_dp_p.bin_edges[1][-1].value,
+                           pe_vs_dp_p.bin_edges[0][0],
+                           pe_vs_dp_p.bin_edges[0][-1]),
+                   cmap=plt.cm.hot,
+                   origin='lower',
+                   aspect='auto',
+                   interpolation='none')
+        plt.title("wavelet cleaned")
+        plt.colorbar()
+        plt.pause(.1)
+
+        for pe_bin in [2,3,4,5]:
+            if np.sum(pe_vs_dp_w.norm[pe_bin][1:-1]) > 0:
+                fig = plt.figure()
+                plt.style.use('t_slides')
+                bin_centres = (pe_vs_dp_p.bin_edges[1][1:]+pe_vs_dp_p.bin_edges[1][:-1])/2
+
+                plt.suptitle("total signal: 10^{} to 10^{}"
+                             .format(pe_vs_dp_p.bin_edges[0][pe_bin-1],
+                                     pe_vs_dp_p.bin_edges[0][pe_bin]))
+
+                plt.subplot(131)
+                plt.plot(bin_centres, pe_vs_dp_w.norm[pe_bin][1:-1])
+                plt.title("hit pixel")
+                plt.xlabel("perpendicular offset / m")
+                plt.ylabel("number of hit pmt")
+
+            if np.sum(pe_vs_dp_p.data[pe_bin][1:-1]) > 0:
+                plt.subplot(132)
+                plt.semilogy(bin_centres, pe_vs_dp_p.data[pe_bin][1:-1], 'b', label='PE')
+                plt.semilogy(bin_centres, pe_vs_dp_w.data[pe_bin][1:-1], 'r', label='wave')
+                plt.title("PMT signal")
+                plt.xlabel("perpendicular offset / m")
+                plt.ylabel("average pmt signal")
+                plt.legend()
+
+            if np.sum(pe_vs_dp_w.data[pe_bin][1:-1]) > 0:
+                plt.subplot(133)
+
+                ratio = np.zeros_like(pe_vs_dp_w.data[pe_bin][1:-1])
+                ratio[pe_vs_dp_p.data[pe_bin][1:-1]>0] = \
+                    pe_vs_dp_w.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1]>0] / \
+                    pe_vs_dp_p.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1]>0]
+
+                plt.plot(bin_centres, ratio)
+                plt.title("signal ratio")
+                plt.xlabel("perpendicular offset / m")
+                plt.ylabel("wave signal / real signal")
+
+                plt.pause(.1)
 
     npe_edges = np.linspace(1, 6, 21)
     size_edges = npe_edges
