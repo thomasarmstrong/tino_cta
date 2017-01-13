@@ -83,17 +83,16 @@ if __name__ == '__main__':
     min_charge = "min charge >= {}".format(args.min_charge)
     Imagecutflow.set_cut(min_charge, lambda x: x >= args.min_charge)
 
-    Cleaner = {"wave": ImageCleaner(mode="wave", cutflow=Imagecutflow,
-                                    skip_edge_events=False, island_cleaning=True),
-               "tail": ImageCleaner(mode="tail", cutflow=Imagecutflow,
-                                    skip_edge_events=False, island_cleaning=True)}
+    Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
+                           skip_edge_events=False, island_cleaning=True)
 
     fit = FitGammaHillas()
 
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    reco_table = Table(names=("NTels", "EnMC", "xi", "DR"), dtype=('i', 'f', 'f', 'f'))
+    reco_table = Table(names=("NTels", "EnMC", "xi", "xi2", "DR"),
+                       dtype=('i', 'f', 'f', 'f', 'f'))
     reco_table["EnMC"].unit = energy_unit
     reco_table["xi"].unit = angle_unit
     reco_table["DR"].unit = dist_unit
@@ -101,7 +100,6 @@ if __name__ == '__main__':
     xis1_sorted  = []
     xis2_sorted  = []
     xisd_sorted  = []
-    diffs_sorted = []
 
     tel_signal = []
     tel_signal_pe = []
@@ -164,8 +162,8 @@ if __name__ == '__main__':
 
                     try:
                         pmt_signal, new_geom = \
-                            Cleaner[args.mode].clean(cal_signal, cam_geom[tel_id],
-                                                     event.inst.optical_foclen[tel_id])
+                            Cleaner.clean(cal_signal, cam_geom[tel_id],
+                                          event.inst.optical_foclen[tel_id])
                     except (FileNotFoundError, EdgeEventException) as e:
                         continue
                 # end if args.photons
@@ -224,31 +222,28 @@ if __name__ == '__main__':
             Eventcutflow.count("Reco")
 
             reco_table.add_row([len(fit.circles), event.mc.energy.to(energy_unit),
-                                xi1.to(angle_unit), diff.to(dist_unit)])
+                                xi1.to(angle_unit), xi2.to(angle_unit),
+                                diff.to(dist_unit)])
 
             print()
             print("xi1 = {:4.3f}".format(xi1))
             print("xi2 = {:4.3f}".format(xi2))
             print("x1-xi2 = {:4.3f}".format(xi1-xi2))
 
-            insort(xis1_sorted, xi1)
-            insort(xis2_sorted, xi2)
-            insort(xisd_sorted, xi1-xi2)
-
             NEvents = len(xis2_sorted)
             print()
             print("xi1 res (68-percentile) = {:4.3f} {}"
                   .format(np.percentile(reco_table["xi"], 68), angle_unit))
-            print("xi2 res (68-percentile) = {:4.3f}"
-                  .format(xis2_sorted[int(NEvents*.68)]))
-            print("median difference = {:.4g} (d<0 ⇒ xi1 is better)"
-                  .format(xisd_sorted[NEvents//2]))
+            print("xi2 res (68-percentile) = {:4.3f} {}"
+                  .format(np.percentile(reco_table["xi2"], 68), angle_unit))
+            print("median difference = {:.3e} {} (d<0 ⇒ xi1 is better)"
+                  .format(np.percentile(reco_table["xi"]-reco_table["xi2"], 50),
+                          angle_unit))
             print()
 
             print("reco = ", diff)
-            insort(diffs_sorted, diff)
-            print("core res (68-percentile) = {:4.3f}"
-                  .format(diffs_sorted[int(len(diffs_sorted)*.68)]))
+            print("core res (68-percentile) = {:4.3f} {}"
+                  .format(np.percentile(reco_table["DR"], 68), dist_unit))
             print()
             print("Events:", NEvents)
             print()
