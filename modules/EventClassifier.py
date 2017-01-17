@@ -142,6 +142,8 @@ class EventClassifier:
         import matplotlib.pyplot as plt
 
         right_ratios = self.create_empty_class_dict(self.class_list)
+        proba_ratios = self.create_empty_class_dict(self.class_list)
+        NTels        = self.create_empty_class_dict(self.class_list)
 
         start = 0
         NEvents = min(len(features)
@@ -179,6 +181,14 @@ class EventClassifier:
                     log_en = np.log10(en/u.GeV)
 
                     PredictTels = clf.predict([tel[:1]+tel[2:] for tel in ev])
+
+                    predict_proba = clf.predict_proba([tel[:1]+tel[2:] for tel in ev])
+
+                    proba_index = 0 if cl == "g" else 1
+                    proba_ratios[cl].append(np.sum(np.sqrt(predict_proba), axis=0)[proba_index] /
+                                            len(predict_proba))
+
+                    NTels[cl].append(len(predict_proba))
 
                     '''
                     check if prediction was right '''
@@ -246,7 +256,7 @@ class EventClassifier:
 
 
         plt.style.use('seaborn-talk')
-        fig, ax = plt.subplots(3, 2)
+        fig, ax = plt.subplots(4, 2)
         tax = ax[0, 0]
         tax.errorbar(self.wrong["g"].bin_centers(0), y_eff["g"],
                      yerr=[y_eff_lerrors["g"], y_eff_uerrors["g"]])
@@ -290,3 +300,24 @@ class EventClassifier:
         tax.set_title("fraction of classifiers per event agreeing to proton")
         tax.set_xlabel("agree ratio")
         tax.set_ylabel("PDF")
+
+        tax = ax[3, 0]
+
+        histo = np.histogram2d(NTels['g'], proba_ratios['g'],
+                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+        histo_normed = histo / histo.max(axis=0)
+        tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
+                   extent=(1, 9, 0, 1))
+        tax.set_title("fraction of classifiers per event agreeing to gamma")
+        tax.set_xlabel("NTels")
+        tax.set_ylabel("agree ratio")
+
+        tax = ax[3, 1]
+        histo = np.histogram2d(NTels['p'], proba_ratios['p'],
+                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+        histo_normed = histo / histo.max(axis=0)
+        tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
+                   extent=(1, 9, 0, 1))
+        tax.set_title("fraction of classifiers per event agreeing to proton")
+        tax.set_xlabel("NTels")
+        tax.set_ylabel("agree ratio")

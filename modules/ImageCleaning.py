@@ -28,6 +28,10 @@ class EdgeEventException(Exception):
     pass
 
 
+class MissingImplementationException(Exception):
+    pass
+
+
 def kill_isolpix(array, plot=False):
     """ Return array with isolated islands removed.
         Only keeping the biggest islands (largest surface).
@@ -140,6 +144,9 @@ class ImageCleaner:
                 new_geom = unrot_geom
             except:
                 print("Wrong version of ctapipe ; cannot handle hexagonal cameras.")
+        else:
+            raise MissingImplementationException("wavelet cleaning of square-pixel"
+                                                 " images only for ASTRI so far")
 
         return new_img, new_geom
 
@@ -156,16 +163,19 @@ class ImageCleaner:
         if cam_geom.cam_id == "ASTRI":
             img = crop_astri_image(img)
 
+            # if set, remove all signal patches but the biggest one
+            new_img = self.island_cleaning(img)
+
             if self.skip_edge_events:
-                edge_thresh = np.max(img)/5.
-                if (img[0,:]  > edge_thresh).any() or  \
-                   (img[-1,:] > edge_thresh).any() or  \
-                   (img[:,0]  > edge_thresh).any() or  \
-                   (img[:,-1] > edge_thresh).any():
+                edge_thresh = np.max(new_img)/5.
+                if (new_img[0,:]  > edge_thresh).any() or  \
+                   (new_img[-1,:] > edge_thresh).any() or  \
+                   (new_img[:,0]  > edge_thresh).any() or  \
+                   (new_img[:,-1] > edge_thresh).any():
                         raise EdgeEventException
                 self.cutflow.count("tailcut edge")
 
-            new_img = self.island_cleaning(img).flatten()
+            new_img = new_img.flatten()
             new_geom = copy(cam_geom)
             new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
             new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
@@ -173,24 +183,6 @@ class ImageCleaner:
         else:
             new_img = img
             new_geom = cam_geom
-
-        #'''
-        #events with too much signal at the edge might negatively
-        #influence hillas parametrisation '''
-        #if self.skip_edge_events:
-            #skip_event = False
-            #for pixid in tel_geom.pix_id[mask]:
-                #if len(tel_geom.neighbors) < 8:
-                    #skip_event = True
-                    #break
-            #if skip_event:
-                #raise EdgeEventException
-        #'''
-        #since wavelet transform crops pixel lists and returns them
-        #rename them here too for easy return '''
-        #pix_x, pix_y = tel_geom.pix_x, tel_geom.pix_y
-
-        #self.cutflow.count("reject edge events")
 
         return new_img, new_geom
 

@@ -91,11 +91,12 @@ if __name__ == '__main__':
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    reco_table = Table(names=("NTels", "EnMC", "xi", "xi2", "DR"),
-                       dtype=('i', 'f', 'f', 'f', 'f'))
+    reco_table = Table(names=("NTels", "EnMC", "xi", "xi2", "DR1", "DR2"),
+                       dtype=('i', 'f', 'f', 'f', 'f', 'f'))
     reco_table["EnMC"].unit = energy_unit
     reco_table["xi"].unit = angle_unit
-    reco_table["DR"].unit = dist_unit
+    reco_table["DR1"].unit = dist_unit
+    reco_table["DR2"].unit = dist_unit
 
     xis1_sorted  = []
     xis2_sorted  = []
@@ -206,7 +207,8 @@ if __name__ == '__main__':
                 result2 = fit.fit_origin_minimise(result1)
 
                 seed = (0, 0)*dist_unit
-                pos_fit = fit.fit_core(seed)
+                pos_fit1 = fit.fit_core_minimise(seed)
+                pos_fit2 = fit.fit_core_crosses()
 
             except TooFewTelescopesException as e:
                 print(e)
@@ -214,7 +216,8 @@ if __name__ == '__main__':
 
             xi1 = linalg.angle(result1, shower_org).to(angle_unit)
             xi2 = linalg.angle(result2, shower_org).to(angle_unit)
-            diff = linalg.length(pos_fit[:2]-shower_core)
+            diff1 = linalg.length(pos_fit1[:2]-shower_core)
+            diff2 = linalg.length(pos_fit2[:2]-shower_core)
 
             if np.isnan([xi1.value, xi2.value]).any():
                 continue
@@ -223,7 +226,7 @@ if __name__ == '__main__':
 
             reco_table.add_row([len(fit.circles), event.mc.energy.to(energy_unit),
                                 xi1.to(angle_unit), xi2.to(angle_unit),
-                                diff.to(dist_unit)])
+                                diff1.to(dist_unit), diff2.to(dist_unit)])
 
             print()
             print("xi1 = {:4.3f}".format(xi1))
@@ -241,9 +244,15 @@ if __name__ == '__main__':
                           angle_unit))
             print()
 
-            print("reco = ", diff)
-            print("core res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table["DR"], 68), dist_unit))
+            print("reco1 = ", diff1)
+            print("reco2 = ", diff2)
+            print("core1 res (68-percentile) = {:4.3f} {}"
+                  .format(np.percentile(reco_table["DR1"], 68), dist_unit))
+            print("core2 res (68-percentile) = {:4.3f} {}"
+                  .format(np.percentile(reco_table["DR2"], 68), dist_unit))
+            print("median difference = {:.3e} {} (d<0 ⇒ DR1 is better)"
+                  .format(np.percentile(reco_table["DR1"]-reco_table["DR2"], 50),
+                          dist_unit))
             print()
             print("Events:", NEvents)
             print()

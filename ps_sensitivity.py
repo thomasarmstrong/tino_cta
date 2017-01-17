@@ -1,7 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-plt.style.use('seaborn-talk')
-plt.style.use('t_slides')
 
 from astropy.table import Table
 from astropy import units as u
@@ -12,6 +9,9 @@ from helper_functions import *
 
 from modules.Sensitivity import *
 
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-talk')
+plt.style.use('t_slides')
 
 '''
 MC energy ranges:
@@ -100,7 +100,7 @@ if __name__ == "__main__":
                                          edges_gammas, edges_proton)
     SensCalc_t.get_effective_areas(NGammas_simulated, NProton_simulated)
     SensCalc_t.get_expected_events(source_rate=crab_source_rate)
-    SensCalc_t.scale_events_to_expected_events()
+    weight_g_t, weight_p_t = SensCalc_t.scale_events_to_expected_events()
     sensitivities_t = SensCalc_t.get_sensitivity(gammas_t['off_angles'],
                                                  proton_t['off_angles'])
 
@@ -204,11 +204,15 @@ if __name__ == "__main__":
         plt.hist([proton_angle,
                   gammas['off_angles']**2],
                  weights=[proton_weight, weight_g], rwidth=1, stacked=True,
-                 range=(0, 10),
+                 range=(0, 10), label=("protons", "gammas"),
                  bins=50)
         plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
         plt.ylabel("expected events in {}".format(SensCalc.observation_time))
         plt.ylim([0,5])
+        plt.legend()
+        plt.suptitle(args.mode)
+
+        plt.pause(.1)
         #plt.subplot(313)
         #plt.hist([1-np.clip(np.cos(proton['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6),
                   #1-np.clip(np.cos(gammas['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6)],
@@ -219,7 +223,30 @@ if __name__ == "__main__":
         #plt.ylabel("expected events in {}".format(SensCalc.observation_time))
         #plt.xlim([0, 5e-3])
 
-        plt.tight_layout()
+        #plt.tight_layout()
+
+        figure = plt.figure()
+        if True:
+            NProtons_t = np.sum(proton_t['off_angles'][(proton_t['off_angles']**2) < 10])
+            proton_weight_flat = np.ones(50) * NProtons_t/50
+            proton_angle_flat = np.linspace(0,10,50,False)
+            proton_angle_t = proton_angle_flat
+            proton_weight_t = proton_weight_flat
+        else:
+            proton_angle_t = proton_t['off_angles']**2
+            proton_weight_t = weight_p_t
+
+        plt.hist([proton_angle_t,
+                  gammas_t['off_angles']**2],
+                 weights=[proton_weight_t, weight_g_t], rwidth=1, stacked=True,
+                 range=(0, 10), label=("protons", "gammas"),
+                 bins=50)
+        plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
+        plt.ylabel("expected events in {}".format(SensCalc.observation_time))
+        plt.ylim([0,5])
+        plt.legend()
+        plt.suptitle("tail cuts (10 PE / 5 PE)")
+
 
         plt.show()
 

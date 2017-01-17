@@ -90,8 +90,8 @@ if __name__ == '__main__':
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    for filenamelist_class in [sorted(filenamelist_gamma),
-                               sorted(filenamelist_proton)]:
+    for filenamelist_class in [sorted(filenamelist_gamma)[:1],
+                               sorted(filenamelist_proton)[:10]]:
         signal_handler.stop = False
         for filename in filenamelist_class[:args.last]:
             print("filename = {}".format(filename))

@@ -87,14 +87,17 @@ if __name__ == '__main__':
 
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
+    Imagecutflow.set_cut("noCuts", None)
+    Imagecutflow.set_cut("hex image", lambda x: x.startswith("hex"))
 
     island_cleaning = True
+    skip_edge_events = True
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
-                                 skip_edge_events=False,
+                                 skip_edge_events=skip_edge_events,
                                  island_cleaning=island_cleaning),
                "t": ImageCleaner(mode="tail", cutflow=Imagecutflow,
-                                 skip_edge_events=False,
-                                 island_cleaning=island_cleaning)
+                                 skip_edge_events=skip_edge_events,
+                                 island_cleaning=False)
                }
 
     fit = FitGammaHillas()
@@ -119,8 +122,9 @@ if __name__ == '__main__':
                                np.linspace(-.1, .1, 42)*u.m],
                     labels=["log10(signal)", "Delta P"])
 
+    allowed_tels = None
     # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    allowed_tels = range(34)  # all ASTRI telescopes
+    # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
@@ -138,10 +142,7 @@ if __name__ == '__main__':
 
             # getting the MC shower info
             shower = event.mc
-            # corsika measures azimuth the other way around, using phi=-az
-            shower_dir = set_phi_theta(-shower.az, 90.*u.deg+shower.alt)
-            # shower direction is downwards, shower origin up
-            shower_org = -shower_dir
+            shower_org = linalg.set_phi_theta(shower.az, 90.*u.deg-shower.alt)
 
             for tel_id in event.dl0.tels_with_data:
 
@@ -158,6 +159,9 @@ if __name__ == '__main__':
                                         event.inst.optical_foclen[tel_id])
                     tel_phi[tel_id] = 180.*u.deg
                     tel_theta[tel_id] = 20.*u.deg
+
+                if not Imagecutflow.cut("hex image", cam_geom[tel_id].pix_type):
+                    continue
 
                 '''
                 applying ASTRI or general pixel calibration '''
@@ -214,7 +218,8 @@ if __name__ == '__main__':
 
                     ax1 = fig.add_subplot(221)
                     disp1 = CameraDisplay(cam_geom[tel_id],
-                                          image=np.sqrt(pmt_signal_p),
+                                          #image=np.sqrt(pmt_signal_p),
+                                          image=pmt_signal_p,
                                           ax=ax1)
                     disp1.cmap = plt.cm.hot
                     disp1.add_colorbar()
@@ -232,6 +237,7 @@ if __name__ == '__main__':
                     ax3 = fig.add_subplot(223)
                     disp3 = CameraDisplay(new_geom_t,
                                           image=np.sqrt(pmt_signal_t),
+                                          #image=(pmt_signal_t),
                                           ax=ax3)
                     disp3.cmap = plt.cm.hot
                     disp3.add_colorbar()
@@ -321,6 +327,9 @@ if __name__ == '__main__':
                                            event.dl0.event_id, tel_id,
                                            len(event.dl0.tels_with_data)])
 
+            if not len(performance_table):
+                continue
+
             '''
             determine and print the 68-percentile of the hillas ellipsis tilt error
             of the two cleaning methods '''
@@ -337,6 +346,11 @@ if __name__ == '__main__':
     print the cutflow '''
     print()
     Imagecutflow()
+
+    '''
+    if we don't want to plot anything, we can exit now '''
+    if not args.plot:
+        exit(0)
 
     tab1 = performance_table["sig_p", "alpha_t"]
     tab2 = performance_table["sig_p", "alpha_w"]
@@ -376,10 +390,6 @@ if __name__ == '__main__':
     if args.write:
         performance_table.write("Eps_int_comparison.fits", overwrite=True)
 
-    '''
-    if we don't want to plot anything, we can exit now '''
-    if not args.plot:
-        exit(0)
 
     if args.verbose:
         pe_vs_dp_p = pe_vs_dp['p'].normalise()
