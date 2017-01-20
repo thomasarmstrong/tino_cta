@@ -97,7 +97,7 @@ if __name__ == '__main__':
                                  island_cleaning=island_cleaning),
                "t": ImageCleaner(mode="tail", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
-                                 island_cleaning=False)
+                                 island_cleaning=island_cleaning)
                }
 
     fit = FitGammaHillas()
@@ -157,7 +157,7 @@ if __name__ == '__main__':
                                         event.inst.pixel_pos[tel_id][0],
                                         event.inst.pixel_pos[tel_id][1],
                                         event.inst.optical_foclen[tel_id])
-                    tel_phi[tel_id] = 180.*u.deg
+                    tel_phi[tel_id] = 0.*u.deg
                     tel_theta[tel_id] = 20.*u.deg
 
                 if not Imagecutflow.cut("hex image", cam_geom[tel_id].pix_type):
@@ -212,53 +212,6 @@ if __name__ == '__main__':
                 Imagecutflow.count("Hillas")
 
                 '''
-                do some plotting '''
-                if args.plot_c and signal_handler.draw:
-                    fig = plt.figure()
-
-                    ax1 = fig.add_subplot(221)
-                    disp1 = CameraDisplay(cam_geom[tel_id],
-                                          #image=np.sqrt(pmt_signal_p),
-                                          image=pmt_signal_p,
-                                          ax=ax1)
-                    disp1.cmap = plt.cm.hot
-                    disp1.add_colorbar()
-                    disp1.overlay_moments(hillas['p'], color='seagreen', linewidth=3)
-                    plt.title("PE image")
-
-                    ax2 = fig.add_subplot(222)
-                    disp2 = CameraDisplay(cam_geom[tel_id],
-                                          image=cal_signal,
-                                          ax=ax2)
-                    disp2.cmap = plt.cm.hot
-                    disp2.add_colorbar()
-                    plt.title("calibrated noisy image")
-
-                    ax3 = fig.add_subplot(223)
-                    disp3 = CameraDisplay(new_geom_t,
-                                          image=np.sqrt(pmt_signal_t),
-                                          #image=(pmt_signal_t),
-                                          ax=ax3)
-                    disp3.cmap = plt.cm.hot
-                    disp3.add_colorbar()
-                    disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
-                    plt.title("tail cleaned")
-
-                    ax4 = fig.add_subplot(224)
-                    disp4 = CameraDisplay(new_geom_w,
-                                          image=np.sqrt(
-                                                    np.sum(pmt_signal_w, axis=1)
-                                                    if pmt_signal_w.shape[-1] == 25
-                                                    else pmt_signal_w),
-                                          ax=ax4)
-                    disp4.cmap = plt.cm.hot
-                    disp4.add_colorbar()
-                    disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
-                    plt.title("wave cleaned")
-                    plt.suptitle("Camera {}".format(tel_id))
-                    plt.show()
-
-                '''
                 get some more parameters and put them in an astropy.table.Table '''
                 sum_p = np.sum(pmt_signal_p)
                 sum_w = np.sum(pmt_signal_w)
@@ -306,6 +259,54 @@ if __name__ == '__main__':
                                       dp[abs(dl) > 1*hillas['p'].length]):
 
                         pe_vs_dp[k].fill([np.log10(sum_p), pp], pe)
+
+                '''
+                do some plotting '''
+                if args.plot_c and signal_handler.draw:
+                    fig = plt.figure()
+
+                    ax1 = fig.add_subplot(221)
+                    disp1 = CameraDisplay(cam_geom[tel_id],
+                                          image=pmt_signal_p,
+                                          ax=ax1)
+                    disp1.cmap = plt.cm.hot
+                    disp1.add_colorbar()
+                    disp1.overlay_moments(hillas['p'], color='seagreen', linewidth=3)
+                    plt.title("PE image ; alpha = {:4.3f}".format(alpha['p']))
+
+                    ax2 = fig.add_subplot(222)
+                    disp2 = CameraDisplay(cam_geom[tel_id],
+                                          image=cal_signal,
+                                          ax=ax2)
+                    disp2.cmap = plt.cm.hot
+                    disp2.add_colorbar()
+                    plt.title("calibrated noisy image")
+
+                    ax3 = fig.add_subplot(223)
+                    disp3 = CameraDisplay(new_geom_t,
+                                          image=np.sqrt(pmt_signal_t),
+                                          ax=ax3)
+                    disp3.cmap = plt.cm.hot
+                    disp3.add_colorbar()
+                    disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
+                    plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
+                              .format(Cleaner['t'].tail_thresh_up,
+                                      Cleaner['t'].tail_thresh_low,
+                                      alpha['t']))
+
+                    ax4 = fig.add_subplot(224)
+                    disp4 = CameraDisplay(new_geom_w,
+                                          image=np.sqrt(
+                                                    np.sum(pmt_signal_w, axis=1)
+                                                    if pmt_signal_w.shape[-1] == 25
+                                                    else pmt_signal_w),
+                                          ax=ax4)
+                    disp4.cmap = plt.cm.hot
+                    disp4.add_colorbar()
+                    disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
+                    plt.title("wave cleaned ; alpha = {:4.3f}".format(alpha['w']))
+                    plt.suptitle("Camera {}".format(tel_id))
+                    plt.show()
 
                 '''
                 if there is any nan values, skip '''

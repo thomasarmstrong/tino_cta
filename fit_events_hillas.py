@@ -112,6 +112,8 @@ if __name__ == '__main__':
     allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    allowed_tels = [a for a in allowed_tels]
+    allowed_tels += [a for a in range(34, 40)]
     for filename in sorted(filenamelist)[:args.last]:
 
         print("filename = {}".format(filename))
@@ -219,10 +221,13 @@ if __name__ == '__main__':
             diff1 = linalg.length(pos_fit1[:2]-shower_core)
             diff2 = linalg.length(pos_fit2[:2]-shower_core)
 
+            if np.isnan([diff1.value, diff2.value]).any():
+                continue
+            Eventcutflow.count("pos nan")
+
             if np.isnan([xi1.value, xi2.value]).any():
                 continue
-
-            Eventcutflow.count("Reco")
+            Eventcutflow.count("dir nan")
 
             reco_table.add_row([len(fit.circles), event.mc.energy.to(energy_unit),
                                 xi1.to(angle_unit), xi2.to(angle_unit),
@@ -390,7 +395,7 @@ if __name__ == '__main__':
 
     # convert the diffs-list into a dict with the number of used telescopes as keys
     diff_vs_tel = {}
-    for diff, ntel in reco_table["DR", "NTels"]:
+    for diff, ntel in reco_table["DR2", "NTels"]:
         if ntel not in diff_vs_tel:
             diff_vs_tel[ntel] = [diff]
         else:
@@ -400,7 +405,7 @@ if __name__ == '__main__':
     convert the diffs-list in to an energy-binned dict with
     the bin centre as keys '''
     diff_vs_energy = {}
-    for en, diff in reco_table["EnMC", "DR"]:
+    for en, diff in reco_table["EnMC", "DR2"]:
 
         # get the bin number this event belongs into
         sbin = np.digitize(np.log10(en), Energy_edges)-1

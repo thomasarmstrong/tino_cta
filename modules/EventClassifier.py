@@ -58,28 +58,7 @@ class EventClassifier:
         self.Features = self.create_empty_class_dict(class_list)
         self.MCEnergy = self.create_empty_class_dict(class_list)
 
-        self.total_images    = 0
-        self.selected_images = 0
-
-    #def setup_geometry(self, h_telescopes, h_cameras, h_optics, phi=180.*u.deg, theta=20.*u.deg):
-        #Ver = 'Feb2016'
-        #TelVer = 'TelescopeTable_Version{}'.format(Ver)
-        #CamVer = 'CameraTable_Version{}_TelID'.format(Ver)
-        #OptVer = 'OpticsTable_Version{}_TelID'.format(Ver)
-
-        #self.telescopes = h_telescopes[TelVer]
-        #self.cameras    = lambda tel_id : h_cameras[CamVer+str(tel_id)]
-        #self.optics     = lambda tel_id : h_optics [OptVer+str(tel_id)]
-
-        #self.tel_phi   =  phi
-        #self.tel_theta =  theta
-
-        #self.tel_geom = {}
-        #for tel_idx, tel_id in enumerate(self.telescopes['TelID']):
-            #self.tel_geom[tel_id] = \
-                #CameraGeometry.guess(self.cameras(tel_id)['PixX'].to(u.m),
-                                     #self.cameras(tel_id)['PixY'].to(u.m),
-                                     #self.telescopes['FL'][tel_idx] * u.m)
+        self.Eventcutflow = None
 
     def create_empty_class_dict(self, class_list):
         mydict = {}
@@ -178,6 +157,9 @@ class EventClassifier:
                         self.MCEnergy[cl][start:start+split_size]
                                   ):
 
+                    if self.Eventcutflow:
+                        self.Eventcutflow[cl].count("to classify")
+
                     log_en = np.log10(en/u.GeV)
 
                     PredictTels = clf.predict([tel[:1]+tel[2:] for tel in ev])
@@ -207,8 +189,15 @@ class EventClassifier:
                         PredictClass = "g"
                     else:
                         PredictClass = "p"
-                    if PredictClass != cl and len(ev) >= min_tel:
 
+                    if self.Eventcutflow:
+                        if PredictClass == cl:
+                            self.Eventcutflow[cl].count("corr predict")
+                            if len(ev) >= min_tel:
+                                self.Eventcutflow[cl].count("min_tel_{}".format(min_tel))
+
+                    if PredictClass != cl and len(ev) >= min_tel:
+                        self.Eventcutflow[cl].count("wrong, passed")
                         self.wrong[cl].fill([log_en])
                     self.total[cl].fill([log_en])
 

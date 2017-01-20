@@ -32,20 +32,29 @@ class MissingImplementationException(Exception):
     pass
 
 
-def kill_isolpix(array, plot=False):
-    """ Return array with isolated islands removed.
-        Only keeping the biggest islands (largest surface).
-    :param array: Array with completely isolated cells
-    :param struct: Structure array for generating unique regions
-    :return: Filtered array with just the largest island
+def kill_isolpix(array, neighbours=None, threshold=3.5, plot=False):
+    """
+    Return array with isolated islands removed.
+    Only keeping the biggest islands (largest surface).
+
+    Parameters
+    ----------
+    array : 2D array
+        the input image you want to keep the "biggest" patch of
+    neighbours : 2D array, optional (default: None)
+        a mask defining what is considered a neighbour
+    Returns
+    -------
+    filtered_array : 2D array
+        image with just the largest island remaining
     """
 
     filtered_array = np.copy(array)
 
-    filtered_array[filtered_array < 0.2] = 0
+    filtered_array[filtered_array < threshold] = 0
     mask = filtered_array > 0
 
-    label_im, nb_labels = ndimage.label(mask)
+    label_im, nb_labels = ndimage.label(mask, neighbours)
 
     sums = ndimage.sum(filtered_array, label_im, range(nb_labels + 1))
     mask_sum = sums < np.max(sums)
@@ -73,8 +82,11 @@ def kill_isolpix(array, plot=False):
 
 class ImageCleaner:
 
+    hex_neighbours = np.array([[1, 1, 0], [1, 1, 1], [0, 1, 1]])
+
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
-                 skip_edge_events=True, cutflow=CutFlow("ImageCleaner")):
+                 skip_edge_events=True, cutflow=CutFlow("ImageCleaner"),
+                 tail_thresh_up=10, tail_thresh_low=5):
         self.mode = mode
         self.dilate = dilate
         self.skip_edge_events = skip_edge_events
@@ -87,6 +99,8 @@ class ImageCleaner:
             self.clean = self.clean_wave
         elif mode == "tail":
             self.clean = self.clean_tail
+            self.tail_thresh_up = tail_thresh_up
+            self.tail_thresh_low = tail_thresh_low
         else:
             raise UnknownModeException(
                 'cleaning mode "{}" not found'.format(mode))
@@ -94,7 +108,7 @@ class ImageCleaner:
         if island_cleaning:
             self.island_cleaning = kill_isolpix
         else:
-            self.island_cleaning = lambda x: x
+            self.island_cleaning = lambda x, *args, **kw: x
 
     def remove_plateau(self, img):
         img -= np.mean(img)
@@ -135,7 +149,7 @@ class ImageCleaner:
 
                 self.cutflow.count("wavelet cleaning")
 
-                cleaned_img = self.island_cleaning(cleaned_img)
+                cleaned_img = self.island_cleaning(cleaned_img, self.hex_neighbours)
 
                 unrot_geom, unrot_img = convert_geometry_back(
                                         rot_geom, cleaned_img, cam_geom.cam_id, foclen)
@@ -152,8 +166,8 @@ class ImageCleaner:
 
     def clean_tail(self, img, cam_geom, foclen):
         mask = tailcuts_clean(cam_geom, img, 1,
-                              picture_thresh=10.,
-                              boundary_thresh=5.)
+                              picture_thresh=self.tail_thresh_up,
+                              boundary_thresh=self.tail_thresh_low)
         if self.dilate:
             dilate(cam_geom, mask)
         img[mask == False] = 0
@@ -181,8 +195,15 @@ class ImageCleaner:
             new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
             new_geom.pix_area = np.ones_like(new_img) * cam_geom.pix_area[0]
         else:
-            new_img = img
-            new_geom = cam_geom
+            rot_geom, rot_img = convert_geometry_1d_to_2d(
+                                    cam_geom, img, cam_geom.cam_id)
+
+            cleaned_img = self.island_cleaning(rot_img, self.hex_neighbours)
+
+            unrot_geom, unrot_img = convert_geometry_back(
+                                    rot_geom, cleaned_img, cam_geom.cam_id, foclen)
+            new_img = unrot_img
+            new_geom = unrot_geom
 
         return new_img, new_geom
 
