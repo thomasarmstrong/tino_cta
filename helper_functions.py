@@ -13,6 +13,8 @@ class SignalHandler():
     ''' handles ctrl+c signals; set up via
         signal_handler = SignalHandler()
         signal.signal(signal.SIGINT, signal_handler)
+        # or for two step interupt:
+        signal.signal(signal.SIGINT, signal_handler.stop_drawing)
     '''
     def __init__(self):
         self.stop = False
@@ -41,7 +43,7 @@ class SignalHandler():
             self.stop = True
 
 
-def apply_mc_calibration_ASTRI(adcs, gains, peds, mode=0, adc_tresh=3500):
+def apply_mc_calibration_ASTRI(adcs, gains, peds, adc_tresh=3500):
     """
     apply basic calibration for ASTRI telescopes with two gains
     """
@@ -52,9 +54,9 @@ def apply_mc_calibration_ASTRI(adcs, gains, peds, mode=0, adc_tresh=3500):
     peds1 = peds[1]
 
     calibrated = [(adc0-ped0)*gain0 if adc0 < adc_tresh
-                    else (adc1-ped1)*gain1
-                    for adc0, adc1, gain0, gain1, ped0, ped1
-                    in zip(adcs[0], adcs[1], gains0, gains1, peds0, peds1)]
+                  else (adc1-ped1)*gain1
+                  for adc0, adc1, gain0, gain1, ped0, ped1
+                  in zip(adcs[0], adcs[1], gains0, gains1, peds0, peds1)]
 
     return np.array(calibrated)
 
@@ -79,8 +81,8 @@ def convert_astropy_array(arr, unit=None):
         return np.array([a.to(unit).value for a in arr])*unit
 
 
-import argparse
 def make_argparser():
+    import argparse
     parser = argparse.ArgumentParser(description='show single telescope')
     parser.add_argument('-m', '--max_events', type=int, default=None,
                         help="maximum number of events considered per file")
@@ -110,7 +112,7 @@ try:
     from matplotlib2tikz import save as tikzsave
 except:
     print("matplotlib2tikz is not installed")
-
+    print("install with: \n$ pip install matplotlib2tikz")
 
 def tikz_save(arg, **kwargs):
     try:
@@ -136,8 +138,8 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
     takes two arrays of coordinates and creates a 2D hexbin plot and a violin plot (or
     just one of them)
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     abscissa, ordinate : arrays
         the coordinates of the data to plot
     bin_edges : array

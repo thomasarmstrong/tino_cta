@@ -91,10 +91,10 @@ if __name__ == '__main__':
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    reco_table = Table(names=("NTels", "EnMC", "xi", "xi2", "DR1", "DR2"),
+    reco_table = Table(names=("NTels", "EnMC", "xi1", "xi2", "DR1", "DR2"),
                        dtype=('i', 'f', 'f', 'f', 'f', 'f'))
     reco_table["EnMC"].unit = energy_unit
-    reco_table["xi"].unit = angle_unit
+    reco_table["xi1"].unit = angle_unit
     reco_table["DR1"].unit = dist_unit
     reco_table["DR2"].unit = dist_unit
 
@@ -241,11 +241,11 @@ if __name__ == '__main__':
             NEvents = len(xis2_sorted)
             print()
             print("xi1 res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table["xi"], 68), angle_unit))
+                  .format(np.percentile(reco_table["xi1"], 68), angle_unit))
             print("xi2 res (68-percentile) = {:4.3f} {}"
                   .format(np.percentile(reco_table["xi2"], 68), angle_unit))
             print("median difference = {:.3e} {} (d<0 ⇒ xi1 is better)"
-                  .format(np.percentile(reco_table["xi"]-reco_table["xi2"], 50),
+                  .format(np.percentile(reco_table["xi1"]-reco_table["xi2"], 50),
                           angle_unit))
             print()
 
@@ -335,7 +335,7 @@ if __name__ == '__main__':
         save_fig("{}/reco_alpha_vs_eccentricity_{}".format(args.outdir, args.mode))
     plt.pause(.1)
 
-    xis = reco_table["xi"]
+    xis = reco_table["xi1"]
 
     figure = plt.figure()
     plt.hist(xis, bins=np.linspace(0, .1, 50), log=True)
@@ -346,7 +346,7 @@ if __name__ == '__main__':
 
     # convert the xi-list into a dict with the number of used telescopes as keys
     xi_vs_tel = {}
-    for xi, ntel in reco_table["xi", "NTels"]:
+    for xi, ntel in reco_table["xi1", "NTels"]:
         if ntel not in xi_vs_tel:
             xi_vs_tel[ntel] = [xi]
         else:
@@ -358,7 +358,7 @@ if __name__ == '__main__':
 
     # convert the xi-list in to an energy-binned dict with the bin centre as keys
     xi_vs_energy = {}
-    for en, xi in reco_table["EnMC", "xi"]:
+    for en, xi in reco_table["EnMC", "xi1"]:
 
         # get the bin number this event belongs into
         sbin = np.digitize(np.log10(en), Energy_edges)-1

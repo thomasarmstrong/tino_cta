@@ -1,75 +1,57 @@
-from extract_and_crop_simtel_images import crop_astri_image
-
-from sys import exit, path
-from os.path import expandvars
-path.append(expandvars("$CTA_SOFT/tino_cta/"))
-from modules.ImageCleaning import EdgeEventException, UnknownModeException
-from helper_functions import *
-
-old=False
-
-''' old '''
-from datapipe.denoising.wavelets_mrtransform import WaveletTransform as WaveletTransformOld
-''' new '''
-from datapipe.denoising.wavelets_mrfilter import WaveletTransform    as WaveletTransformNew
-
-
 import numpy as np
 
-from math import log10
-from random import random
 from itertools import chain
 
 from astropy import units as u
 
 from ctapipe.io import CameraGeometry
-from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.utils import linalg
 from ctapipe.utils.fitshistogram import Histogram
-
-from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
-from ctapipe.image.cleaning import tailcuts_clean, dilate
 
 
 from datapipe.utils.EfficiencyErrors import get_efficiency_errors
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import ExtraTreesClassifier
-from sklearn import svm
 
 
 class EventClassifier:
 
     def __init__(self,
                  class_list=['g', 'p'],
-                 axisNames=["log(E / GeV)"],
+                 axis_names=["log(E / GeV)"],
                  ranges=[[2, 8]],
                  nbins=[6],):
 
         self.class_list = class_list
-        self.axisNames = axisNames
+        self.axis_names = axis_names
         self.ranges = ranges
         self.nbins = nbins
 
-        self.wrong = self.create_histogram_class_dict(class_list)
-        self.total = self.create_histogram_class_dict(class_list)
+        self.wrong = self.create_histogram_class_dict()
+        self.total = self.create_histogram_class_dict()
 
-        self.Features = self.create_empty_class_dict(class_list)
-        self.MCEnergy = self.create_empty_class_dict(class_list)
+        self.Features = self.create_empty_class_dict()
+        self.MCEnergy = self.create_empty_class_dict()
 
         self.Eventcutflow = None
 
-    def create_empty_class_dict(self, class_list):
+    def create_empty_class_dict(self, class_list=None):
+        if class_list is None:
+            class_list = self.class_list
+
         mydict = {}
         for cl in class_list:
             mydict[cl] = []
         return mydict
 
-    def create_histogram_class_dict(self, class_list):
+    def create_histogram_class_dict(self, class_list=None):
+        if class_list is None:
+            class_list = self.class_list
+
         mydict = {}
         for cl in class_list:
-            mydict[cl] = Histogram(axisNames=self.axisNames,
+            mydict[cl] = Histogram(axis_names=self.axis_names,
                                    nbins=self.nbins, ranges=self.ranges)
         return mydict
 
@@ -120,9 +102,9 @@ class EventClassifier:
                    split_size=None, verbose=True):
         import matplotlib.pyplot as plt
 
-        right_ratios = self.create_empty_class_dict(self.class_list)
-        proba_ratios = self.create_empty_class_dict(self.class_list)
-        NTels        = self.create_empty_class_dict(self.class_list)
+        right_ratios = self.create_empty_class_dict()
+        proba_ratios = self.create_empty_class_dict()
+        NTels        = self.create_empty_class_dict()
 
         start = 0
         NEvents = min(len(features)
@@ -166,25 +148,24 @@ class EventClassifier:
 
                     predict_proba = clf.predict_proba([tel[:1]+tel[2:] for tel in ev])
 
-                    proba_index = 0 if cl == "g" else 1
-                    proba_ratios[cl].append(np.sum(np.sqrt(predict_proba), axis=0)[proba_index] /
+                    proba_index = 0  # if cl == "g" else 1
+                    proba_ratios[cl].append(np.sum(
+                        10*predict_proba**3 - 15*predict_proba**4 + 6*predict_proba**5,
+                                                   axis=0)[proba_index] /
                                             len(predict_proba))
 
                     NTels[cl].append(len(predict_proba))
 
-                    '''
-                    check if prediction was right '''
+                    # check if prediction was right
                     right_ratio = (len(PredictTels[PredictTels == cl]) /
                                    len(PredictTels))
                     right_ratios[cl].append(right_ratio)
 
-                    '''
-                    check if prediction returned gamma '''
+                    # check if prediction returned gamma (what we are selecting on)
                     gamma_ratio = (len(PredictTels[PredictTels == 'g']) /
                                    len(PredictTels))
 
-                    '''
-                    if sufficient telescopes agree, assume it's a gamma '''
+                    # if sufficient telescopes agree, assume it's a gamma
                     if gamma_ratio > agree_threshold:
                         PredictClass = "g"
                     else:
@@ -193,16 +174,22 @@ class EventClassifier:
                     if self.Eventcutflow:
                         if PredictClass == cl:
                             self.Eventcutflow[cl].count("corr predict")
-                            if len(ev) >= min_tel:
+                            if cl == 'g' and len(ev) >= min_tel:
                                 self.Eventcutflow[cl].count("min_tel_{}".format(min_tel))
+                        else:
+                            self.Eventcutflow[cl].count("false predict")
+                            if len(ev) >= min_tel:
+                                if PredictClass == 'g':
+                                    self.Eventcutflow[cl].count("false positive")
+                                elif cl == 'g':
+                                    self.Eventcutflow[cl].count("false negative")
 
                     if PredictClass != cl and len(ev) >= min_tel:
-                        self.Eventcutflow[cl].count("wrong, passed")
                         self.wrong[cl].fill([log_en])
                     self.total[cl].fill([log_en])
 
                 if verbose and sum(self.total[cl].hist) > 0:
-                    print("wrong {}: {} out of {} => {}".format(
+                    print("wrong {}: {} out of {} => {:2.2f}".format(
                                     cl,
                                     sum(self.wrong[cl].hist),
                                     sum(self.total[cl].hist),
@@ -216,13 +203,12 @@ class EventClassifier:
         print()
         print("-"*30)
         print()
-        y_eff         = self.create_empty_class_dict(self.class_list)
-        y_eff_lerrors = self.create_empty_class_dict(self.class_list)
-        y_eff_uerrors = self.create_empty_class_dict(self.class_list)
+        y_eff         = self.create_empty_class_dict()
+        y_eff_lerrors = self.create_empty_class_dict()
+        y_eff_uerrors = self.create_empty_class_dict()
 
         try:
-            from utils.EfficiencyErrors import get_efficiency_errors \
-                as get_efficiency_errors
+            from utils.EfficiencyErrors import get_efficiency_errors
         except ImportError:
             pass
 
@@ -253,14 +239,14 @@ class EventClassifier:
         tax.set_xlabel("log(E/GeV)")
         tax.set_ylabel("incorrect / all")
 
-        tax = ax[0,1]
+        tax = ax[0, 1]
         tax.errorbar(self.wrong["p"].bin_centers(0), y_eff["p"],
                      yerr=[y_eff_lerrors["p"], y_eff_uerrors["p"]])
         tax.set_title("proton misstag")
         tax.set_xlabel("log(E/GeV)")
         tax.set_ylabel("incorrect / all")
 
-        tax = ax[1,0]
+        tax = ax[1, 0]
         tax.bar(self.total["g"].bin_lower_edges[0][:-1], self.total["g"].hist,
                 width=(self.total["g"].bin_lower_edges[0][-1] -
                        self.total["g"].bin_lower_edges[0][0]) /
@@ -269,7 +255,7 @@ class EventClassifier:
         tax.set_xlabel("log(E/GeV)")
         tax.set_ylabel("events")
 
-        tax = ax[1,1]
+        tax = ax[1, 1]
         tax.bar(self.total["p"].bin_lower_edges[0][:-1], self.total["p"].hist,
                 width=(self.total["p"].bin_lower_edges[0][-1] -
                        self.total["p"].bin_lower_edges[0][0]) /
@@ -296,8 +282,8 @@ class EventClassifier:
                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
-                   extent=(1, 9, 0, 1))
-        tax.set_title("fraction of classifiers per event agreeing to gamma")
+                   extent=(1, 9, 0, 1), cmap=plt.cm.hot)
+        tax.set_title("fraction of classifiers per event predicting gamma")
         tax.set_xlabel("NTels")
         tax.set_ylabel("agree ratio")
 
@@ -306,7 +292,7 @@ class EventClassifier:
                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
-                   extent=(1, 9, 0, 1))
-        tax.set_title("fraction of classifiers per event agreeing to proton")
+                   extent=(1, 9, 0, 1), cmap=plt.cm.hot)
+        tax.set_title("fraction of classifiers per event predicting gamma")
         tax.set_xlabel("NTels")
         tax.set_ylabel("agree ratio")

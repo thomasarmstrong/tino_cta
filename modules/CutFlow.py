@@ -17,8 +17,8 @@ class CutFlow():
     events that could reject them '''
     def __init__(self, name="CutFlow"):
         '''
-            Parameters:
-            -----------
+            Parameters
+            ----------
             name : string (default: "CutFlow")
                 name for the specific instance
         '''
@@ -29,12 +29,12 @@ class CutFlow():
         '''
             counts an event/image at a given stage of the analysis
 
-            Parameters:
-            -----------
+            Parameters
+            ----------
             cut : string
                 name of the cut/stage where you want to count
 
-            Note:
+            Notes
             -----
             If @cut is not yet being tracked, it will simply be added
             Will be an alias to __getitem__
@@ -51,8 +51,8 @@ class CutFlow():
             that means: it overwrites whatever you counted before under this
             name
 
-            Parameters:
-            -----------
+            Parameters
+            ----------
             function : function
                 a function that is your selection criterion
                 should return True if event shall pass and False if event
@@ -60,7 +60,7 @@ class CutFlow():
             cut : string
                 name of the cut/stage where you want to count
 
-            Note:
+            Notes
             -----
             Will be an alias to add_cut
         '''
@@ -72,20 +72,20 @@ class CutFlow():
             additional arguments provided. if the function returns True,
             the event counter is incremented.
 
-            Parameters:
-            -----------
+            Parameters
+            ----------
             cut : string
                 name of the selection criterion
             args, kwargs: additional arguments
                 anything you want to hand to the associated function
 
-            Returns:
-            --------
+            Returns
+            -------
             True if the function evaluats to True
             False otherwise
 
-            Raises:
-            -------
+            Raises
+            ------
             UndefinedCutException if @cut is not known
             PureCountingCutException if @cut has no associated function
             (i.e. manual counting mode)
@@ -110,13 +110,13 @@ class CutFlow():
             selection efficiencies
             prints the instance name and the astropy table
 
-            Parameters:
-            -----------
+            Parameters
+            ----------
             kwargs : keyword arguments
                 arguments to be passed to the get_table function
 
-            Returns:
-            --------
+            Returns
+            -------
             t : astropy.Table
                 the table containing the cut names, counted events and
                 efficiencies -- sorted in the order the cuts were added if not
@@ -132,8 +132,8 @@ class CutFlow():
             creates an astropy table of the cut names, counted events and
             selection efficiencies
 
-            Parameters:
-            -----------
+            Parameters
+            ----------
             base_cut : string (default: None)
                 name of the selection criterion that should be taken as 100 %
                 in efficiency calculation
@@ -145,8 +145,8 @@ class CutFlow():
             sort_reverse : bool (default: False)
                 if true, revert the order of the entries
 
-            Returns:
-            --------
+            Returns
+            -------
             t : astropy.Table
                 the table containing the cut names, counted events and
                 efficiencies -- sorted in the order the cuts were added if not

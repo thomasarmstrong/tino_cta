@@ -57,7 +57,8 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
 
     square_mask = new_geom.mask
 
-    cleaned_img = wavelet_transform(new_signal, raw_option_string="-K -m3 -s3 -n4")
+    cleaned_img = wavelet_transform(new_signal,
+                                    raw_option_string="-K -C1 -m1 -f2 -s3 -n4")
     cleaned_img = kill_isolpix(cleaned_img)
 
     unrot_img = cleaned_img[square_mask == 1]
@@ -99,7 +100,7 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
     cb2 = plt.colorbar()
 
     ax3 = fig.add_subplot(233)
-    plt.imshow(cleaned_img.T, interpolation='none', cmap=cm.hot, origin='lower')
+    plt.imshow(np.sqrt(cleaned_img.T), interpolation='none', cmap=cm.hot, origin='lower')
     plt.gca().set_aspect('equal', adjustable='box')
     plt.title("cleaned, slanted image")
     cb3 = plt.colorbar()
@@ -119,7 +120,8 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
     cb5 = disp5.colorbar
 
     ax6 = fig.add_subplot(236)
-    disp6 = CameraDisplay(unrot_geom, image=unrot_img, ax=ax6)
+    disp6 = CameraDisplay(unrot_geom, image=np.sqrt(unrot_img),
+                          ax=ax6)
     plt.gca().set_aspect('equal', adjustable='box')
     plt.title("cleaned, original geometry")
     disp6.add_colorbar()

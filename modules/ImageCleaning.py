@@ -1,4 +1,3 @@
-from random import random
 import numpy as np
 
 from copy import copy
@@ -6,18 +5,26 @@ from copy import copy
 from scipy import ndimage
 from matplotlib import pyplot as plt
 
-from extract_and_crop_simtel_images import crop_astri_image
-
 from ctapipe.image.cleaning import tailcuts_clean, dilate
-
-from datapipe.denoising.wavelets_mrfilter import WaveletTransform
 
 from .CutFlow import CutFlow
 
 try:
-    from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, convert_geometry_back
+    from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, \
+                                                 convert_geometry_back
 except:
     print("Wrong version of ctapipe ; cannot handle hexagonal cameras.")
+
+
+from sys import path
+from os.path import expandvars
+path.append(expandvars("$CTA_SOFT/"
+            "jeremie_cta/sap-cta-data-pipeline/"))
+path.append(expandvars("$CTA_SOFT/"
+            "jeremie_cta/snippets/ctapipe/"))
+from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+from extract_and_crop_simtel_images import crop_astri_image
+
 
 
 class UnknownModeException(Exception):
@@ -32,7 +39,7 @@ class MissingImplementationException(Exception):
     pass
 
 
-def kill_isolpix(array, neighbours=None, threshold=3.5, plot=False):
+def kill_isolpix(array, neighbours=None, threshold=2., plot=False):
     """
     Return array with isolated islands removed.
     Only keeping the biggest islands (largest surface).
@@ -43,6 +50,7 @@ def kill_isolpix(array, neighbours=None, threshold=3.5, plot=False):
         the input image you want to keep the "biggest" patch of
     neighbours : 2D array, optional (default: None)
         a mask defining what is considered a neighbour
+
     Returns
     -------
     filtered_array : 2D array
@@ -80,27 +88,42 @@ def kill_isolpix(array, neighbours=None, threshold=3.5, plot=False):
     return filtered_array
 
 
+def remove_plateau(img):
+    img -= np.mean(img)
+    img[img < 0] = 0
+
+
+def raise_minimum(img):
+    img -= np.min(img)
+
+
 class ImageCleaner:
 
     hex_neighbours = np.array([[1, 1, 0], [1, 1, 1], [0, 1, 1]])
 
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
                  skip_edge_events=True, cutflow=CutFlow("ImageCleaner"),
+                 wavelet_options="-K -C1 -m3 -s3 -n4",
                  tail_thresh_up=10, tail_thresh_low=5):
         self.mode = mode
-        self.dilate = dilate
         self.skip_edge_events = skip_edge_events
-        self.wavelet_transform = WaveletTransform()
         self.cutflow = cutflow
 
         if mode is None:
             self.clean = self.clean_none
         elif mode == "wave":
             self.clean = self.clean_wave
+            self.wavelet_transform = WaveletTransform()
+            self.wavelet_options = wavelet_options
+            self.island_threshold = 2
+
+            self.wavelet_options = "-K -C1 -m3 -s3 -n4"
         elif mode == "tail":
             self.clean = self.clean_tail
             self.tail_thresh_up = tail_thresh_up
             self.tail_thresh_low = tail_thresh_low
+            self.island_threshold = 3.5
+            self.dilate = dilate
         else:
             raise UnknownModeException(
                 'cleaning mode "{}" not found'.format(mode))
@@ -110,15 +133,11 @@ class ImageCleaner:
         else:
             self.island_cleaning = lambda x, *args, **kw: x
 
-    def remove_plateau(self, img):
-        img -= np.mean(img)
-        img[img < 0] = 0
-
     def clean_wave(self, img, cam_geom, foclen):
         if cam_geom.cam_id == "ASTRI":
             cropped_img = crop_astri_image(img)
             cleaned_img = self.wavelet_transform.clean_image(
-                            cropped_img, raw_option_string="-K -C1 -m3 -s3 -n4")
+                            cropped_img, raw_option_string=self.wavelet_options)
 
             self.cutflow.count("wavelet cleaning")
 
@@ -145,11 +164,14 @@ class ImageCleaner:
                 rot_geom, rot_img = convert_geometry_1d_to_2d(
                                         cam_geom, img, cam_geom.cam_id)
 
-                cleaned_img = self.wavelet_transform(rot_img)
+                cleaned_img = self.wavelet_transform(
+                        rot_img,
+                        raw_option_string=self.wavelet_options)
 
                 self.cutflow.count("wavelet cleaning")
 
-                cleaned_img = self.island_cleaning(cleaned_img, self.hex_neighbours)
+                cleaned_img = self.island_cleaning(cleaned_img, self.hex_neighbours,
+                                                   threshold=self.island_threshold)
 
                 unrot_geom, unrot_img = convert_geometry_back(
                                         rot_geom, cleaned_img, cam_geom.cam_id, foclen)
