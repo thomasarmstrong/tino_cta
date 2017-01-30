@@ -1,6 +1,7 @@
 from os.path import expandvars
 
 import numpy as np
+np.tau = 2*np.pi
 
 from astropy import units as u
 

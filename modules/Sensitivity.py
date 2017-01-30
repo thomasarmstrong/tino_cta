@@ -112,8 +112,8 @@ class Sensitivity_PointSource():
 
     def get_effective_areas(self, n_simulated_gam, n_simulated_pro,
                             spectrum_gammas=Eminus2, spectrum_proton=Eminus2,
-                            total_area_gam=np.pi*(1000*u.m)**2,
-                            total_area_pro=np.pi*(2000*u.m)**2):
+                            total_area_gam=np.tau/2*(1000*u.m)**2,
+                            total_area_pro=np.tau/2*(2000*u.m)**2):
 
         Gen_Gammas = make_mock_event_rate(
                         [spectrum_gammas], norm=[n_simulated_gam],
@@ -147,10 +147,10 @@ class Sensitivity_PointSource():
                                           bin_edges=self.bin_edges_pro)[0]
 
         if extension_gamma:
-            omega_gam = 2*np.pi*(1 - np.cos(extension_gamma))*u.rad**2
+            omega_gam = np.tau*(1 - np.cos(extension_gamma))*u.rad**2
             SourceRate *= omega_gam
         if extension_proton:
-            omega_pro = 2*np.pi*(1 - np.cos(extension_proton))*u.rad**2
+            omega_pro = np.tau*(1 - np.cos(extension_proton))*u.rad**2
             BackgrRate *= omega_pro
 
         try:
@@ -158,9 +158,9 @@ class Sensitivity_PointSource():
             self.exp_events_per_E_pro = BackgrRate * observation_time * self.eff_area_pro
 
             return self.exp_events_per_E_gam, self.exp_events_per_E_pro
-        except AttributeError:
+        except AttributeError as e:
             print("did you call get_effective_areas already?")
-            return [np.nan], [np.nan]
+            raise e
 
     def scale_events_to_expected_events(self):
 

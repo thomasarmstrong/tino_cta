@@ -113,7 +113,7 @@ class CutFlow():
             Parameters
             ----------
             kwargs : keyword arguments
-                arguments to be passed to the get_table function
+                arguments to be passed to the `get_table` function; see there
 
             Returns
             -------

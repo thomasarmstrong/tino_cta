@@ -49,6 +49,8 @@ from extract_and_crop_simtel_images import crop_astri_image
 from modules.ImageCleaning import ImageCleaner, EdgeEventException
 from modules.CutFlow import CutFlow
 
+from modules.reSampling import resample_hex_to_rect
+
 from helper_functions import *
 
 
@@ -125,7 +127,7 @@ if __name__ == '__main__':
     allowed_tels = None
     # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
-    # allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -134,6 +136,9 @@ if __name__ == '__main__':
                                      max_events=args.max_events)
 
         for event in source:
+
+            if 1 < event.mc.energy / u.TeV < 10:
+                continue
 
             print()
             print('Scanning input file... count = {}'.format(event.count))
@@ -160,8 +165,8 @@ if __name__ == '__main__':
                     tel_phi[tel_id] = 0.*u.deg
                     tel_theta[tel_id] = 20.*u.deg
 
-                if not Imagecutflow.cut("hex image", cam_geom[tel_id].pix_type):
-                    continue
+                #if not Imagecutflow.cut("hex image", cam_geom[tel_id].pix_type):
+                    #continue
 
                 '''
                 applying ASTRI or general pixel calibration '''
@@ -178,12 +183,51 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("calibration")
 
-                '''
-                now cleaning the image with wavelet and tail cuts '''
+                fig = plt.figure()
+                ax2 = fig.add_subplot(121)
+                disp2 = CameraDisplay(cam_geom[tel_id],
+                                    image=cal_signal,
+                                    ax=ax2)
+                disp2.cmap = plt.cm.hot
+                disp2.add_colorbar()
+                plt.title("calibrated noisy image")
+
+                #
+                # resampling of the hex grid into sqare grid
+                pix_x, pix_y = cam_geom[tel_id].pix_x, cam_geom[tel_id].pix_y
+                hex_size = (cam_geom[tel_id].pix_area[0] *
+                            (2/3**0.5)**3)**0.5
+                nx, ny = 400, 400
+                resample_x, resample_y, resample_img = \
+                    resample_hex_to_rect(cal_signal,
+                                         pix_x, pix_y,
+                                         hex_size/2,
+                                         nx, ny)
+
+                ax1 = fig.add_subplot(122)
+
+                min_x = np.min(pix_x)-hex_size/2
+                max_x = np.max(pix_x)+hex_size/2
+                min_y = np.min(pix_y)-hex_size/2*4/3
+                max_y = np.max(pix_y)+hex_size/2*4/3
+
+                plt.hist2d(resample_x, resample_y, weights=resample_img,
+                           bins=(np.linspace(min_x, max_x, nx),
+                                 np.linspace(min_y, max_y, ny)),
+                           )
+                ax1.set_aspect('equal')
+                plt.colorbar()
+                plt.show()
+
+                continue
+
+                # now cleaning the image with wavelet and tail cuts
                 try:
                     pmt_signal_w, new_geom_w = \
-                        Cleaner['w'].clean(cal_signal+5 if args.add_offset else cal_signal,
-                                           cam_geom[tel_id], event.inst.optical_foclen[tel_id])
+                        Cleaner['w'].clean(cal_signal+5
+                                           if args.add_offset else cal_signal,
+                                           cam_geom[tel_id],
+                                           event.inst.optical_foclen[tel_id])
                     pmt_signal_t, new_geom_t = \
                         Cleaner['t'].clean(cal_signal.copy(), cam_geom[tel_id],
                                            event.inst.optical_foclen[tel_id])

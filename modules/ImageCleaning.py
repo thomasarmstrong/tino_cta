@@ -39,7 +39,7 @@ class MissingImplementationException(Exception):
     pass
 
 
-def kill_isolpix(array, neighbours=None, threshold=2., plot=False):
+def kill_isolpix(array, neighbours=None, threshold=.2, plot=False):
     """
     Return array with isolated islands removed.
     Only keeping the biggest islands (largest surface).
@@ -50,6 +50,8 @@ def kill_isolpix(array, neighbours=None, threshold=2., plot=False):
         the input image you want to keep the "biggest" patch of
     neighbours : 2D array, optional (default: None)
         a mask defining what is considered a neighbour
+    threshold : float, optional (default: 0.2)
+        ignores pixel with entries below this value
 
     Returns
     -------
@@ -99,7 +101,14 @@ def raise_minimum(img):
 
 class ImageCleaner:
 
-    hex_neighbours = np.array([[1, 1, 0], [1, 1, 1], [0, 1, 1]])
+    hex_neighbours_1ring = np.array([[1, 1, 0],
+                                     [1, 1, 1],
+                                     [0, 1, 1]])
+    hex_neighbours_2ring = np.array([[1, 1, 1, 0, 0],
+                                     [1, 1, 1, 1, 0],
+                                     [1, 1, 1, 1, 1],
+                                     [0, 1, 1, 1, 1],
+                                     [0, 0, 1, 1, 1]])
 
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
                  skip_edge_events=True, cutflow=CutFlow("ImageCleaner"),
@@ -170,7 +179,8 @@ class ImageCleaner:
 
                 self.cutflow.count("wavelet cleaning")
 
-                cleaned_img = self.island_cleaning(cleaned_img, self.hex_neighbours,
+                cleaned_img = self.island_cleaning(cleaned_img,
+                                                   neighbours=self.hex_neighbours_1ring,
                                                    threshold=self.island_threshold)
 
                 unrot_geom, unrot_img = convert_geometry_back(
@@ -220,7 +230,7 @@ class ImageCleaner:
             rot_geom, rot_img = convert_geometry_1d_to_2d(
                                     cam_geom, img, cam_geom.cam_id)
 
-            cleaned_img = self.island_cleaning(rot_img, self.hex_neighbours)
+            cleaned_img = self.island_cleaning(rot_img, self.hex_neighbours_1ring)
 
             unrot_geom, unrot_img = convert_geometry_back(
                                     rot_geom, cleaned_img, cam_geom.cam_id, foclen)
