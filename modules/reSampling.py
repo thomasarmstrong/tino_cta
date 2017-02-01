@@ -145,8 +145,9 @@ def make_pix_id_and_qr_map(pix_x, pix_y, size):
         qr_to_pix_id_map[(hex.q, hex.r)] = i
     return pix_id_to_qr_map, qr_to_pix_id_map
 
-
-def resample_hex_to_rect(img, pix_x, pix_y, hex_size, nx=100, ny=100):
+qr_to_pix_id_map_tel_map = {}
+def resample_hex_to_rect(img, pix_x=None, pix_y=None, hex_size=None, cam_id=None,
+                         geom=None, nx=100, ny=100):
     """
     Resamples a hexagonal image into a square image
 
@@ -158,6 +159,10 @@ def resample_hex_to_rect(img, pix_x, pix_y, hex_size, nx=100, ny=100):
         lists of x and y pixel coordinates on the camera
     hex_size : astropy length quantity
         outer radius of the hexagonal pixel
+    cam_id : string
+        camera ID
+    geom : ctapipe geometry object, optional (default: None)
+        alternative to pix_x/y, hex_size, cam_id... give the geometry object
     nx, ny : integer
         number of pixels in x and y direction of the resampled grid
 
@@ -169,13 +174,20 @@ def resample_hex_to_rect(img, pix_x, pix_y, hex_size, nx=100, ny=100):
         list of the pixel contents of the resampled grid
 
     """
+
+    if geom is not None:
+        pix_x = geom.pix_x
+        pix_y = geom.pix_y
+        hex_size = 0.5 * (geom.pix_area[0] * (2/3**0.5)**3)**0.5
+        cam_id = geom.cam_id
+
     min_x = np.min(pix_x)
     max_x = np.max(pix_x)
 
     min_y = np.min(pix_y)
     max_y = np.max(pix_y)
 
-    qr_to_pix_id_map = make_qr_to_pix_id_map(pix_x.value, pix_y.value, hex_size.value)
+    qr_to_pix_id_map = qr_to_pix_id_map_tel_map[cam_id]
 
     rect_x, rect_y = np.meshgrid(np.linspace(min_x, max_x, nx),
                                  np.linspace(min_y, max_y, ny))
@@ -191,4 +203,4 @@ def resample_hex_to_rect(img, pix_x, pix_y, hex_size, nx=100, ny=100):
         else:
             rect_img.append(0)
 
-    return rect_x, rect_y, rect_img
+    return rect_x, rect_y, np.array(rect_img)

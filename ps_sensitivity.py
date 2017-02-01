@@ -33,6 +33,9 @@ edges_proton = np.concatenate((
     np.linspace(4.5, np.log10(600000), 5)
     ))
 NBins = 100
+
+flux_unit = u.erg/(u.m**2*u.s)
+
 # edges_gammas = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(330*u.TeV.to(u.GeV)), NBins+1)
 # edges_proton = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(600*u.TeV.to(u.GeV)), NBins+1)
 
@@ -61,7 +64,8 @@ if __name__ == "__main__":
     print("proton selected / simulated", NProton_selected, NProton_simulated)
 
     SensCalc = Sensitivity_PointSource(gammas['MC_Energy'], proton['MC_Energy'],
-                                       edges_gammas, edges_proton)
+                                       edges_gammas, edges_proton,
+                                       flux_unit=flux_unit)
 
     Eff_Area_Gammas, Eff_Area_Proton = SensCalc.get_effective_areas(NGammas_simulated,
                                                                     NProton_simulated)
@@ -97,7 +101,8 @@ if __name__ == "__main__":
                           "selected_events_tail_p.fits")
 
     SensCalc_t = Sensitivity_PointSource(gammas_t['MC_Energy'], proton_t['MC_Energy'],
-                                         edges_gammas, edges_proton)
+                                         edges_gammas, edges_proton,
+                                         flux_unit=flux_unit)
     SensCalc_t.get_effective_areas(NGammas_simulated, NProton_simulated)
     SensCalc_t.get_expected_events(source_rate=crab_source_rate)
     weight_g_t, weight_p_t = SensCalc_t.scale_events_to_expected_events()
@@ -192,9 +197,10 @@ if __name__ == "__main__":
 
         #plt.subplot(212)
         if True:
+            bins = 50
             NProtons = np.sum(proton['off_angles'][(proton['off_angles']**2) < 10])
-            proton_weight_flat = np.ones(50) * NProtons/50
-            proton_angle_flat = np.linspace(0,10,50,False)
+            proton_weight_flat = np.ones(bins) * NProtons/bins
+            proton_angle_flat = np.linspace(0, 10, bins, False)
             proton_angle = proton_angle_flat
             proton_weight = proton_weight_flat
         else:
@@ -205,10 +211,10 @@ if __name__ == "__main__":
                   gammas['off_angles']**2],
                  weights=[proton_weight, weight_g], rwidth=1, stacked=True,
                  range=(0, 10), label=("protons", "gammas"),
-                 bins=50)
+                 bins=bins)
         plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
         plt.ylabel("expected events in {}".format(SensCalc.observation_time))
-        plt.ylim([0,5])
+        #plt.ylim([0, 5])
         plt.legend()
         plt.suptitle(args.mode)
 

@@ -84,6 +84,7 @@ if __name__ == '__main__':
     Imagecutflow.set_cut(min_charge, lambda x: x >= args.min_charge)
 
     Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
+                           wavelet_options="-K -C1 -m3 -s3 -n4",
                            skip_edge_events=False, island_cleaning=True)
 
     fit = FitGammaHillas()
@@ -95,12 +96,9 @@ if __name__ == '__main__':
                        dtype=('i', 'f', 'f', 'f', 'f', 'f'))
     reco_table["EnMC"].unit = energy_unit
     reco_table["xi1"].unit = angle_unit
+    reco_table["xi2"].unit = angle_unit
     reco_table["DR1"].unit = dist_unit
     reco_table["DR2"].unit = dist_unit
-
-    xis1_sorted  = []
-    xis2_sorted  = []
-    xisd_sorted  = []
 
     tel_signal = []
     tel_signal_pe = []
@@ -112,8 +110,8 @@ if __name__ == '__main__':
     allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
-    allowed_tels = [a for a in allowed_tels]
-    allowed_tels += [a for a in range(34, 40)]
+    # allowed_tels = [a for a in allowed_tels]
+    # allowed_tels += [a for a in range(34, 40)]
     for filename in sorted(filenamelist)[:args.last]:
 
         print("filename = {}".format(filename))
@@ -175,16 +173,21 @@ if __name__ == '__main__':
                     continue
 
                 try:
-                    hillas_dict[tel_id] = hillas_parameters(new_geom.pix_x,
-                                                            new_geom.pix_y,
-                                                            pmt_signal)
+                    h = hillas_parameters(new_geom.pix_x,
+                                          new_geom.pix_y,
+                                          pmt_signal)
+                    if h.length > 0*u.m:
+                        hillas_dict[tel_id] = h
                 except HillasParameterizationError as e:
                     print(e)
                     continue
 
                 Imagecutflow.count("Hillas")
 
-            Eventcutflow.count("ImagePreparation")
+            if len(hillas_dict) < 2:
+                continue
+
+            Eventcutflow.count("min2Images")
 
             fit.get_great_circles(hillas_dict, event.inst, *tel_orientation)
 
@@ -196,6 +199,7 @@ if __name__ == '__main__':
             for k in fit.circles.keys():
                 c = fit.circles[k]
                 h = hillas_dict[k]
+                print("hillas:", h)
                 tel_signal.append(h.size)
                 tel_signal_pe.append(np.sum(event.mc.tel[k].photo_electron_image))
                 hillas_tilt.append(abs(linalg.angle(c.norm, shower_org)*u.rad - 90*u.deg))
@@ -210,7 +214,11 @@ if __name__ == '__main__':
 
                 seed = (0, 0)*dist_unit
                 pos_fit1 = fit.fit_core_minimise(seed)
-                pos_fit2 = fit.fit_core_crosses()
+                try:
+                    pos_fit2 = fit.fit_core_crosses()
+                except Exception as e:
+                    print([c.norm for c in fit.circles.values()])
+                    raise e
 
             except TooFewTelescopesException as e:
                 print(e)
@@ -236,9 +244,9 @@ if __name__ == '__main__':
             print()
             print("xi1 = {:4.3f}".format(xi1))
             print("xi2 = {:4.3f}".format(xi2))
-            print("x1-xi2 = {:4.3f}".format(xi1-xi2))
+            print("x1-xi2 = {:.3e}".format(xi1-xi2))
 
-            NEvents = len(xis2_sorted)
+            NEvents = len(reco_table)
             print()
             print("xi1 res (68-percentile) = {:4.3f} {}"
                   .format(np.percentile(reco_table["xi1"], 68), angle_unit))
@@ -249,8 +257,8 @@ if __name__ == '__main__':
                           angle_unit))
             print()
 
-            print("reco1 = ", diff1)
-            print("reco2 = ", diff2)
+            print("reco1 = {:4.3f}".format(diff1))
+            print("reco2 = {:4.3f}".format(diff2))
             print("core1 res (68-percentile) = {:4.3f} {}"
                   .format(np.percentile(reco_table["DR1"], 68), dist_unit))
             print("core2 res (68-percentile) = {:4.3f} {}"

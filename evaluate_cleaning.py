@@ -17,7 +17,7 @@ from ctapipe.visualization import CameraDisplay
 from astropy import units as u
 from astropy.table import Table, vstack, hstack
 performance_table = Table(names=("Eps_w", "Eps_t",
-                                 "alpha_w", "alpha_t",
+                                 "alpha_w", "alpha_t", "alpha_s",
                                  "hill_width_w", "hill_length_w",
                                  "hill_width_t", "hill_length_t",
                                  "sig_w", "sig_t", "sig_p",
@@ -46,10 +46,12 @@ path.append(expandvars("$CTA_SOFT/"
 
 from extract_and_crop_simtel_images import crop_astri_image
 
-from modules.ImageCleaning import ImageCleaner, EdgeEventException
+from modules.ImageCleaning import ImageCleaner, EdgeEventException, kill_isolpix
 from modules.CutFlow import CutFlow
 
-from modules.reSampling import resample_hex_to_rect
+from modules.reSampling import resample_hex_to_rect, \
+                               make_qr_to_pix_id_map, \
+                               qr_to_pix_id_map_tel_map
 
 from helper_functions import *
 
@@ -183,43 +185,105 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("calibration")
 
-                fig = plt.figure()
-                ax2 = fig.add_subplot(121)
-                disp2 = CameraDisplay(cam_geom[tel_id],
-                                    image=cal_signal,
-                                    ax=ax2)
-                disp2.cmap = plt.cm.hot
-                disp2.add_colorbar()
-                plt.title("calibrated noisy image")
 
                 #
                 # resampling of the hex grid into sqare grid
                 pix_x, pix_y = cam_geom[tel_id].pix_x, cam_geom[tel_id].pix_y
                 hex_size = (cam_geom[tel_id].pix_area[0] *
-                            (2/3**0.5)**3)**0.5
-                nx, ny = 400, 400
+                            (2/3**0.5)**3)**0.5 / 2
+                nx, ny = 150, 150
+
+                if cam_geom[tel_id].cam_id not in qr_to_pix_id_map_tel_map:
+                    qr_to_pix_id_map = make_qr_to_pix_id_map(pix_x.value,
+                                                             pix_y.value,
+                                                             hex_size.value)
+                    qr_to_pix_id_map_tel_map[cam_geom[tel_id].cam_id] = qr_to_pix_id_map
+
                 resample_x, resample_y, resample_img = \
-                    resample_hex_to_rect(cal_signal,
-                                         pix_x, pix_y,
-                                         hex_size/2,
-                                         nx, ny)
+                    resample_hex_to_rect(cal_signal, geom=cam_geom[tel_id],
+                                         nx=nx, ny=ny)
 
-                ax1 = fig.add_subplot(122)
 
-                min_x = np.min(pix_x)-hex_size/2
-                max_x = np.max(pix_x)+hex_size/2
-                min_y = np.min(pix_y)-hex_size/2*4/3
-                max_y = np.max(pix_y)+hex_size/2*4/3
 
-                plt.hist2d(resample_x, resample_y, weights=resample_img,
-                           bins=(np.linspace(min_x, max_x, nx),
-                                 np.linspace(min_y, max_y, ny)),
-                           )
-                ax1.set_aspect('equal')
-                plt.colorbar()
-                plt.show()
+                min_x = np.min(pix_x)
+                max_x = np.max(pix_x)
+                min_y = np.min(pix_y)
+                max_y = np.max(pix_y)
 
-                continue
+                lim_x, lim_y = 0.57, 1.04
+                trimmed_x   = resample_x  [(np.abs(resample_x) < lim_x) &
+                                           (np.abs(resample_y) < lim_y)]
+                trimmed_y   = resample_y  [(np.abs(resample_x) < lim_x) &
+                                           (np.abs(resample_y) < lim_y)]
+                trimmed_img = resample_img[(np.abs(resample_x) < lim_x) &
+                                           (np.abs(resample_y) < lim_y)]
+
+                from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+                wavelet_transform = WaveletTransform()
+                rect_img = np.histogram2d(trimmed_x, trimmed_y, weights=trimmed_img,
+                                          bins=(np.linspace(min_x, max_x, nx),
+                                                np.linspace(min_y, max_y, ny)))[0].T
+
+                rect_x, rect_y = np.meshgrid(np.linspace(min_x, max_x, nx-1),
+                                             np.linspace(min_y, max_y, ny-1))
+
+                clean_rect_img = wavelet_transform(
+                    rect_img,
+                    raw_option_string="-K -C1 -m3 -s3 -n4")
+
+                clean_rect_img = kill_isolpix(clean_rect_img, threshold=2)
+
+                from copy import copy
+                trim_geom = copy(cam_geom[tel_id])
+                trim_geom.pix_x = rect_x.ravel()
+                trim_geom.pix_y = rect_y.ravel()
+                trim_geom.mask = np.ones_like(clean_rect_img.ravel())
+                trim_geom.pixel_shape = "rectangular"
+                trim_geom.cam_rotation = 0 * u.deg
+                trim_geom.pix_area = np.ones_like(clean_rect_img.ravel()) * .6 *\
+                    abs(trimmed_x[0]-trimmed_x[1]) * \
+                    abs(trimmed_y[0]-trimmed_y[ny])*u.m*u.m
+
+                #fig = plt.figure()
+                #ax1 = fig.add_subplot(221)
+                #disp1 = CameraDisplay(cam_geom[tel_id],
+                                      #image=pmt_signal_p,
+                                      #ax=ax1)
+                #disp1.cmap = plt.cm.hot
+                #disp1.add_colorbar()
+                #plt.title("PE image")
+
+
+                #ax2 = fig.add_subplot(222)
+                #disp2 = CameraDisplay(cam_geom[tel_id],
+                                    #image=cal_signal,
+                                    #ax=ax2)
+                #disp2.cmap = plt.cm.hot
+                #disp2.add_colorbar()
+                #plt.title("calibrated noisy image")
+
+                #ax3 = fig.add_subplot(223)
+
+
+                #plt.hist2d(trimmed_x, trimmed_y, weights=trimmed_img,
+                           #bins=(np.linspace(min_x, max_x, nx),
+                                 #np.linspace(min_y, max_y, ny)),
+                           #cmap=plt.cm.hot
+                           #)
+                #ax3.set_aspect('equal')
+                #plt.colorbar()
+                #plt.title("resampled, trimmed noisy image")
+
+                #ax4 = fig.add_subplot(224)
+                #plt.imshow(clean_rect_img, interpolation='none', origin='lower',
+                           #cmap=plt.cm.hot)
+                #plt.colorbar()
+                #plt.title("trimmed \"filtered\" image")
+
+                #plt.show()
+
+                #continue
+
 
                 # now cleaning the image with wavelet and tail cuts
                 try:
@@ -231,7 +295,8 @@ if __name__ == '__main__':
                     pmt_signal_t, new_geom_t = \
                         Cleaner['t'].clean(cal_signal.copy(), cam_geom[tel_id],
                                            event.inst.optical_foclen[tel_id])
-                    geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id]}
+                    geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id],
+                            's': trim_geom}
                 except (FileNotFoundError, EdgeEventException) as e:
                     print(e)
                     continue
@@ -249,6 +314,9 @@ if __name__ == '__main__':
                     hillas['t'] = hillas_parameters(new_geom_t.pix_x,
                                                     new_geom_t.pix_y,
                                                     pmt_signal_t)
+                    hillas['s'] = hillas_parameters(trim_geom.pix_x,
+                                                    trim_geom.pix_y,
+                                                    clean_rect_img.ravel())
                 except HillasParameterizationError as e:
                     print(e)
                     continue
@@ -267,7 +335,7 @@ if __name__ == '__main__':
                 alpha = {}
                 length = {}
                 width = {}
-                for k in ['p', 'w', 't']:
+                for k in ['p', 'w', 't', 's']:
 
                     h = hillas[k]
 
@@ -286,8 +354,8 @@ if __name__ == '__main__':
 
                     p1_x = h.cen_x
                     p1_y = h.cen_y
-                    p2_x = p1_x + h.length*np.cos(h.psi + np.pi/2*u.rad)
-                    p2_y = p1_y + h.length*np.sin(h.psi + np.pi/2*u.rad)
+                    p2_x = p1_x + h.length*np.cos(h.psi)
+                    p2_y = p1_y + h.length*np.sin(h.psi)
 
                     T = linalg.normalise(np.array([(p1_x-p2_x)/u.m, (p1_y-p2_y)/u.m]))
 
@@ -327,16 +395,25 @@ if __name__ == '__main__':
                     plt.title("calibrated noisy image")
 
                     ax3 = fig.add_subplot(223)
-                    disp3 = CameraDisplay(new_geom_t,
-                                          image=np.sqrt(pmt_signal_t),
+                    disp3 = CameraDisplay(trim_geom,
+                                          image=clean_rect_img.ravel(),
                                           ax=ax3)
+                    disp3.overlay_moments(hillas['s'], color='seagreen', linewidth=3)
                     disp3.cmap = plt.cm.hot
                     disp3.add_colorbar()
-                    disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
-                    plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
-                              .format(Cleaner['t'].tail_thresh_up,
-                                      Cleaner['t'].tail_thresh_low,
-                                      alpha['t']))
+                    plt.title("wave trimm cleaned ; alpha = {:4.3f}"
+                              .format(alpha['t']))
+
+                    #disp3 = CameraDisplay(new_geom_t,
+                                          #image=np.sqrt(pmt_signal_t),
+                                          #ax=ax3)
+                    #disp3.cmap = plt.cm.hot
+                    #disp3.add_colorbar()
+                    #disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
+                    #plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
+                              #.format(Cleaner['t'].tail_thresh_up,
+                                      #Cleaner['t'].tail_thresh_low,
+                                      #alpha['t']))
 
                     ax4 = fig.add_subplot(224)
                     disp4 = CameraDisplay(new_geom_w,
@@ -348,7 +425,7 @@ if __name__ == '__main__':
                     disp4.cmap = plt.cm.hot
                     disp4.add_colorbar()
                     disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
-                    plt.title("wave cleaned ; alpha = {:4.3f}".format(alpha['w']))
+                    plt.title("wave slant cleaned ; alpha = {:4.3f}".format(alpha['w']))
                     plt.suptitle("Camera {}".format(tel_id))
                     plt.show()
 
@@ -365,7 +442,7 @@ if __name__ == '__main__':
                 '''
                 now fill the table '''
                 performance_table.add_row([Epsilon_intensity_w, Epsilon_intensity_t,
-                                           alpha['w'], alpha['t'],
+                                           alpha['w'], alpha['t'], alpha['s'],
                                            width['w'], length['w'],
                                            width['t'], length['t'],
                                            sum_w, sum_t, sum_p,
@@ -380,9 +457,11 @@ if __name__ == '__main__':
             of the two cleaning methods '''
             alphas_w = performance_table["alpha_w"]
             alphas_t = performance_table["alpha_t"]
+            alphas_s = performance_table["alpha_s"]
             print()
             print("alpha_w res (68-percentile) = {}".format(np.percentile(alphas_w, 68)))
             print("alpha_t res (68-percentile) = {}".format(np.percentile(alphas_t, 68)))
+            print("alpha_s res (68-percentile) = {}".format(np.percentile(alphas_s, 68)))
 
             if signal_handler.stop: break
         if signal_handler.stop: break
