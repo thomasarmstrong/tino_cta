@@ -510,6 +510,24 @@ class Sensitivity_PointSource():
 
 
 def check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale, min_N, verbose=True):
+    """
+    check if there are sufficenly many events in this energy bin and calculates scaling
+    parameter if not
+
+    Parameters
+    ----------
+    N... : floats
+        number of on and off counts for gamma and proton events
+    min_n : integer
+        minimum number of desired events
+    verbose : bool, optional (default: True)
+        print some numbers if true
+
+    Returns
+    -------
+    scale_a : float
+        factor to scale up gamma events if insuficently many events present
+    """
     if Non_g+Noff_g+Non_p+Noff_p < min_N:
         scale_a = (min_N-Non_p-Noff_p) / (Non_g+Noff_g)
 
@@ -525,6 +543,25 @@ def check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale, min_N, verbose=True):
 
 def check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, scale,
                                    max_prot_ratio, verbose=True):
+    """
+    check if there are sufficenly few proton events in this energy bin and calculates
+    scaling parameter if not
+
+    Parameters
+    ----------
+    N... : floats
+        number of on and off counts for gamma and proton events
+    max_prot_ratio : float
+        maximum allowed proton contamination
+    verbose : bool, optional (default: True)
+        print some numbers if true
+
+    Returns
+    -------
+    scale_r : float
+        factor to scale up gamma events if too high proton contamination
+    """
+
     if Non_p / (Non_g+Non_p) > max_prot_ratio:
         scale_r = (1-max_prot_ratio) * Non_p / Non_g
         if verbose:
