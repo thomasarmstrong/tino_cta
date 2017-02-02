@@ -1,5 +1,6 @@
 from itertools import chain
 import astropy.units as u
+from astropy.table import Table
 from scipy.optimize import minimize
 
 import numpy as np
@@ -98,7 +99,6 @@ def make_mock_event_rate(spectrum, bin_edges=None, e_min=None, e_max=None,
 
     Parameters
     ----------
-
     spectrum : function object
         function of the differential spectrum that shall be sampled into the histogram
         ought to take the energy as an astropy quantity as sole argument
@@ -139,11 +139,11 @@ def make_mock_event_rate(spectrum, bin_edges=None, e_min=None, e_max=None,
     for l_edge, h_edge in zip(bin_edges[:-1], bin_edges[1:]):
         if log_e:
             bin_centre = 10**((l_edge+h_edge)/2.) * e_unit
-            bin_width = (10**h_edge-10**l_edge)*e_unit
+            bin_width = (10**h_edge-10**l_edge) * e_unit
 
         else:
             bin_centre = (l_edge+h_edge) * e_unit / 2.
-            bin_width = (h_edge-l_edge)*e_unit
+            bin_width = (h_edge-l_edge) * e_unit
         bin_events = spectrum(bin_centre) * bin_width
         rates.append(bin_events)
 
@@ -186,9 +186,30 @@ def sigma_lima(Non, Noff, alpha=0.2):
 
 def diff_to_X_sigma(scale, Non_g, Non_p, Noff_g, Noff_p, alpha, X=5):
     """
-    calculates the significance and returns the squared difference to X.
-    To be used in a minimiser that determines the necessary source intensity for a
-    detection of given significance """
+    calculates the significance according to `sigma_lima` and returns the squared
+    difference to X. To be used in a minimiser that determines the necessary source
+    intensity for a detection of given significance of `X` sigma
+
+    Parameters
+    ----------
+    scale : python list with a single float
+        this is the variable in the minimisation procedure
+        it scales the number of gamma events
+    Non_g, Non_p, Noff_g, Noff_p : floats
+        the on and off counts for gamma and proton events
+        the gamma events are to be scaled by `scale[0]`
+    alpha : float
+        the ratio of the on and off areas
+    X : float, optional (deflaut: 5)
+        target significance in multiples of "sigma"
+
+    Returns
+    -------
+    (sigma-X)**2 : float
+        squared difference of the significance to `X`
+        minimise this function for the number of gamma events needed for your desired
+        significance of `X` sigma
+    """
 
     Non = Non_p + Non_g * scale[0]
     Noff = Noff_p + Noff_g * scale[0]
@@ -199,6 +220,11 @@ def diff_to_X_sigma(scale, Non_g, Non_p, Noff_g, Noff_p, alpha, X=5):
 class Sensitivity_PointSource():
     """
     class to calculate the sensitivity to a known point-source
+    TODO:
+        • add extended source?
+        • add pseude experiment for low exposure times?
+        • make "background" more flexible / particle agnostic so you can add electrons
+          and/or muons?
     """
     def __init__(self, mc_energy_gamma, mc_energy_proton,
                  bin_edges_gamma, bin_edges_proton,
@@ -356,14 +382,42 @@ class Sensitivity_PointSource():
         return self.weight_g, self.weight_p
 
     def get_sensitivity(self, off_angles_g, off_angles_p,
-                        min_N=10, max_prot_ratio=.05, Rsig=.3, Rmax=5, verbose=True):
+                        min_n=10, max_prot_ratio=.05, r_on=.3, r_off=5, verbose=False):
+
+        """
+        finally calculates the sensitivity to a point-source
+
+        Parameters
+        ----------
+        off_angles_g, off_angles_p : numpy arrays
+            list of offset angles between the reconstructed direction and the point-source
+            direction for gamma and proton events
+        min_n : integer, optional (default: 10)
+            minimum number of events per energy bin -- if the number is smaller, scale up
+            all events to sum up to this
+        max_prot_ratio : float, optional (default: 0.05)
+            maximal proton contamination per bin -- if fraction of protons in a bin is
+            larger than this, scale up the gammas events accordingly
+        r_on, r_off : floats, optional (defaults: 0.3, 5)
+            radii of the on and off region considered for the significance calculation
+        verbose : bool, optional
+            print some statistics for every energy bin
+
+        Returns
+        -------
+        sensitivities : astropy.table.Table
+            the sensitivity for every energy bin of `.bin_edges_gam`
+        """
 
         # the area-ratio of the on- and off-region
-        alpha = 1/(((Rmax/Rsig)**2)-1)
+        alpha = 1/(((r_off/r_on)**2)-1)
 
         # sensitivities go in here
-        sensitivities = []
+        sensitivities = Table(names=("Energy MC", "Sensitivity"))
+        sensitivities["Energy MC"].unit = self.energy_unit
+        sensitivities["Sensitivity"].unit = self.flux_unit
 
+        # loob over all energy bins
         for elow, ehigh in zip(10**(self.bin_edges_gam[:-1]),
                                10**(self.bin_edges_gam[1:])):
             Non_g = 0
@@ -371,23 +425,35 @@ class Sensitivity_PointSource():
             Noff_g = 0
             Noff_p = 0
 
-            for s, w in zip(chain(off_angles_g[(self.mc_energy_gam > elow) &
-                                               (self.mc_energy_gam < ehigh)],
-                                  off_angles_p[(self.mc_energy_pro > elow) &
-                                               (self.mc_energy_pro < ehigh)]),
-                            chain(self.weight_g[(self.mc_energy_gam > elow) &
-                                                (self.mc_energy_gam < ehigh)],
-                                  self.weight_p[(self.mc_energy_pro > elow) &
-                                                (self.mc_energy_pro < ehigh)])
-                            ):
-                if s < Rsig:
+            # loop over all angular distances and their weights for this energy bin
+            # and count the events in the on and off regions
+            # for gammas ...
+            for s, w in zip(off_angles_g[(self.mc_energy_gam > elow) &
+                                         (self.mc_energy_gam < ehigh)],
+
+                            self.weight_g[(self.mc_energy_gam > elow) &
+                                          (self.mc_energy_gam < ehigh)]):
+                if s < r_on:
                     Non_g += w
-                elif s < Rmax:
+                elif s < r_off:
                     Noff_g += w
 
+            # ... and protons
+            for s, w in zip(off_angles_p[(self.mc_energy_pro > elow) &
+                                         (self.mc_energy_pro < ehigh)],
+                            self.weight_p[(self.mc_energy_pro > elow) &
+                                          (self.mc_energy_pro < ehigh)]):
+                if s < r_on:
+                    Non_p += w
+                elif s < r_off:
+                    Noff_p += w
+
+            # if we have no gammas in the on region, there is no sensitivity
             if Non_g == 0:
                 continue
 
+            # find the scaling factor for the gamma events that gives a 5 sigma discovery
+            # in this energy bin
             scale = minimize(diff_to_X_sigma, [1e-3],
                              args=(Non_g, Non_p, Noff_g, Noff_p, alpha),
                              # method='BFGS',
@@ -395,30 +461,41 @@ class Sensitivity_PointSource():
                              options={'disp': False}
                              ).x[0]
 
+            # scale up the gamma events by this factor
+            Non_g *= scale
+            Noff_g *= scale
+
             if verbose:
                 print("e low {}\te high {}".format(np.log10(elow),
                                                    np.log10(ehigh)))
 
-            Non_g *= scale
-            Noff_g *= scale
-
+            # check if there are sufficient events in this energy bin
             scale_a = check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale,
-                                  min_N, verbose)
-            Non_g *= scale_a
-            Noff_g *= scale_a
-            scale *= scale_a
+                                  min_n, verbose)
 
+            # and scale the gamma events accordingly if not
+            if scale_a > 1:
+                Non_g *= scale_a
+                Noff_g *= scale_a
+                scale *= scale_a
+
+            # check if the relative amount of protons in this bin is sufficiently small
             scale_r = check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, scale,
                                                      max_prot_ratio, verbose)
+            # and scale the gamma events accordingly if not
+            if scale_r > 1:
+                Non_g *= scale_r
+                Noff_g *= scale_r
+                scale *= scale_r
 
-            Non_g *= scale_r
-            Noff_g *= scale_r
-            scale *= scale_r
-
+            # get the flux at the bin centre
             flux = Eminus2((elow+ehigh)/2.).to(self.flux_unit)
+            # and scale it up by the determined factor
             sensitivity = flux*scale
-            #sensitivities.append([(np.log10(elow)+np.log10(ehigh))/2, sensitivity.value])
-            sensitivities.append([np.log10((elow+ehigh)/2.), sensitivity.value])
+
+            # store results in arrays
+            sensitivities.add_row([(elow+ehigh)/2., sensitivity.to(self.flux_unit)])
+
             if verbose:
                 print("sensitivity: ", sensitivity)
                 print("Non:", Non_g+Non_p)

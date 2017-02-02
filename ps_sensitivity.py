@@ -34,10 +34,9 @@ edges_proton = np.concatenate((
     ))
 NBins = 100
 
+energy_unit = u.GeV
 flux_unit = u.erg/(u.m**2*u.s)
 
-# edges_gammas = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(330*u.TeV.to(u.GeV)), NBins+1)
-# edges_proton = np.linspace(np.log10(0.1*u.TeV.to(u.GeV)), np.log10(600*u.TeV.to(u.GeV)), NBins+1)
 
 if __name__ == "__main__":
 
@@ -65,7 +64,7 @@ if __name__ == "__main__":
 
     SensCalc = Sensitivity_PointSource(gammas['MC_Energy'], proton['MC_Energy'],
                                        edges_gammas, edges_proton,
-                                       flux_unit=flux_unit)
+                                       energy_unit=energy_unit, flux_unit=flux_unit)
 
     Eff_Area_Gammas, Eff_Area_Proton = SensCalc.get_effective_areas(NGammas_simulated,
                                                                     NProton_simulated)
@@ -91,8 +90,8 @@ if __name__ == "__main__":
         plt.pause(.1)
 
     weight_g, weight_p = SensCalc.scale_events_to_expected_events()
-
-    sensitivities = SensCalc.get_sensitivity(gammas['off_angles'], proton['off_angles'])
+    sensitivities = SensCalc.get_sensitivity(gammas['off_angles'],
+                                             proton['off_angles'])
 
     # now for tailcut
     gammas_t = Table.read("data/selected_events/"
@@ -102,7 +101,7 @@ if __name__ == "__main__":
 
     SensCalc_t = Sensitivity_PointSource(gammas_t['MC_Energy'], proton_t['MC_Energy'],
                                          edges_gammas, edges_proton,
-                                         flux_unit=flux_unit)
+                                         energy_unit=energy_unit, flux_unit=flux_unit)
     SensCalc_t.get_effective_areas(NGammas_simulated, NProton_simulated)
     SensCalc_t.get_expected_events(source_rate=crab_source_rate)
     weight_g_t, weight_p_t = SensCalc_t.scale_events_to_expected_events()
@@ -117,49 +116,21 @@ if __name__ == "__main__":
         # the point-source sensitivity binned in energy
         plt.figure()
         plt.semilogy(
-            [a[0] for a in sensitivities],
-            [a[1] for a in sensitivities],
+            sensitivities["Energy MC"],
+            sensitivities["Sensitivity"],
             label=args.mode)
         plt.semilogy(
-            [a[0] for a in sensitivities_t],
-            [a[1] for a in sensitivities_t],
+            sensitivities_t["Energy MC"],
+            sensitivities_t["Sensitivity"],
             label="tail")
         plt.legend()
-        plt.xlabel('log(E / GeV)')
+        plt.xlabel('E / {:latex}'.format(SensCalc.energy_unit))
+        plt.gca().set_xscale("log")
         plt.ylabel(r'$\Phi E^2 /$ {:latex}'.format(SensCalc.flux_unit))
         plt.pause(.1)
 
-        '''
-        plot the source and spectra to be assumed in the sensitivity study '''
-        if 0:
-            flux_unit = u.erg / (u.cm**2 * u.s)
-            figure = plt.figure()
-            plt.subplot(121)
-            plt.plot(
-                     #  bin centres
-                     (edges_gammas[1:]+edges_gammas[:-1])/2.,
-                     (SourceRate  # event rate
-                      #  times E²
-                      * ((edges_gammas[1:]+edges_gammas[:-1])*u.GeV/2.)**2
-                      #  divided by bin-width to make differential rate
-                      / ((edges_gammas[1:]-edges_gammas[:-1])*u.GeV)).to(flux_unit),
-                     marker='o')
-            plt.yscale('log')
-            plt.xlabel('log(E / GeV)')
-            plt.ylabel(r"$E^2 \times \Phi / $[{0:latex}]".format(
-                ((SourceRate*u.GeV).to(flux_unit)).unit
-                ))
-            plt.subplot(122)
-            plt.plot((edges_proton[1:]+edges_proton[:-1])/2.,
-                     (BackgrRate/((edges_proton[1:]-edges_proton[:-1])*u.GeV)),
-                     marker='o')
-            plt.yscale('log')
-            #plt.show()
-            plt.pause(.1)
-
-        '''
-        plot a sky image of the events
-        MISSLEADING since not weighted to anything'''
+        # plot a sky image of the events
+        # useless since too few actual background events
         if False:
             fig2 = plt.figure()
             plt.hexbin(
@@ -168,6 +139,7 @@ if __name__ == "__main__":
                                   chain(gammas['theta'], proton['theta']))],
                 [a for a in chain(gammas['theta'], proton['theta'])],
                 gridsize=41, extent=[-2, 2, 18, 22],
+                C=[a for a in chain(weight_g, weight_p)],
                 bins='log'
                 )
             plt.colorbar().set_label("log(Number of Events)")
@@ -211,10 +183,10 @@ if __name__ == "__main__":
                   gammas['off_angles']**2],
                  weights=[proton_weight, weight_g], rwidth=1, stacked=True,
                  range=(0, 10), label=("protons", "gammas"),
-                 bins=bins)
+                 log=True, bins=bins)
         plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
         plt.ylabel("expected events in {}".format(SensCalc.observation_time))
-        #plt.ylim([0, 5])
+        plt.ylim([1e-1, 1e5])
         plt.legend()
         plt.suptitle(args.mode)
 
@@ -246,10 +218,10 @@ if __name__ == "__main__":
                   gammas_t['off_angles']**2],
                  weights=[proton_weight_t, weight_g_t], rwidth=1, stacked=True,
                  range=(0, 10), label=("protons", "gammas"),
-                 bins=50)
+                 log=True, bins=50)
         plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
         plt.ylabel("expected events in {}".format(SensCalc.observation_time))
-        plt.ylim([0,5])
+        plt.ylim([1e-1, 1e5])
         plt.legend()
         plt.suptitle("tail cuts (10 PE / 5 PE)")
 
