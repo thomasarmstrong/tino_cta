@@ -133,7 +133,7 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
 
 def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
                         xlabel="", ylabel="", zlabel="", do_hex=True, do_violin=True,
-                        cm=plt.cm.hot, **kwargs):
+                        cm=plt.cm.inferno, **kwargs):
 
     """
     takes two arrays of coordinates and creates a 2D hexbin plot and a violin plot (or
@@ -155,7 +155,7 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         label for the colorbar of the hexbin plot
     do_hex, do_violin : bools (defaults: True)
         whether or not to do the respective plots
-    cm : colour map (default: plt.cm.hot)
+    cm : colour map (default: plt.cm.inferno)
         colour map to be used for the hexbin plot
     kwargs : args dictionary
         more arguments to be passed to plt.hexbin
