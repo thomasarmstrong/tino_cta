@@ -10,9 +10,14 @@ from ctapipe.utils import linalg
 from ctapipe.utils.fitshistogram import Histogram
 
 
-from datapipe.utils.EfficiencyErrors import get_efficiency_errors
+from modules.EfficiencyUncertainties import get_efficiency_uncertainties
 
 from sklearn.ensemble import RandomForestClassifier
+
+
+def proba_weighting(x):
+    """ gives more weight to outliers -- i.e. close to 0 and 1 """
+    return 10*x**3 - 15*x**4 + 6*x**5
 
 
 class EventClassifier:
@@ -28,15 +33,15 @@ class EventClassifier:
         self.ranges = ranges
         self.nbins = nbins
 
-        self.wrong = self.create_histogram_class_dict()
-        self.total = self.create_histogram_class_dict()
+        self.wrong = self.create_histogram_classes_dict()
+        self.total = self.create_histogram_classes_dict()
 
-        self.Features = self.create_empty_class_dict()
-        self.MCEnergy = self.create_empty_class_dict()
+        self.Features = self.create_empty_classes_dict()
+        self.MCEnergy = self.create_empty_classes_dict()
 
         self.Eventcutflow = None
 
-    def create_empty_class_dict(self, class_list=None):
+    def create_empty_classes_dict(self, class_list=None):
         if class_list is None:
             class_list = self.class_list
 
@@ -45,7 +50,7 @@ class EventClassifier:
             mydict[cl] = []
         return mydict
 
-    def create_histogram_class_dict(self, class_list=None):
+    def create_histogram_classes_dict(self, class_list=None):
         if class_list is None:
             class_list = self.class_list
 
@@ -61,8 +66,8 @@ class EventClassifier:
             self.MCEnergy[cl] = self.MCEnergy[cl][:NEvents]
 
     def learn(self, clf=None):
-        trainFeatures   = []
-        trainClasses    = []
+        trainFeatures = []
+        trainClasses  = []
         for cl in self.Features.keys():
             for ev in self.Features[cl]:
                 trainFeatures += [tel[1:] for tel in ev]
@@ -102,9 +107,9 @@ class EventClassifier:
                    split_size=None, verbose=True):
         import matplotlib.pyplot as plt
 
-        right_ratios = self.create_empty_class_dict()
-        proba_ratios = self.create_empty_class_dict()
-        NTels        = self.create_empty_class_dict()
+        right_ratios = self.create_empty_classes_dict()
+        proba_ratios = self.create_empty_classes_dict()
+        NTels        = self.create_empty_classes_dict()
 
         start = 0
         NEvents = min(len(features)
@@ -149,10 +154,8 @@ class EventClassifier:
                     predict_proba = clf.predict_proba([tel[:1]+tel[2:] for tel in ev])
 
                     proba_index = 0  # if cl == "g" else 1
-                    proba_ratios[cl].append(np.sum(
-                        10*predict_proba**3 - 15*predict_proba**4 + 6*predict_proba**5,
-                                                   axis=0)[proba_index] /
-                                            len(predict_proba))
+                    proba_ratios[cl].append(np.sum(proba_weighting(predict_proba), axis=0)
+                                            [proba_index] / len(predict_proba))
 
                     NTels[cl].append(len(predict_proba))
 
@@ -203,9 +206,9 @@ class EventClassifier:
         print()
         print("-"*30)
         print()
-        y_eff         = self.create_empty_class_dict()
-        y_eff_lerrors = self.create_empty_class_dict()
-        y_eff_uerrors = self.create_empty_class_dict()
+        y_eff         = self.create_empty_classes_dict()
+        y_eff_lerrors = self.create_empty_classes_dict()
+        y_eff_uerrors = self.create_empty_classes_dict()
 
         try:
             from utils.EfficiencyErrors import get_efficiency_errors
@@ -222,7 +225,7 @@ class EventClassifier:
 
             for wr, tot in zip(self.wrong[cl].hist, self.total[cl].hist):
                 try:
-                    errors = get_efficiency_errors(wr, tot)
+                    errors = get_efficiency_uncertainties(wr, tot)
                 except:
                     errors = [wr/tot if tot > 0 else 0, 0, 0]
                 y_eff        [cl].append(errors[0])
@@ -277,12 +280,11 @@ class EventClassifier:
         tax.set_ylabel("PDF")
 
         tax = ax[3, 0]
-
         histo = np.histogram2d(NTels['g'], proba_ratios['g'],
                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
-                   extent=(1, 9, 0, 1), cmap=plt.cm.hot)
+                   extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
         tax.set_title("fraction of classifiers per event predicting gamma")
         tax.set_xlabel("NTels")
         tax.set_ylabel("agree ratio")
@@ -292,7 +294,7 @@ class EventClassifier:
                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
-                   extent=(1, 9, 0, 1), cmap=plt.cm.hot)
+                   extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
         tax.set_title("fraction of classifiers per event predicting gamma")
         tax.set_xlabel("NTels")
         tax.set_ylabel("agree ratio")

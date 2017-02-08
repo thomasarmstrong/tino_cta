@@ -263,8 +263,7 @@ if __name__ == '__main__':
     NEvents = min(lengths.values())
     classifier.equalise_nevents(NEvents)
 
-    '''
-    extract and show the importance of the various training features '''
+    # extract and show the importance of the various training features
     try:
         classifier.show_importances(feature_labels)
     except ValueError:
@@ -273,14 +272,14 @@ if __name__ == '__main__':
                 print(a)
 
     if args.write:
-        save_fig('{}/classification_importance_{}_rec-rec_c{}'
-                 .format(args.figdir, args.mode, args.min_charge))
+        save_fig('{}/classification_importance_{}'
+                 .format(args.figdir, args.mode))
     plt.pause(.5)
 
     if args.store:
         classifier.learn()
-        classifier.save("{}/classifier_{}_rec-rec-dist_c{}.pkl"
-                        .format(args.outdir, args.mode, args.min_charge))
+        classifier.save("{}/classifier_{}.pkl"
+                        .format(args.outdir, args.mode))
 
 
     from sklearn.neural_network import MLPClassifier
@@ -297,8 +296,8 @@ if __name__ == '__main__':
         plt.tight_layout()
 
         if args.write:
-            save_fig('{}/classification_performance_{}_rec-rec_c{}'
-                     .format(args.figdir, args.mode, args.min_charge))
+            save_fig('{}/classification_performance_{}'
+                     .format(args.figdir, args.mode))
 
         plt.pause(.1)
 
