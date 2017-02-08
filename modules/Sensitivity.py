@@ -8,7 +8,7 @@ import numpy as np
 # tau, the superior circle number
 np.tau = 2*np.pi
 
-__all__ = ["Sensitivity_PointSource", "crab_source_rate"]
+__all__ = ["Sensitivity_PointSource"]
 
 
 def convert_astropy_array(arr, unit=None):
@@ -35,7 +35,7 @@ def convert_astropy_array(arr, unit=None):
         return np.array([a.to(unit).value for a in arr])*unit
 
 
-def crab_source_rate(E):
+def crab_source_rate(energy):
     ''' function for a pseudo-Crab point source rate
     Crab source rate:   dN/dE = 3e-7  * (E/TeV)**-2.48 / (TeV * m² * s)
     (watch out: unbroken power law... not really true)
@@ -43,57 +43,56 @@ def crab_source_rate(E):
 
     Parameters
     ----------
-    E : astropy quantity
+    energy : astropy quantity
         energy for which the rate is desired
 
     Returns
     -------
-    F : astropy quantity
+    flux : astropy quantity
         differential flux at E
 
     '''
-    return 3e-7 * (E/u.TeV)**-2.48 / (u.TeV * u.m**2 * u.s)
+    return 3e-7 * (energy/u.TeV)**-2.48 / (u.TeV * u.m**2 * u.s)
 
 
-def CR_background_rate(E):
+def CR_background_rate(energy):
     ''' function of the cosmic ray spectrum (simple power law, no knee/ankle)
     Cosmic Ray background rate: dN/dE = 0.215 * (E/TeV)**-8./3 / (TeV * m² * s * sr)
     norm and spectral index reverse engineered from "random" CR plot...
 
     Parameters
     ----------
-    E : astropy quantity
+    energy : astropy quantity
         energy for which the rate is desired
 
     Returns
     -------
-    F : astropy quantity
+    flux : astropy quantity
         differential flux at E
 
     '''
-    return 100 * 0.1**(8./3) * (E/u.TeV)**(-8./3) / (u.TeV * u.m**2 * u.s * u.sr)
+    return 100 * 0.1**(8./3) * (energy/u.TeV)**(-8./3) / (u.TeV * u.m**2 * u.s * u.sr)
 
 
-def Eminus2(e, unit=u.GeV):
+def Eminus2(energy, unit=u.GeV):
     '''
-    boring old E^-2 spectrum
+    boring old unnormalised E^-2 spectrum
 
     Parameters
     ----------
-    E : astropy quantity
+    energy : astropy quantity
         energy for which the rate is desired
 
     Returns
     -------
-    F : astropy quantity
+    flux : astropy quantity
         differential flux at E
 
     '''
-    return (e/unit)**(-2) / (unit * u.s * u.m**2)
+    return (energy/unit)**(-2) / (unit * u.s * u.m**2)
 
 
-def make_mock_event_rate(spectrum, bin_edges=None, e_min=None, e_max=None,
-                         e_unit=u.GeV, n_bins=None, log_e=True, norm=None):
+def make_mock_event_rate(spectrum, bin_edges, e_unit=u.GeV, log_e=True, norm=None):
     """
     Creates a histogram with a given binning and fills it according to a spectral function
 
@@ -104,17 +103,10 @@ def make_mock_event_rate(spectrum, bin_edges=None, e_min=None, e_max=None,
         ought to take the energy as an astropy quantity as sole argument
     bin_edges : numpy array, optional (default: None)
         bin edges of the histogram that is to be filled
-        either use this or `e_min`, `e_max` and `n_bins` parameters
-    e_min, e_max : astropy quantities, optional (defaults: None)
-        min and max bin edge of the histogram that is to be filled
-        either use these with `n_bins` or `bin_edges` parameter
     e_unit : astropy unit (default: u.GeV)
         unit of the histogram's axis
-    n_bins : integer, optional (default: None)
-        number of bins of the histogram to be created
-        either use this with `e_min` and `e_max` or `bin_edges` parameter
     log_e : bool, optional (default: None)
-        tell if the `e_min` and `e_max` parameters are given in logarithm
+        tell if the values in `bin_edges` are given in logarithm
     norm : float, optional (default: None)
         normalisation factor for the histogram that's being filled
 
@@ -122,20 +114,9 @@ def make_mock_event_rate(spectrum, bin_edges=None, e_min=None, e_max=None,
     -------
     rates : numpy array
         histogram of the (non-energy-differential) event rate of the proposed spectrum
-    bin_edges : numpy array
-        bin edges of the histogram -- if `bin_edges` was given in the function call,
-        it's the same; if not, it will be the constructed bin edges
-
     """
 
     rates = []
-
-    if bin_edges is None:
-        if log_e:
-            e_min = np.log10(e_min/e_unit)
-            e_max = np.log10(e_max/e_unit)
-        bin_edges = np.linspace(e_min, e_max, n_bins+1, True)
-
     for l_edge, h_edge in zip(bin_edges[:-1], bin_edges[1:]):
         if log_e:
             bin_centre = 10**((l_edge+h_edge)/2.) * e_unit
@@ -147,11 +128,14 @@ def make_mock_event_rate(spectrum, bin_edges=None, e_min=None, e_max=None,
         bin_events = spectrum(bin_centre) * bin_width
         rates.append(bin_events)
 
+    # rates is now a python list of astropy quantities
+    # convert it into a quantified numpy array
     rates = convert_astropy_array(rates)
+
     if norm:
         rates *= norm/np.sum(rates)
 
-    return rates, bin_edges
+    return rates
 
 
 def sigma_lima(Non, Noff, alpha=0.2):
@@ -227,6 +211,7 @@ class Sensitivity_PointSource():
           and/or muons?
     """
     def __init__(self, mc_energy_gamma, mc_energy_proton,
+                 off_angles_g, off_angles_p,
                  bin_edges_gamma, bin_edges_proton,
                  energy_unit=u.GeV, flux_unit=u.GeV / (u.m**2*u.s)):
         """
@@ -236,6 +221,9 @@ class Sensitivity_PointSource():
         ----------
         mc_energy_gamma, mc_energy_proton: quantified numpy arrays
             list of simulated energies of the selected gammas and protons
+        off_angles_g, off_angles_p : numpy arrays
+            list of offset angles between the reconstructed direction and the point-source
+            direction for gamma and proton events
         bin_edges_gamma, bin_edges_proton : numpy arrays
             list of the bin edges for the various histograms for gammas and protons
             assumes binning in log10(energy)
@@ -248,6 +236,8 @@ class Sensitivity_PointSource():
 
         self.mc_energy_gam = mc_energy_gamma
         self.mc_energy_pro = mc_energy_proton
+        self.off_angles_g = off_angles_g
+        self.off_angles_p = off_angles_p
         self.bin_edges_gam = bin_edges_gamma
         self.bin_edges_pro = bin_edges_proton
 
@@ -319,7 +309,7 @@ class Sensitivity_PointSource():
 
         Parameters
         ----------
-        source_rate, background_rate : functions, optional (default: `Eminus2` and
+        source_rate, background_rate : callables, optional (default: `Eminus2` and
             `CR_background_rate`)
             functions for the differential source and background rates
         extension_gamma, extension_proton : astropy quantities, optional (defaults: None
@@ -381,17 +371,13 @@ class Sensitivity_PointSource():
         self.weight_p = np.array(weight_p)
         return self.weight_g, self.weight_p
 
-    def get_sensitivity(self, off_angles_g, off_angles_p,
-                        min_n=10, max_prot_ratio=.05, r_on=.3, r_off=5, verbose=False):
-
+    def get_sensitivity(self, min_n=10, max_prot_ratio=.05, r_on=.3, r_off=5,
+                        verbose=False):
         """
         finally calculates the sensitivity to a point-source
 
         Parameters
         ----------
-        off_angles_g, off_angles_p : numpy arrays
-            list of offset angles between the reconstructed direction and the point-source
-            direction for gamma and proton events
         min_n : integer, optional (default: 10)
             minimum number of events per energy bin -- if the number is smaller, scale up
             all events to sum up to this
@@ -428,9 +414,8 @@ class Sensitivity_PointSource():
             # loop over all angular distances and their weights for this energy bin
             # and count the events in the on and off regions
             # for gammas ...
-            for s, w in zip(off_angles_g[(self.mc_energy_gam > elow) &
-                                         (self.mc_energy_gam < ehigh)],
-
+            for s, w in zip(self.off_angles_g[(self.mc_energy_gam > elow) &
+                                              (self.mc_energy_gam < ehigh)],
                             self.weight_g[(self.mc_energy_gam > elow) &
                                           (self.mc_energy_gam < ehigh)]):
                 if s < r_on:
@@ -439,8 +424,8 @@ class Sensitivity_PointSource():
                     Noff_g += w
 
             # ... and protons
-            for s, w in zip(off_angles_p[(self.mc_energy_pro > elow) &
-                                         (self.mc_energy_pro < ehigh)],
+            for s, w in zip(self.off_angles_p[(self.mc_energy_pro > elow) &
+                                              (self.mc_energy_pro < ehigh)],
                             self.weight_p[(self.mc_energy_pro > elow) &
                                           (self.mc_energy_pro < ehigh)]):
                 if s < r_on:
@@ -470,7 +455,7 @@ class Sensitivity_PointSource():
                                                    np.log10(ehigh)))
 
             # check if there are sufficient events in this energy bin
-            scale_a = check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale,
+            scale_a = check_min_N(Non_g, Noff_g, Non_p, Noff_p,
                                   min_n, verbose)
 
             # and scale the gamma events accordingly if not
@@ -480,7 +465,7 @@ class Sensitivity_PointSource():
                 scale *= scale_a
 
             # check if the relative amount of protons in this bin is sufficiently small
-            scale_r = check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, scale,
+            scale_r = check_background_contamination(Non_g, Noff_g, Non_p, Noff_p,
                                                      max_prot_ratio, verbose)
             # and scale the gamma events accordingly if not
             if scale_r > 1:
@@ -508,8 +493,47 @@ class Sensitivity_PointSource():
 
         return sensitivities
 
+    def calculate_sensitivities(self,
+                                # arguments for `get_effective_areas`
+                                n_simulated_gam=None, n_simulated_pro=None,
+                                spectrum_gammas=Eminus2, spectrum_proton=Eminus2,
+                                Gen_Gammas=None, Gen_Proton=None,
+                                total_area_gam=np.tau/2*(1000*u.m)**2,
+                                total_area_pro=np.tau/2*(2000*u.m)**2,
 
-def check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale, min_N, verbose=True):
+                                # arguments for `get_expected_events`
+                                source_rate=Eminus2, background_rate=CR_background_rate,
+                                extension_gamma=None, extension_proton=6*u.deg,
+                                observation_time=50*u.h,
+
+                                # arguments for `get_sensitivity`
+                                min_n=10, max_prot_ratio=.05, r_on=.3, r_off=5
+                                ):
+        """
+        wrapper that calls all functions to calculate the point-source sensitivity
+
+        Parameters
+        ----------
+        cf. corresponding functions
+
+        Returns
+        -------
+        sensitivities : astropy.table.Table
+            the sensitivity for every energy bin of `.bin_edges_gam`
+
+        """
+        self.get_effective_areas(n_simulated_gam, n_simulated_pro,
+                                 spectrum_gammas, spectrum_proton,
+                                 Gen_Gammas, Gen_Proton,
+                                 total_area_gam, total_area_pro)
+        self.get_expected_events(source_rate, background_rate,
+                                 extension_gamma, extension_proton,
+                                 observation_time)
+        self.scale_events_to_expected_events()
+        return self.get_sensitivity(min_n, max_prot_ratio, r_on, r_off)
+
+
+def check_min_N(Non_g, Noff_g, Non_p, Noff_p, min_N, verbose=True):
     """
     check if there are sufficenly many events in this energy bin and calculates scaling
     parameter if not
@@ -519,7 +543,7 @@ def check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale, min_N, verbose=True):
     N... : floats
         number of on and off counts for gamma and proton events
     min_n : integer
-        minimum number of desired events
+        minimum number of desired events; if too low, scale up to this number
     verbose : bool, optional (default: True)
         print some numbers if true
 
@@ -528,6 +552,7 @@ def check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale, min_N, verbose=True):
     scale_a : float
         factor to scale up gamma events if insuficently many events present
     """
+
     if Non_g+Noff_g+Non_p+Noff_p < min_N:
         scale_a = (min_N-Non_p-Noff_p) / (Non_g+Noff_g)
 
@@ -541,7 +566,7 @@ def check_min_N(Non_g, Noff_g, Non_p, Noff_p, scale, min_N, verbose=True):
         return 1
 
 
-def check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, scale,
+def check_background_contamination(Non_g, Noff_g, Non_p, Noff_p,
                                    max_prot_ratio, verbose=True):
     """
     check if there are sufficenly few proton events in this energy bin and calculates
@@ -561,12 +586,50 @@ def check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, scale,
     scale_r : float
         factor to scale up gamma events if too high proton contamination
     """
-
-    if Non_p / (Non_g+Non_p) > max_prot_ratio:
+    N_p = Non_p + Noff_p
+    N_t = Non_g + Noff_g + N_p
+    if N_p / N_t > max_prot_ratio:
         scale_r = (1-max_prot_ratio) * Non_p / Non_g
+        scale_r = (1/max_prot_ratio - 1) * N_p / (Non_g+Noff_g)
         if verbose:
             print("  too high proton contamination: {}, {}".format(Non_g, Non_p))
             print("  scale_r:", scale_r)
         return scale_r
     else:
         return 1
+
+
+# unit tests
+def test_check_min_N():
+    Non_g = 2
+    Noff_g = 1
+    Non_p = 0
+    Noff_p = 1
+
+    min_N = 10
+
+    scale = check_min_N(Non_g, Noff_g, Non_p, Noff_p, min_N)
+
+    print(Non_g, Noff_g, Non_p, Noff_p)
+
+    Non_g *= scale
+    Noff_g *= scale
+
+    print(Non_g, Noff_g, Non_p, Noff_p)
+    assert sum([Non_g, Noff_g, Non_p, Noff_p]) == min_N
+
+
+def test_check_background_contamination():
+    Non_g = 2
+    Noff_g = 1
+    Non_p = 0
+    Noff_p = 1
+
+    max_prot_ratio = .1
+
+    scale = check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, max_prot_ratio)
+
+    Non_g *= scale
+    Noff_g *= scale
+
+    assert (Non_p + Noff_p) / sum([Non_g, Noff_g, Non_p, Noff_p]) == max_prot_ratio

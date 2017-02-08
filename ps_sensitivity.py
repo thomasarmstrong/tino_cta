@@ -8,6 +8,7 @@ from itertools import chain
 from helper_functions import *
 
 from modules.Sensitivity import *
+from modules.Sensitivity import crab_source_rate
 
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-talk')
@@ -63,6 +64,7 @@ if __name__ == "__main__":
     print("proton selected / simulated", NProton_selected, NProton_simulated)
 
     SensCalc = Sensitivity_PointSource(gammas['MC_Energy'], proton['MC_Energy'],
+                                       gammas['off_angles'], proton['off_angles'],
                                        edges_gammas, edges_proton,
                                        energy_unit=energy_unit, flux_unit=flux_unit)
 
@@ -90,8 +92,7 @@ if __name__ == "__main__":
         plt.pause(.1)
 
     weight_g, weight_p = SensCalc.scale_events_to_expected_events()
-    sensitivities = SensCalc.get_sensitivity(gammas['off_angles'],
-                                             proton['off_angles'])
+    sensitivities = SensCalc.get_sensitivity()
 
     # now for tailcut
     gammas_t = Table.read("data/selected_events/"
@@ -100,13 +101,14 @@ if __name__ == "__main__":
                           "selected_events_tail_p.fits")
 
     SensCalc_t = Sensitivity_PointSource(gammas_t['MC_Energy'], proton_t['MC_Energy'],
+                                         gammas_t['off_angles'], proton_t['off_angles'],
                                          edges_gammas, edges_proton,
                                          energy_unit=energy_unit, flux_unit=flux_unit)
-    SensCalc_t.get_effective_areas(NGammas_simulated, NProton_simulated)
-    SensCalc_t.get_expected_events(source_rate=crab_source_rate)
-    weight_g_t, weight_p_t = SensCalc_t.scale_events_to_expected_events()
-    sensitivities_t = SensCalc_t.get_sensitivity(gammas_t['off_angles'],
-                                                 proton_t['off_angles'])
+
+    sensitivities_t = SensCalc_t.calculate_sensitivities(NGammas_simulated,
+                                                         NProton_simulated,
+                                                         source_rate=crab_source_rate)
+    weight_g_t, weight_p_t = SensCalc_t.weight_g, SensCalc_t.weight_p
 
     # do some plotting
     if args.plot:
