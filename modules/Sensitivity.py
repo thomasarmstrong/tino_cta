@@ -244,30 +244,30 @@ class Sensitivity_PointSource():
         self.energy_unit = energy_unit
         self.flux_unit = flux_unit
 
-    def get_effective_areas(self, n_simulated_gam=None, n_simulated_pro=None,
-                            spectrum_gammas=Eminus2, spectrum_proton=Eminus2,
-                            Gen_Gammas=None, Gen_Proton=None,
-                            total_area_gam=np.tau/2*(1000*u.m)**2,
-                            total_area_pro=np.tau/2*(2000*u.m)**2):
+    def get_effective_areas(self, n_simulated_gamma=None, n_simulated_proton=None,
+                            spectrum_gamma=Eminus2, spectrum_proton=Eminus2,
+                            gen_energy_gamma=None, gen_energy_proton=None,
+                            gen_area_gamma=np.tau/2*(1000*u.m)**2,
+                            gen_area_proton=np.tau/2*(2000*u.m)**2):
         """
         calculates the effective areas for gammas and protons and stores them in the
         class instance
 
         Parameters
         ----------
-        n_simulated_gam, n_simulated_pro : integers, optional (defaults: None)
+        n_simulated_gamma, n_simulated_proton : integers, optional (defaults: None)
             number of gamma and proton events used in the MC simulation
-            either use this with the `spectrum_gammas` and `spectrum_proton` parameters
-            or directly the `Gen_Gammas` and `Gen_Proton` parameters
-        spectrum_gammas, spectrum_proton : functions, optional (default: Eminus2)
+            either use this with the `spectrum_gamma` and `spectrum_proton` parameters
+            or directly the `gen_energy_gamma` and `gen_energy_proton` parameters
+        spectrum_gamma, spectrum_proton : functions, optional (default: Eminus2)
             function object for the differential generator flux of the gamma and proton
             events
-        Gen_Gammas, Gen_Proton : numpy arrays, optional (defaults: None)
-            histogram of the generated gammas and protons binned according to
+        gen_energy_gamma, gen_energy_proton : numpy arrays, optional (defaults: None)
+            energy histogram of the generated gammas and protons binned according to
             `.bin_edges_gam` and `.bin_edges_pro`
             either use these directly or generate them with the `n_simulated_...` and
             `spectrum_...` parameters
-        total_area_gam, total_area_pro : astropy quantities, optional (defaults:
+        gen_area_gamma, gen_area_proton : astropy quantities, optional (defaults:
         pi*(1 km)**2 and pi*(2 km)**2)
             the area within which the shower impact position was generated
 
@@ -278,13 +278,13 @@ class Sensitivity_PointSource():
             `.bin_edges_gam` and `.bin_edges_pro`
         """
 
-        if Gen_Gammas is None:
-            Gen_Gammas = make_mock_event_rate(
-                            spectrum_gammas, norm=n_simulated_gam,
+        if gen_energy_gamma is None:
+            gen_energy_gamma = make_mock_event_rate(
+                            spectrum_gamma, norm=n_simulated_gamma,
                             bin_edges=self.bin_edges_gam)[0]
-        if Gen_Proton is None:
-            Gen_Proton = make_mock_event_rate(
-                            spectrum_proton, norm=n_simulated_pro,
+        if gen_energy_proton is None:
+            gen_energy_proton = make_mock_event_rate(
+                            spectrum_proton, norm=n_simulated_proton,
                             bin_edges=self.bin_edges_pro)[0]
 
         self.Sel_Gammas = np.histogram(np.log10(self.mc_energy_gam),
@@ -292,11 +292,11 @@ class Sensitivity_PointSource():
         self.Sel_Proton = np.histogram(np.log10(self.mc_energy_pro),
                                        bins=self.bin_edges_pro)[0]
 
-        Efficiency_Gammas = self.Sel_Gammas / Gen_Gammas
-        Efficiency_Proton = self.Sel_Proton / Gen_Proton
+        Efficiency_Gammas = self.Sel_Gammas / gen_energy_gamma
+        Efficiency_Proton = self.Sel_Proton / gen_energy_proton
 
-        self.eff_area_gam = Efficiency_Gammas * total_area_gam
-        self.eff_area_pro = Efficiency_Proton * total_area_pro
+        self.eff_area_gam = Efficiency_Gammas * gen_area_gamma
+        self.eff_area_pro = Efficiency_Proton * gen_area_proton
 
         return self.eff_area_gam, self.eff_area_pro
 
@@ -485,11 +485,11 @@ class Sensitivity_PointSource():
 
     def calculate_sensitivities(self,
                                 # arguments for `get_effective_areas`
-                                n_simulated_gam=None, n_simulated_pro=None,
-                                spectrum_gammas=Eminus2, spectrum_proton=Eminus2,
-                                Gen_Gammas=None, Gen_Proton=None,
-                                total_area_gam=np.tau/2*(1000*u.m)**2,
-                                total_area_pro=np.tau/2*(2000*u.m)**2,
+                                n_simulated_gamma=None, n_simulated_proton=None,
+                                spectrum_gamma=Eminus2, spectrum_proton=Eminus2,
+                                gen_energy_gamma=None, gen_energy_proton=None,
+                                gen_area_gamma=np.tau/2*(1000*u.m)**2,
+                                gen_area_proton=np.tau/2*(2000*u.m)**2,
 
                                 # arguments for `get_expected_events`
                                 source_rate=Eminus2, background_rate=CR_background_rate,
@@ -512,10 +512,10 @@ class Sensitivity_PointSource():
             the sensitivity for every energy bin of `.bin_edges_gam`
 
         """
-        self.get_effective_areas(n_simulated_gam, n_simulated_pro,
-                                 spectrum_gammas, spectrum_proton,
-                                 Gen_Gammas, Gen_Proton,
-                                 total_area_gam, total_area_pro)
+        self.get_effective_areas(n_simulated_gamma, n_simulated_proton,
+                                 spectrum_gamma, spectrum_proton,
+                                 gen_energy_gamma, gen_energy_proton,
+                                 gen_area_gamma, gen_area_proton)
         self.get_expected_events(source_rate, background_rate,
                                  extension_gamma, extension_proton,
                                  observation_time)
@@ -547,7 +547,7 @@ def check_min_N(N_g, N_p, min_N, verbose=True):
         scale_a = (min_N-np.sum(N_p)) / np.sum(N_g)
 
         if verbose:
-            print("  N_tot too small: {}, {}, {}, {}".format(N_g, N_p))
+            print("  N_tot too small: {}, {}".format(N_g, N_p))
             print("  scale_a:", scale_a)
 
         return scale_a
@@ -586,39 +586,3 @@ def check_background_contamination(N_g, N_p, max_prot_ratio, verbose=True):
         return scale_r
     else:
         return 1
-
-
-# unit tests
-def test_check_min_N():
-    Non_g = 2
-    Noff_g = 1
-    Non_p = 0
-    Noff_p = 1
-
-    min_N = 10
-
-    scale = check_min_N(Non_g, Noff_g, Non_p, Noff_p, min_N)
-
-    print(Non_g, Noff_g, Non_p, Noff_p)
-
-    Non_g *= scale
-    Noff_g *= scale
-
-    print(Non_g, Noff_g, Non_p, Noff_p)
-    assert sum([Non_g, Noff_g, Non_p, Noff_p]) == min_N
-
-
-def test_check_background_contamination():
-    Non_g = 2
-    Noff_g = 1
-    Non_p = 0
-    Noff_p = 1
-
-    max_prot_ratio = .1
-
-    scale = check_background_contamination(Non_g, Noff_g, Non_p, Noff_p, max_prot_ratio)
-
-    Non_g *= scale
-    Noff_g *= scale
-
-    assert (Non_p + Noff_p) / sum([Non_g, Noff_g, Non_p, Noff_p]) == max_prot_ratio
