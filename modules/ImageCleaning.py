@@ -26,7 +26,6 @@ from datapipe.denoising.wavelets_mrfilter import WaveletTransform
 from extract_and_crop_simtel_images import crop_astri_image
 
 
-
 class UnknownModeException(Exception):
     pass
 

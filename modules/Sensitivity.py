@@ -168,7 +168,7 @@ def sigma_lima(Non, Noff, alpha=0.2):
     return sigma
 
 
-def diff_to_X_sigma(scale, Non_g, Non_p, Noff_g, Noff_p, alpha, X=5):
+def diff_to_X_sigma(scale, N_g, N_p, alpha, X=5):
     """
     calculates the significance according to `sigma_lima` and returns the squared
     difference to X. To be used in a minimiser that determines the necessary source
@@ -179,8 +179,8 @@ def diff_to_X_sigma(scale, Non_g, Non_p, Noff_g, Noff_p, alpha, X=5):
     scale : python list with a single float
         this is the variable in the minimisation procedure
         it scales the number of gamma events
-    Non_g, Non_p, Noff_g, Noff_p : floats
-        the on and off counts for gamma and proton events
+    N_g, N_p : shape (2) numpy arrays
+        the on (index 0) and off (index 1) counts for gamma and proton events
         the gamma events are to be scaled by `scale[0]`
     alpha : float
         the ratio of the on and off areas
@@ -195,8 +195,8 @@ def diff_to_X_sigma(scale, Non_g, Non_p, Noff_g, Noff_p, alpha, X=5):
         significance of `X` sigma
     """
 
-    Non = Non_p + Non_g * scale[0]
-    Noff = Noff_p + Noff_g * scale[0]
+    Non = N_p[0] + N_g[0] * scale[0]
+    Noff = N_p[1] + N_g[1] * scale[0]
     sigma = sigma_lima(Non, Noff, alpha)
     return (sigma-X)**2
 
@@ -406,10 +406,9 @@ class Sensitivity_PointSource():
         # loob over all energy bins
         for elow, ehigh in zip(10**(self.bin_edges_gam[:-1]),
                                10**(self.bin_edges_gam[1:])):
-            Non_g = 0
-            Non_p = 0
-            Noff_g = 0
-            Noff_p = 0
+
+            N_g = np.array([0, 0])
+            N_p = np.array([0, 0])
 
             # loop over all angular distances and their weights for this energy bin
             # and count the events in the on and off regions
@@ -418,59 +417,50 @@ class Sensitivity_PointSource():
                                               (self.mc_energy_gam < ehigh)],
                             self.weight_g[(self.mc_energy_gam > elow) &
                                           (self.mc_energy_gam < ehigh)]):
-                if s < r_on:
-                    Non_g += w
-                elif s < r_off:
-                    Noff_g += w
+                if s < r_off:
+                    N_g[int(s > r_on)] += w
 
             # ... and protons
             for s, w in zip(self.off_angles_p[(self.mc_energy_pro > elow) &
                                               (self.mc_energy_pro < ehigh)],
                             self.weight_p[(self.mc_energy_pro > elow) &
                                           (self.mc_energy_pro < ehigh)]):
-                if s < r_on:
-                    Non_p += w
-                elif s < r_off:
-                    Noff_p += w
+                if s < r_off:
+                    N_p[int(s > r_on)] += w
 
             # if we have no gammas in the on region, there is no sensitivity
-            if Non_g == 0:
+            if N_g[0] == 0:
                 continue
 
             # find the scaling factor for the gamma events that gives a 5 sigma discovery
             # in this energy bin
             scale = minimize(diff_to_X_sigma, [1e-3],
-                             args=(Non_g, Non_p, Noff_g, Noff_p, alpha),
+                             args=(N_g, N_p, alpha),
                              # method='BFGS',
                              method='L-BFGS-B', bounds=[(1e-4, None)],
                              options={'disp': False}
                              ).x[0]
 
             # scale up the gamma events by this factor
-            Non_g *= scale
-            Noff_g *= scale
+            N_g = N_g * scale
 
             if verbose:
                 print("e low {}\te high {}".format(np.log10(elow),
                                                    np.log10(ehigh)))
 
             # check if there are sufficient events in this energy bin
-            scale_a = check_min_N(Non_g, Noff_g, Non_p, Noff_p,
-                                  min_n, verbose)
+            scale_a = check_min_N(N_g, N_p, min_n, verbose)
 
             # and scale the gamma events accordingly if not
             if scale_a > 1:
-                Non_g *= scale_a
-                Noff_g *= scale_a
+                N_g = N_g * scale_a
                 scale *= scale_a
 
             # check if the relative amount of protons in this bin is sufficiently small
-            scale_r = check_background_contamination(Non_g, Noff_g, Non_p, Noff_p,
-                                                     max_prot_ratio, verbose)
+            scale_r = check_background_contamination(N_g, N_p, max_prot_ratio, verbose)
             # and scale the gamma events accordingly if not
             if scale_r > 1:
-                Non_g *= scale_r
-                Noff_g *= scale_r
+                N_g = N_g * scale_r
                 scale *= scale_r
 
             # get the flux at the bin centre
@@ -483,11 +473,11 @@ class Sensitivity_PointSource():
 
             if verbose:
                 print("sensitivity: ", sensitivity)
-                print("Non:", Non_g+Non_p)
-                print("Noff:", Noff_g+Noff_p)
-                print("  {}, {}, {}, {}".format(Non_g, Noff_g, Non_p, Noff_p))
+                print("Non:", N_g[0]+N_p[1])
+                print("Noff:", N_g[0]+N_p[1])
+                print("  {}, {}".format(N_g, N_p))
                 print("alpha:", alpha)
-                print("sigma:", sigma_lima(Non_g+Non_p, Noff_g+Noff_p, alpha=alpha))
+                print("sigma:", sigma_lima(N_g[0]+N_p[1], N_g[0]+N_p[1], alpha=alpha))
 
                 print()
 
@@ -533,15 +523,15 @@ class Sensitivity_PointSource():
         return self.get_sensitivity(min_n, max_prot_ratio, r_on, r_off)
 
 
-def check_min_N(Non_g, Noff_g, Non_p, Noff_p, min_N, verbose=True):
+def check_min_N(N_g, N_p, min_N, verbose=True):
     """
     check if there are sufficenly many events in this energy bin and calculates scaling
     parameter if not
 
     Parameters
     ----------
-    N... : floats
-        number of on and off counts for gamma and proton events
+    N_g, N_p : shape (2) numpy arrays
+        the on (index 0) and off (index 1) counts for gamma and proton events
     min_n : integer
         minimum number of desired events; if too low, scale up to this number
     verbose : bool, optional (default: True)
@@ -553,12 +543,11 @@ def check_min_N(Non_g, Noff_g, Non_p, Noff_p, min_N, verbose=True):
         factor to scale up gamma events if insuficently many events present
     """
 
-    if Non_g+Noff_g+Non_p+Noff_p < min_N:
-        scale_a = (min_N-Non_p-Noff_p) / (Non_g+Noff_g)
+    if np.sum(N_g) + np.sum(N_p) < min_N:
+        scale_a = (min_N-np.sum(N_p)) / np.sum(N_g)
 
         if verbose:
-            print("  N_tot too small: {}, {}, {}, {}".format(Non_g, Noff_g,
-                                                             Non_p, Noff_p))
+            print("  N_tot too small: {}, {}, {}, {}".format(N_g, N_p))
             print("  scale_a:", scale_a)
 
         return scale_a
@@ -566,16 +555,15 @@ def check_min_N(Non_g, Noff_g, Non_p, Noff_p, min_N, verbose=True):
         return 1
 
 
-def check_background_contamination(Non_g, Noff_g, Non_p, Noff_p,
-                                   max_prot_ratio, verbose=True):
+def check_background_contamination(N_g, N_p, max_prot_ratio, verbose=True):
     """
     check if there are sufficenly few proton events in this energy bin and calculates
     scaling parameter if not
 
     Parameters
     ----------
-    N... : floats
-        number of on and off counts for gamma and proton events
+    N_g, N_p : shape (2) numpy arrays
+        the on (index 0) and off (index 1) counts for gamma and proton events
     max_prot_ratio : float
         maximum allowed proton contamination
     verbose : bool, optional (default: True)
@@ -586,13 +574,14 @@ def check_background_contamination(Non_g, Noff_g, Non_p, Noff_p,
     scale_r : float
         factor to scale up gamma events if too high proton contamination
     """
-    N_p = Non_p + Noff_p
-    N_t = Non_g + Noff_g + N_p
-    if N_p / N_t > max_prot_ratio:
-        scale_r = (1-max_prot_ratio) * Non_p / Non_g
-        scale_r = (1/max_prot_ratio - 1) * N_p / (Non_g+Noff_g)
+
+    N_p_tot = np.sum(N_p)
+    N_g_tot = np.sum(N_g)
+    N_tot = N_g_tot + N_p_tot
+    if N_p_tot / N_tot > max_prot_ratio:
+        scale_r = (1/max_prot_ratio - 1) * N_p_tot / N_g_tot
         if verbose:
-            print("  too high proton contamination: {}, {}".format(Non_g, Non_p))
+            print("  too high proton contamination: {}, {}".format(N_g, N_p))
             print("  scale_r:", scale_r)
         return scale_r
     else:
