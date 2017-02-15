@@ -9,11 +9,8 @@ from ctapipe.image.cleaning import tailcuts_clean, dilate
 
 from .CutFlow import CutFlow
 
-try:
-    from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, \
-                                                 convert_geometry_back
-except:
-    print("Wrong version of ctapipe ; cannot handle hexagonal cameras.")
+from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, \
+                                             convert_geometry_back
 
 
 from sys import path
@@ -143,55 +140,62 @@ class ImageCleaner:
 
     def clean_wave(self, img, cam_geom, foclen):
         if cam_geom.cam_id == "ASTRI":
-            cropped_img = crop_astri_image(img)
-            cleaned_img = self.wavelet_transform.clean_image(
-                            cropped_img, raw_option_string=self.wavelet_options)
-
-            self.cutflow.count("wavelet cleaning")
-
-            ''' wavelet_transform still leaves some isolated pixels; remove them '''
-            cleaned_img = self.island_cleaning(cleaned_img)
-
-            if self.skip_edge_events:
-                edge_thresh = np.max(cleaned_img)/5.
-                if (cleaned_img[0,:]  > edge_thresh).any() or  \
-                   (cleaned_img[-1,:] > edge_thresh).any() or  \
-                   (cleaned_img[:,0]  > edge_thresh).any() or  \
-                   (cleaned_img[:,-1] > edge_thresh).any():
-                        raise EdgeEventException
-                self.cutflow.count("wavelet edge")
-
-            new_img = cleaned_img.flatten()
-            new_geom = copy(cam_geom)
-            new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
-            new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
-            new_geom.pix_area = np.ones_like(new_img) * cam_geom.pix_area[0]
+            return self.clean_wave_astri(img, cam_geom)
 
         elif cam_geom.pix_type.startswith("hex"):
-            try:
-                rot_geom, rot_img = convert_geometry_1d_to_2d(
-                                        cam_geom, img, cam_geom.cam_id)
+            return self.clean_wave_hex(img, cam_geom, foclen)
 
-                cleaned_img = self.wavelet_transform(
-                        rot_img,
-                        raw_option_string=self.wavelet_options)
-
-                self.cutflow.count("wavelet cleaning")
-
-                cleaned_img = self.island_cleaning(cleaned_img,
-                                                   neighbours=self.hex_neighbours_1ring,
-                                                   threshold=self.island_threshold)
-
-                unrot_geom, unrot_img = convert_geometry_back(
-                                        rot_geom, cleaned_img, cam_geom.cam_id, foclen)
-
-                new_img = unrot_img
-                new_geom = unrot_geom
-            except:
-                print("Wrong version of ctapipe ; cannot handle hexagonal cameras.")
         else:
             raise MissingImplementationException("wavelet cleaning of square-pixel"
                                                  " images only for ASTRI so far")
+
+    def clean_wave_astri(self, img, cam_geom):
+        cropped_img = crop_astri_image(img)
+        cleaned_img = self.wavelet_transform.clean_image(
+                        cropped_img, raw_option_string=self.wavelet_options)
+
+        self.cutflow.count("wavelet cleaning")
+
+        ''' wavelet_transform still leaves some isolated pixels; remove them '''
+        cleaned_img = self.island_cleaning(cleaned_img)
+
+        if self.skip_edge_events:
+            edge_thresh = np.max(cleaned_img)/5.
+            if (cleaned_img[0,:]  > edge_thresh).any() or  \
+                (cleaned_img[-1,:] > edge_thresh).any() or  \
+                (cleaned_img[:,0]  > edge_thresh).any() or  \
+                (cleaned_img[:,-1] > edge_thresh).any():
+                    raise EdgeEventException
+            self.cutflow.count("wavelet edge")
+
+        new_img = cleaned_img.flatten()
+        new_geom = copy(cam_geom)
+        new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
+        new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
+        new_geom.mask = np.ones_like(new_geom.pix_x, dtype=bool)
+        new_geom.pix_area = np.ones_like(new_img) * cam_geom.pix_area[0]
+
+        return new_img, new_geom
+
+    def clean_wave_hex(self, img, cam_geom, foclen):
+        rot_geom, rot_img = convert_geometry_1d_to_2d(
+                                cam_geom, img, cam_geom.cam_id)
+
+        cleaned_img = self.wavelet_transform(
+                rot_img,
+                raw_option_string=self.wavelet_options)
+
+        self.cutflow.count("wavelet cleaning")
+
+        cleaned_img = self.island_cleaning(cleaned_img,
+                                            neighbours=self.hex_neighbours_1ring,
+                                            threshold=self.island_threshold)
+
+        unrot_geom, unrot_img = convert_geometry_back(
+                                rot_geom, cleaned_img, cam_geom.cam_id, foclen)
+
+        new_img = unrot_img
+        new_geom = unrot_geom
 
         return new_img, new_geom
 

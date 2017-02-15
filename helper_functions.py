@@ -106,6 +106,8 @@ def make_argparser():
     parser.add_argument('-d', '--dry', dest='last', action='store_const',
                         const=1, default=None,
                         help="only consider first file per type")
+    parser.add_argument('--raw', type=str, default="-K -C1 -m3 -s3 -n4",
+                        help="raw option string for wavelet filtering")
     return parser
 
 

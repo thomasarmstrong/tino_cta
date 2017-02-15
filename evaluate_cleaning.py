@@ -185,7 +185,6 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("calibration")
 
-
                 #
                 # resampling of the hex grid into sqare grid
                 pix_x, pix_y = cam_geom[tel_id].pix_x, cam_geom[tel_id].pix_y

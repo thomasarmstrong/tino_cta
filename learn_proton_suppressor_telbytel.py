@@ -35,8 +35,6 @@ if __name__ == '__main__':
                         help="run a self check on the classification")
     parser.add_argument('--store', action='store_true',
                         help="save the classifier as pickled data")
-    parser.add_argument('--sig', type=str, default="3",
-                        help="significance parameter for wavelet cleaning")
     args = parser.parse_args()
 
     filenamelist_gamma  = glob("{}/gamma/run{}.*gz"
@@ -57,28 +55,24 @@ if __name__ == '__main__':
     tel_theta = {}
     tel_orientation = (tel_phi, tel_theta)
 
-    # wrapper for the scikit learn classifier
-    classifier = EventClassifier()
-
-    # simple hillas-based shower reco
-    fit = FitGammaHillas()
-
     # counting events and where they might have gone missing
     Eventcutflow = {"p": CutFlow("EventCutFlow"),
                     "g": CutFlow("EventCutFlow")}
     Imagecutflow = {"p": CutFlow("ImageCutFlow"),
                     "g": CutFlow("ImageCutFlow")}
-
     for E in Eventcutflow.values():
         E.set_cut("noCuts", None)
-        E.set_cut("min2Tels", lambda x: x >= 2)
-
-    classifier.Eventcutflow = Eventcutflow
+        E.set_cut("min2Tels trig", lambda x: x >= 2)
+        E.set_cut("min2Tels reco", lambda x: x >= 2)
 
     # class that wraps tail cuts and wavelet cleaning
-    Cleaner_reco = ImageCleaner(mode=args.mode)
-    Cleaner_clss = ImageCleaner(mode=args.mode,
-                                wavelet_options="-K -C1 -m3 -s{} -n4".format(args.sig))
+    Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw)
+
+    # simple hillas-based shower reco
+    fit = FitGammaHillas()
+
+    # wrapper for the scikit learn classifier
+    classifier = EventClassifier(cutflow=Eventcutflow)
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -87,7 +81,7 @@ if __name__ == '__main__':
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
     for filenamelist_class in [sorted(filenamelist_gamma)[:1],
-                               sorted(filenamelist_proton)[:10]]:
+                               sorted(filenamelist_proton)[:5]]:
         signal_handler.stop = False
         for filename in filenamelist_class[:args.last]:
             print("filename = {}".format(filename))
@@ -96,12 +90,10 @@ if __name__ == '__main__':
                                          allowed_tels=allowed_tels,
                                          max_events=args.max_events)
 
-            '''
-            get type of event for the classifier '''
+            # get type of event for the classifier
             cl = "g" if "gamma" in filenamelist_class[0] else "p"
 
-            '''
-            event loop '''
+            # event loop
             for event in source:
 
                 Eventcutflow[cl].count("noCuts")
@@ -110,12 +102,14 @@ if __name__ == '__main__':
                 mc_shower_core = np.array([mc_shower.core_x.value,
                                            mc_shower.core_y.value]) * u.m
 
-                '''
-                telescope loop '''
+                if not Eventcutflow[cl].cut("min2Tels trig",
+                                            len(event.dl0.tels_with_data)):
+                    continue
+
+                # telescope loop
                 tot_signal = 0
                 max_signal = 0
-                hillas_dict_reco = {}
-                hillas_dict_clss = {}
+                hillas_dict = {}
                 for tel_id in event.dl0.tels_with_data:
                     Imagecutflow[cl].count("noCuts")
 
@@ -126,8 +120,7 @@ if __name__ == '__main__':
 
                     max_signal = np.max(pmt_signal)
 
-                    '''
-                    guessing camera geometry '''
+                    # guessing camera geometry
                     if tel_id not in cam_geom:
                         cam_geom[tel_id] = CameraGeometry.guess(
                                             event.inst.pixel_pos[tel_id][0],
@@ -136,15 +129,11 @@ if __name__ == '__main__':
                         tel_phi[tel_id] = 0.*u.deg
                         tel_theta[tel_id] = 20.*u.deg
 
-                    '''
-                    trying to clean the image '''
+                    # trying to clean the image
                     try:
-                        pmt_signal_reco, new_geom = \
-                            Cleaner_reco.clean(pmt_signal.copy(), cam_geom[tel_id],
-                                               event.inst.optical_foclen[tel_id])
-                        pmt_signal_clss = \
-                            Cleaner_clss.clean(pmt_signal, cam_geom[tel_id],
-                                               event.inst.optical_foclen[tel_id])[0]
+                        pmt_signal, new_geom = \
+                            Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
+                                          event.inst.optical_foclen[tel_id])
                     except FileNotFoundError as e:
                         print(e)
                         continue
@@ -155,37 +144,56 @@ if __name__ == '__main__':
 
                     # trying to do the hillas reconstruction of the images
                     try:
-                        moments_reco = hillas_parameters(new_geom.pix_x,
-                                                         new_geom.pix_y,
-                                                         pmt_signal_reco)
-                        moments_clss = hillas_parameters(new_geom.pix_x,
-                                                         new_geom.pix_y,
-                                                         pmt_signal_clss)
+                        moments = hillas_parameters(new_geom.pix_x,
+                                                    new_geom.pix_y,
+                                                    pmt_signal)
 
-                        if moments_reco.width < 1e-5 * u.m or \
-                           moments_reco.length < 1e-5 * u.m:
-                            continue
-                        if np.isnan([moments_reco.width.value,
-                                     moments_reco.length.value]).any():
-                            continue
+                        #from ctapipe.visualization import CameraDisplay
+                        #fig = plt.figure(figsize=(17, 10))
 
-                        hillas_dict_reco[tel_id] = moments_reco
-                        hillas_dict_clss[tel_id] = moments_clss
-                        tot_signal += moments_clss.size
+                        #ax1 = fig.add_subplot(121)
+                        #disp1 = CameraDisplay(cam_geom[tel_id],
+                                              #image=np.sqrt(event.mc.tel[tel_id]
+                                                            #.photo_electron_image),
+                                              #ax=ax1)
+                        #disp1.cmap = plt.cm.inferno
+                        #disp1.add_colorbar()
+                        #plt.title("sqrt photo-electron image")
+
+                        #ax3 = fig.add_subplot(122)
+                        #disp3 = CameraDisplay(new_geom,
+                                              #image=np.sqrt(pmt_signal),
+                                              #ax=ax3)
+                        #disp3.overlay_moments(moments, color='seagreen', linewidth=3)
+                        #disp3.cmap = plt.cm.inferno
+                        #disp3.add_colorbar()
+                        #plt.title("sqrt cleaned image")
+                        #plt.show()
+
+
+                        if moments.width < 1e-5 * u.m or \
+                           moments.length < 1e-5 * u.m:
+                            continue
+                        if np.isnan([moments.width.value,
+                                     moments.length.value]).any():
+                            continue
 
                     except HillasParameterizationError as e:
                         print(e)
                         print("ignoring this camera")
                         pass
 
+                    hillas_dict[tel_id] = moments
+                    tot_signal += moments.size
+
                     Imagecutflow[cl].count("Hillas")
 
-                if not Eventcutflow[cl].cut("min2Tels", len(hillas_dict_reco)):
+                if not Eventcutflow[cl].cut("min2Tels reco", len(hillas_dict)):
                     continue
 
                 try:
                     # telescope loop done, now do the core fit
-                    fit.get_great_circles(hillas_dict_reco,
+                    fit.get_great_circles(hillas_dict,
                                           event.inst,
                                           tel_phi, tel_theta)
                     pos_fit_cr = fit.fit_core_crosses()
@@ -202,27 +210,25 @@ if __name__ == '__main__':
 
                 # now prepare the features for the classifier
                 features = []
-                NTels = len(hillas_dict_clss)
-                for tel_id in hillas_dict_clss.keys():
+                NTels = len(hillas_dict)
+                for tel_id in hillas_dict.keys():
                     Imagecutflow[cl].count("pre-features")
 
                     tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
 
-                    moments = hillas_dict_clss[tel_id]
+                    moments = hillas_dict[tel_id]
 
                     impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                     impact_dist_rec = linalg.length(tel_pos-pos_fit)
                     feature = [
-                                # impact_dist_sim / u.m,
-                                impact_dist_rec / u.m,
-                                impact_dist_rec / u.m,
-                                tot_signal,
-                                max_signal,
-                                moments.size,
-                                NTels,
-                                moments.width/u.m,
-                                moments.length/u.m,
-                                moments.skewness,
+                                impact_dist_rec/u.m,
+                                #tot_signal,
+                                #max_signal,
+                                #moments.size,
+                                #NTels,
+                                #moments.width/u.m,
+                                #moments.length/u.m,
+                                #moments.skewness,
                                 moments.kurtosis
                               ]
                     if np.isnan(feature).any():
@@ -240,48 +246,26 @@ if __name__ == '__main__':
             if signal_handler.stop:
                 break
 
-    feature_labels = ["impact_dist",
-                      "tot_signal",
-                      "max_signal",
-                      "size",
-                      "NTels",
-                      "width",
-                      "length",
-                      "skewness",
-                      "kurtosis"
+    feature_labels = [
+                        "impact_dist",
+                        #"tot_signal",
+                        #"max_signal",
+                        #"size",
+                        #"NTels",
+                        #"width",
+                        #"length",
+                        #"skewness",
+                        "kurtosis"
                       ]
 
     print()
 
-    lengths = {}
-    for cl in classifier.class_list:
-        lengths[cl] = len(classifier.Features[cl])
-
-    '''
-    reduce the number of events so that
-    they are the same in gammas and protons '''
-    NEvents = min(lengths.values())
+    # reduce the number of events so that
+    # they are the same in gammas and protons
+    NEvents = min([len(classifier.Features[cl]) for cl in classifier.class_list])
     classifier.equalise_nevents(NEvents)
 
-    # extract and show the importance of the various training features
-    try:
-        classifier.show_importances(feature_labels)
-    except ValueError:
-        for k in classifier.class_list:
-            for a in classifier.Features[k]:
-                print(a)
-
-    if args.write:
-        save_fig('{}/classification_importance_{}'
-                 .format(args.figdir, args.mode))
-    plt.pause(.5)
-
-    if args.store:
-        classifier.learn()
-        classifier.save("{}/classifier_{}.pkl"
-                        .format(args.outdir, args.mode))
-
-
+    # try neural network
     from sklearn.neural_network import MLPClassifier
     clf = MLPClassifier(
                         #solver='lbfgs',  # default: 'adam'
@@ -289,31 +273,81 @@ if __name__ == '__main__':
                         alpha=1e-5,
                         #hidden_layer_sizes=(5, 2)  # default: (100,)
                         )
-    # clf = None
+    clf = None
+
+    # extract and show the importance of the various training features
+    try:
+        classifier.show_importances(feature_labels)
+
+        if args.write:
+            save_fig('{}/classification_importance_{}_{}'.format(args.figdir,
+                     args.mode, "".join(args.raw.split())))
+        if args.plot:
+            plt.pause(.5)
+    except ValueError:
+        for k in classifier.class_list:
+            for a in classifier.Features[k]:
+                print(a)
+
+    if args.store:
+        # learn on all events and save the classifier to disk
+        classifier.learn(clf=clf)
+        clf_string = str(classifier.clf.__class__).split('.')[-1].split("'")[0]
+
+        classifier.save("{}/classifier_{}_{}_{}.pkl".format(args.outdir,
+                        args.mode, "".join(args.raw.split()), clf_string))
 
     if args.check:
-        classifier.self_check(min_tel=4, split_size=10, clf=clf)
+        # do cross validation: split the list of events in chunks, train on all chunks
+        # but one and predict that chunk and assert prediction. repeat for all chunks
+        clf = classifier.self_check(min_tel=2, split_size=10, clf=clf)
+        # get the name of the classifier class as a string
+        clf_string = str(clf.__class__).split('.')[-1].split("'")[0]
+
+
+        for cl in ['g', 'p']:
+            print(cl)
+            print(classifier.prediction_results[cl])
+            print()
+
         plt.tight_layout()
 
         if args.write:
-            save_fig('{}/classification_performance_{}'
-                     .format(args.figdir, args.mode))
+            # save performance plots of classification
+            save_fig('{}/classification_performance_{}_{}_{}'.format(args.figdir,
+                     args.mode, "".join(args.raw.split()), clf_string))
+            # save the classification result for each event
+            for cl in ['g', 'p']:
+                classifier.prediction_results[cl].write(
+                    'data/classification_results_{}_{}_{}_{}.fits'.format(cl,
+                    args.mode, "".join(args.raw.split()), clf_string), overwrite=True)
 
-        plt.pause(.1)
+        # plot the performance of the classification on screen
+        if args.plot:
+            plt.suptitle(" ** ".join([args.mode, args.raw, clf_string]))
+            plt.pause(.1)
 
+    # print the CutFlow tables
     for cl in classifier.class_list:
         print()
         print()
         print("Gamma" if cl == "g" else "Proton")
         try:
-            Eventcutflow[cl]("to classify")
+            e_cf = Eventcutflow[cl]("to classify")
         except UndefinedCutException as e:
             print(e)
-            Eventcutflow[cl]()
+            e_cf = Eventcutflow[cl]()
         print()
-        Imagecutflow[cl]()
+        i_cf = Imagecutflow[cl]()
 
-    plt.show()
+        # also write them as latex to disk
+        if args.write:
+            e_cf.write("data/event_table_{}_{}_{}_{}.tex".format(cl,
+                       args.mode, "".join(args.raw.split()), clf_string))
+            i_cf.write("data/image_table_{}_{}_{}_{}.tex".format(cl,
+                       args.mode, "".join(args.raw.split()), clf_string))
+    if args.plot:
+        plt.show()
 
     ##from sklearn.model_selection import train_test_split
     ##from sklearn.preprocessing import StandardScaler

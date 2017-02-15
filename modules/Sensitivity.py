@@ -18,10 +18,11 @@ def convert_astropy_array(arr, unit=None):
     Parameters
     ----------
     arr : python list
-        list of quantities of same dimension (not strictly exact same unit)
+        list of quantities of same dimension (not necessarily strictly exact same unit)
     unit : astropy unit, optional (default: None)
         if set, uses this as the unit of the numpy array
-        ought to be of same dimension of the quantities in the list (there is no test)
+        ought to be of same dimension of the quantities in the list (there is no extra
+        test beyond astropy)
 
     Returns
     -------
@@ -121,7 +122,6 @@ def make_mock_event_rate(spectrum, bin_edges, e_unit=u.GeV, log_e=True, norm=Non
         if log_e:
             bin_centre = 10**((l_edge+h_edge)/2.) * e_unit
             bin_width = (10**h_edge-10**l_edge) * e_unit
-
         else:
             bin_centre = (l_edge+h_edge) * e_unit / 2.
             bin_width = (h_edge-l_edge) * e_unit
@@ -184,7 +184,7 @@ def diff_to_X_sigma(scale, N_g, N_p, alpha, X=5):
         the gamma events are to be scaled by `scale[0]`
     alpha : float
         the ratio of the on and off areas
-    X : float, optional (deflaut: 5)
+    X : float, optional (default: 5)
         target significance in multiples of "sigma"
 
     Returns

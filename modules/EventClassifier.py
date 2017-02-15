@@ -3,20 +3,27 @@ import numpy as np
 from itertools import chain
 
 from astropy import units as u
+from astropy.table import Table
 
 from ctapipe.io import CameraGeometry
 
 from ctapipe.utils import linalg
 from ctapipe.utils.fitshistogram import Histogram
 
-
-from modules.EfficiencyUncertainties import get_efficiency_uncertainties
-
 from sklearn.ensemble import RandomForestClassifier
+
+
+def convert_astropy_array(arr, unit=None):
+    if unit is None:
+        unit = arr[0].unit
+        return (np.array([a.to(unit).value for a in arr])*unit).si
+    else:
+        return np.array([a.to(unit).value for a in arr])*unit
 
 
 def proba_weighting(x):
     """ gives more weight to outliers -- i.e. close to 0 and 1 """
+    return x
     return 10*x**3 - 15*x**4 + 6*x**5
 
 
@@ -25,8 +32,8 @@ class EventClassifier:
     def __init__(self,
                  class_list=['g', 'p'],
                  axis_names=["log(E / GeV)"],
-                 ranges=[[2, 8]],
-                 nbins=[6],):
+                 ranges=[[2, 8]], nbins=[6],
+                 cutflow=None):
 
         self.class_list = class_list
         self.axis_names = axis_names
@@ -39,7 +46,7 @@ class EventClassifier:
         self.Features = self.create_empty_classes_dict()
         self.MCEnergy = self.create_empty_classes_dict()
 
-        self.Eventcutflow = None
+        self.cutflow = cutflow
 
     def create_empty_classes_dict(self, class_list=None):
         if class_list is None:
@@ -70,7 +77,7 @@ class EventClassifier:
         trainClasses  = []
         for cl in self.Features.keys():
             for ev in self.Features[cl]:
-                trainFeatures += [tel[1:] for tel in ev]
+                trainFeatures += ev
                 trainClasses  += [cl]*len(ev)
 
         if clf is None:
@@ -89,84 +96,108 @@ class EventClassifier:
         self.clf = joblib.load(path)
 
     def predict(self, ev):
-        return self.clf.predict(ev)
+        # predicted class for every telescope
+        predict_tels = self.clf.predict(ev)
 
-    def show_importances(self, feature_labels=None):
+        # probability for each class for every telescope
+        predict_proba = self.clf.predict_proba(ev)
+
+        print("event:", ev)
+        print("predict_proba:", predict_proba)
+
+        # index 0 is the probability for gamma
+        proba_index = 0
+        # gammaness as the weighted mean probability of each telescope for a gamma event
+        gammaness = np.mean(proba_weighting(predict_proba), axis=0)[proba_index]
+        print("gammaness:", gammaness)
+        print()
+
+        # check if prediction returned gamma (what we are selecting on)
+        gamma_ratio = (len(predict_tels[predict_tels == 'g']) / len(ev))
+
+        return gammaness, gamma_ratio
+
+    def show_importances(self, feature_labels=None, clf=None):
         import matplotlib.pyplot as plt
-        self.learn()
-        importances = self.clf.feature_importances_
+        if clf is None:
+            self.learn()
+            clf = self.clf
+        importances = clf.feature_importances_
         bins = range(importances.shape[0])
         plt.figure()
         plt.title("Feature Importances")
+        if feature_labels:
+            importances, feature_labels = \
+                zip(*sorted(zip(importances, feature_labels), reverse=True))
+            plt.xticks(bins, feature_labels, rotation=17)
         plt.bar(bins, importances,
                 color='r', align='center')
-        if feature_labels:
-            plt.xticks(bins, feature_labels, rotation=17)
 
     def self_check(self, min_tel=3, agree_threshold=.75, clf=None,
                    split_size=None, verbose=True):
         import matplotlib.pyplot as plt
 
-        right_ratios = self.create_empty_classes_dict()
-        proba_ratios = self.create_empty_classes_dict()
-        NTels        = self.create_empty_classes_dict()
+        pred_table = {'g': Table(names=("NTels", "Energy", "gammaness", "right ratio")),
+                      'p': Table(names=("NTels", "Energy", "gammaness", "right ratio"))}
+        self.prediction_results = pred_table
 
         start = 0
-        NEvents = min(len(features)
-                      for features in self.Features.values())
+        NEvents = min(len(features) for features in self.Features.values())
 
         if split_size is None:
             split_size = 10*max(NEvents//1000, 1)
 
-        print("nevents:", NEvents)
+        split_size = NEvents//3
+
+        print("NEvents:", NEvents)
+
+        # a mask for the features; created here to not always have to recreate it in the
+        # loop -- only reset it there
+        masks = {}
+        # make np arrays out of the feature lists
+        for cl in self.Features.keys():
+            self.Features[cl] = np.array(self.Features[cl])
+            self.MCEnergy[cl] = convert_astropy_array(self.MCEnergy[cl], u.GeV)
+            masks[cl] = np.ones(len(self.Features[cl]), dtype=bool)
+
         while start+split_size <= NEvents:
             trainFeatures = []
             trainClasses  = []
-            '''
-            training the classifier on all events but a chunck taken
-            out at a certain position '''
+
+            # training the classifier on all events but a chunck taken
+            # out at a certain position
             for cl in self.Features.keys():
-                for ev in chain(self.Features[cl][:start],
-                                self.Features[cl][start+split_size:]):
-                    trainFeatures += [tel[1:] for tel in ev]
-                    trainClasses  += [cl]*len(ev)
+                # reset the mask
+                mask = masks[cl]
+                mask[:] = True
+                # mask the chunk of features to test as False
+                mask[start:start+split_size] = False
+
+                # reshaping `self.Features[cl][mask]` somehow doesn't work
+                # so do it like this...
+                for evs in self.Features[cl][mask]:
+                    trainFeatures += [tels for tels in evs]
+                    trainClasses += [cl]*len(evs)
 
             if clf is None:
                 clf = RandomForestClassifier(n_estimators=40, max_depth=None,
                                              min_samples_split=2, random_state=0)
             clf.fit(trainFeatures, trainClasses)
 
-            '''
-            test the training on the previously excluded chunck '''
+            # test the training on the previously excluded chunck
             for cl in self.Features.keys():
-                for ev, en in zip(
-                        self.Features[cl][start:start+split_size],
-                        self.MCEnergy[cl][start:start+split_size]
-                                  ):
+                for ev, en in zip(self.Features[cl][~mask],
+                                  self.MCEnergy[cl][~mask]):
 
-                    if self.Eventcutflow:
-                        self.Eventcutflow[cl].count("to classify")
+                    if self.cutflow:
+                        self.cutflow[cl].count("to classify")
 
                     log_en = np.log10(en/u.GeV)
 
-                    PredictTels = clf.predict([tel[:1]+tel[2:] for tel in ev])
+                    gammaness, gamma_ratio = self.predict(ev)
+                    right_ratio = gamma_ratio if cl == 'g' else (1-gamma_ratio)
 
-                    predict_proba = clf.predict_proba([tel[:1]+tel[2:] for tel in ev])
-
-                    proba_index = 0  # if cl == "g" else 1
-                    proba_ratios[cl].append(np.sum(proba_weighting(predict_proba), axis=0)
-                                            [proba_index] / len(predict_proba))
-
-                    NTels[cl].append(len(predict_proba))
-
-                    # check if prediction was right
-                    right_ratio = (len(PredictTels[PredictTels == cl]) /
-                                   len(PredictTels))
-                    right_ratios[cl].append(right_ratio)
-
-                    # check if prediction returned gamma (what we are selecting on)
-                    gamma_ratio = (len(PredictTels[PredictTels == 'g']) /
-                                   len(PredictTels))
+                    pred_table[cl].add_row([len(ev), en, gammaness, right_ratio])
 
                     # if sufficient telescopes agree, assume it's a gamma
                     if gamma_ratio > agree_threshold:
@@ -174,18 +205,18 @@ class EventClassifier:
                     else:
                         PredictClass = "p"
 
-                    if self.Eventcutflow:
+                    if self.cutflow:
                         if PredictClass == cl:
-                            self.Eventcutflow[cl].count("corr predict")
+                            self.cutflow[cl].count("corr predict")
                             if cl == 'g' and len(ev) >= min_tel:
-                                self.Eventcutflow[cl].count("min_tel_{}".format(min_tel))
+                                self.cutflow[cl].count("min tel {}".format(min_tel))
                         else:
-                            self.Eventcutflow[cl].count("false predict")
+                            self.cutflow[cl].count("false predict")
                             if len(ev) >= min_tel:
                                 if PredictClass == 'g':
-                                    self.Eventcutflow[cl].count("false positive")
+                                    self.cutflow[cl].count("false positive")
                                 elif cl == 'g':
-                                    self.Eventcutflow[cl].count("false negative")
+                                    self.cutflow[cl].count("false negative")
 
                     if PredictClass != cl and len(ev) >= min_tel:
                         self.wrong[cl].fill([log_en])
@@ -206,95 +237,59 @@ class EventClassifier:
         print()
         print("-"*30)
         print()
-        y_eff         = self.create_empty_classes_dict()
-        y_eff_lerrors = self.create_empty_classes_dict()
-        y_eff_uerrors = self.create_empty_classes_dict()
+
+        # plotting
+        plt.style.use('seaborn-talk')
+        fig, ax = plt.subplots(3, 2)
 
         try:
-            from utils.EfficiencyErrors import get_efficiency_errors
+            from modules.EfficiencyUncertainties import get_efficiency_uncertainties
         except ImportError:
             pass
 
-        for cl in self.Features.keys():
+        for col, cl in enumerate(self.Features.keys()):
             if sum(self.total[cl].hist) > 0:
-                print("wrong {}: {} out of {} => {}"
+                print("wrong {}: {} out of {} => {:2.2f}"
                       .format(cl, sum(self.wrong[cl].hist),
                                   sum(self.total[cl].hist),
                                   sum(self.wrong[cl].hist) /
                                   sum(self.total[cl].hist) * 100*u.percent))
+            try:
+                errors = get_efficiency_uncertainties(self.wrong[cl].hist,
+                                                      self.total[cl].hist)
+                y_eff         = errors[:, 0]
+                y_eff_lerrors = errors[:, 1]
+                y_eff_uerrors = errors[:, 2]
+            except ImportError:
+                y_eff         = [0]*len(self.total[cl].hist)
+                y_eff_lerrors = [0]*len(self.total[cl].hist)
+                y_eff_uerrors = [0]*len(self.total[cl].hist)
 
-            for wr, tot in zip(self.wrong[cl].hist, self.total[cl].hist):
-                try:
-                    errors = get_efficiency_uncertainties(wr, tot)
-                except:
-                    errors = [wr/tot if tot > 0 else 0, 0, 0]
-                y_eff        [cl].append(errors[0])
-                y_eff_lerrors[cl].append(errors[1])
-                y_eff_uerrors[cl].append(errors[2])
+            particle = "gamma" if cl == "g" else "proton"
 
+            tax = ax[0, col]
+            tax.errorbar(self.wrong[cl].bin_centers(0), y_eff,
+                         yerr=[y_eff_lerrors, y_eff_uerrors])
+            tax.set_title("{} misstag".format(particle))
+            tax.set_xlabel("log(E/GeV)")
+            tax.set_ylabel("incorrect / all")
 
-        plt.style.use('seaborn-talk')
-        fig, ax = plt.subplots(4, 2)
-        tax = ax[0, 0]
-        tax.errorbar(self.wrong["g"].bin_centers(0), y_eff["g"],
-                     yerr=[y_eff_lerrors["g"], y_eff_uerrors["g"]])
-        tax.set_title("gamma misstag")
-        tax.set_xlabel("log(E/GeV)")
-        tax.set_ylabel("incorrect / all")
+            tax = ax[2, col]
+            tax.hist(pred_table[cl]["right ratio"], bins=20, range=(0, 1))
+            tax.set_title("fraction of classifiers per event agreeing to {}"
+                          .format(particle))
+            tax.set_xlabel("agree ratio")
+            tax.set_ylabel("events")
 
-        tax = ax[0, 1]
-        tax.errorbar(self.wrong["p"].bin_centers(0), y_eff["p"],
-                     yerr=[y_eff_lerrors["p"], y_eff_uerrors["p"]])
-        tax.set_title("proton misstag")
-        tax.set_xlabel("log(E/GeV)")
-        tax.set_ylabel("incorrect / all")
+            tax = ax[1, col]
+            histo = np.histogram2d(pred_table[cl]["NTels"], pred_table[cl]["gammaness"],
+                                   bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+            histo_normed = histo / histo.max(axis=0)
+            im = tax.imshow(histo_normed, interpolation='none', origin='lower',
+                            aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+            cb = fig.colorbar(im, ax=tax)
+            tax.set_title("arbitrary gammaness per event")
+            tax.set_xlabel("NTels")
+            tax.set_ylabel("gammaness")
 
-        tax = ax[1, 0]
-        tax.bar(self.total["g"].bin_lower_edges[0][:-1], self.total["g"].hist,
-                width=(self.total["g"].bin_lower_edges[0][-1] -
-                       self.total["g"].bin_lower_edges[0][0]) /
-                len(self.total["g"].bin_centers(0)))
-        tax.set_title("gamma numbers")
-        tax.set_xlabel("log(E/GeV)")
-        tax.set_ylabel("events")
-
-        tax = ax[1, 1]
-        tax.bar(self.total["p"].bin_lower_edges[0][:-1], self.total["p"].hist,
-                width=(self.total["p"].bin_lower_edges[0][-1] -
-                       self.total["p"].bin_lower_edges[0][0]) /
-                len(self.total["p"].bin_centers(0)))
-        tax.set_title("proton numbers")
-        tax.set_xlabel("log(E/GeV)")
-        tax.set_ylabel("events")
-
-        tax = ax[2, 0]
-        tax.hist(right_ratios['g'], bins=20, range=(0, 1), normed=True)
-        tax.set_title("fraction of classifiers per event agreeing to gamma")
-        tax.set_xlabel("agree ratio")
-        tax.set_ylabel("PDF")
-
-        tax = ax[2, 1]
-        tax.hist(right_ratios['p'], bins=20, range=(0, 1), normed=True)
-        tax.set_title("fraction of classifiers per event agreeing to proton")
-        tax.set_xlabel("agree ratio")
-        tax.set_ylabel("PDF")
-
-        tax = ax[3, 0]
-        histo = np.histogram2d(NTels['g'], proba_ratios['g'],
-                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
-        histo_normed = histo / histo.max(axis=0)
-        tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
-                   extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
-        tax.set_title("fraction of classifiers per event predicting gamma")
-        tax.set_xlabel("NTels")
-        tax.set_ylabel("agree ratio")
-
-        tax = ax[3, 1]
-        histo = np.histogram2d(NTels['p'], proba_ratios['p'],
-                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
-        histo_normed = histo / histo.max(axis=0)
-        tax.imshow(histo_normed, interpolation='none', origin='lower', aspect='auto',
-                   extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
-        tax.set_title("fraction of classifiers per event predicting gamma")
-        tax.set_xlabel("NTels")
-        tax.set_ylabel("agree ratio")
+        return clf

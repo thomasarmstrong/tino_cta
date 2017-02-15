@@ -38,7 +38,7 @@ def log_gamma(end, start=1):
         Notes
         -----
         Γ(x) = (x-1)!
-        so @end doesn't neet to be included in sum
+        so `end` doesn't neet to be included in sum
 
         if `start` > `end`, return the negative instead
     '''
@@ -87,7 +87,8 @@ def P_e(k, N, e):
         return 0
 
     # log-ed version
-    # res2 = log_gamma(N+2) + k*log(e) + (N-k)*log(1-e) - log_gamma(N-k+1) - log_gamma(k+1)
+    # res2 = log_gamma(N+2) + k*log(e) + (N-k)*log(1-e) - log_gamma(N-k+1) -
+    #        log_gamma(k+1)
     # return exp(res3)
 
     # optimised version (sum_{0..N} - sum_{0..k} = sum_{k..N})
@@ -163,7 +164,8 @@ def test_func(arg, k, N, conf=.68, de=.001, func=P_e):
         return b
 
 
-def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e):
+def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e,
+                                          soft_limit=1000):
     """
     calculates the mean and confidence intervall of the selection efficiency from `k`
     selected out of `N` total events by minimising the length of the confidence intervall
@@ -171,7 +173,7 @@ def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e):
 
     Parameters
     ----------
-    k, N : integers
+    k, N : integers or numpy arrays
         passed / total number of events for efficiency calculation
     conf : float, optional (default: 0.68)
         confidence intervall coverage
@@ -179,9 +181,16 @@ def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e):
         stepsize in numerical integration
     func : callable, optional (default: `P_e`)
         function to be integrated
+    soft_limit : integer, optional (default: 1000)
+        if `N > soft_limit` a simplified and faster approach for the error is used;
+        coverage is probably totally wrong though
 
     Returns
     -------
+    results : shape (x,5) numpy array
+        where x is the dimension of k;
+        contains the result of the efficiency calculation for every dimension of k and N;
+        what follows now is the content of `results` -- no additional return values
     mean : float
         the mean efficiency -- i.e. `k/N`
     lerr, herr : floats
@@ -193,26 +202,48 @@ def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e):
             lerr = mean - min_a
             herr = min_b - mean
     """
-    if N == 0:
-        return 0, 0, 0, 0, 0
 
-    minimize(test_func, [0], args=(k, N, conf, de, func), bounds=[(0, 1)],
-             method='L-BFGS-B', options={'disp': False, 'eps': 1e-3})
+    np_k = np.array(k, ndmin=1)
+    np_N = np.array(N, ndmin=1)
 
-    mean = k/N
-    # if no (all) events passed the lower (upper) errors are 0 (1)
-    if k == 0: test_func.min_b = 0
-    if k == N: test_func.min_b = 1
-    lerr = mean-test_func.min_a
-    herr = test_func.min_b-mean
+    assert np_k.shape == np_N.shape, "k and N need to be of same dimension"
 
-    return mean, lerr, herr, test_func.min_a, test_func.min_b
+    results = np.zeros((len(np_k), 5))
+
+    for i, (_k, _N) in enumerate(zip(np_k, np_N)):
+
+        if _N == 0:
+            results[i] = [0, 0, 0, 0, 0]
+            continue
+
+        elif _N > soft_limit:
+            test_func.min_a = (_k-np.sqrt(_k)/2)/(_N+np.sqrt(_N)/2)
+            test_func.min_b = (_k+np.sqrt(_k)/2)/(_N-np.sqrt(_N)/2)
+            print("soft limit")
+
+        else:
+            minimize(test_func, [0], args=(_k, _N, conf, de, func), bounds=[(0, 1)],
+                     method='L-BFGS-B', options={'disp': False, 'eps': 1e-3})
+
+        mean = _k/_N
+
+        # if no (all) events passed, the lower (upper) error is zero (one)
+        if _k == 0.: test_func.min_a = 0
+        if _k == _N: test_func.min_b = 1
+        lerr = mean-test_func.min_a
+        herr = test_func.min_b-mean
+
+        # not sure if it's more useful to return errors as distance from mean or as
+        # position on the axis... so do both
+        results[i] = [mean, lerr, herr, test_func.min_a, test_func.min_b]
+
+    return results
 
 
 def get_efficiency_uncertainties_scan(k, N, conf=.68, de=0.0005, func=P_e):
     """
-    same as `get_efficiency_uncertainties_minimize` just through scanning the values of a instead
-    of minimisation -- not recommended, use the minimiser
+    same as `get_efficiency_uncertainties_minimize` just through scanning the values of a
+    instead of minimisation -- not recommended, use the minimiser
     """
     if N == 0:
         return 0, 0, 0, 0, 0
