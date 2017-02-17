@@ -84,7 +84,7 @@ if __name__ == '__main__':
     Imagecutflow.set_cut(min_charge, lambda x: x >= args.min_charge)
 
     Cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
-                           wavelet_options="-K -C1 -m3 -s3 -n4",
+                           wavelet_options=args.raw,
                            skip_edge_events=False, island_cleaning=True)
 
     fit = FitGammaHillas()
@@ -199,7 +199,7 @@ if __name__ == '__main__':
             for k in fit.circles.keys():
                 c = fit.circles[k]
                 h = hillas_dict[k]
-                print("hillas:", h)
+
                 tel_signal.append(h.size)
                 tel_signal_pe.append(np.sum(event.mc.tel[k].photo_electron_image))
                 hillas_tilt.append(abs(linalg.angle(c.norm, shower_org)*u.rad - 90*u.deg))

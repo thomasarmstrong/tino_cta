@@ -98,7 +98,8 @@ if __name__ == '__main__':
     skip_edge_events = True
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
-                                 island_cleaning=island_cleaning),
+                                 island_cleaning=island_cleaning,
+                                 wavelet_options=args.raw),
                "t": ImageCleaner(mode="tail", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
                                  island_cleaning=island_cleaning)
