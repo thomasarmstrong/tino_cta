@@ -23,6 +23,9 @@ from modules.ImageCleaning import *
 from modules.EventClassifier import *
 
 
+def get_class_string(cls):
+    return str(cls.__class__).split('.')[-1].split("'")[0]
+
 
 if __name__ == '__main__':
 
@@ -66,7 +69,8 @@ if __name__ == '__main__':
         E.set_cut("min2Tels reco", lambda x: x >= 2)
 
     # class that wraps tail cuts and wavelet cleaning
-    Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw)
+    Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
+                           skip_edge_events=False)
 
     # simple hillas-based shower reco
     fit = FitGammaHillas()
@@ -83,15 +87,19 @@ if __name__ == '__main__':
     for filenamelist_class in [sorted(filenamelist_gamma)[:1],
                                sorted(filenamelist_proton)[:5]]:
         signal_handler.stop = False
+
+        # get type of event for the classifier
+        # assume that there are only gamma and proton as event class
+        # if `filenamelist_gamma` is empty, though `cl` will be set to proton, the
+        # `filename` loop will be empty, so no mislabelling will occur
+        cl = "g" if "gamma" in " ".join(filenamelist_class) else "p"
+
         for filename in filenamelist_class[:args.last]:
             print("filename = {}".format(filename))
 
             source = hessio_event_source(filename,
                                          allowed_tels=allowed_tels,
                                          max_events=args.max_events)
-
-            # get type of event for the classifier
-            cl = "g" if "gamma" in filenamelist_class[0] else "p"
 
             # event loop
             for event in source:
@@ -134,6 +142,10 @@ if __name__ == '__main__':
                         pmt_signal, new_geom = \
                             Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
                                           event.inst.optical_foclen[tel_id])
+
+                        if np.count_nonzero(pmt_signal) < 3:
+                            continue
+
                     except FileNotFoundError as e:
                         print(e)
                         continue
@@ -148,35 +160,37 @@ if __name__ == '__main__':
                                                     new_geom.pix_y,
                                                     pmt_signal)
 
-                        #from ctapipe.visualization import CameraDisplay
-                        #fig = plt.figure(figsize=(17, 10))
-
-                        #ax1 = fig.add_subplot(121)
-                        #disp1 = CameraDisplay(cam_geom[tel_id],
-                                              #image=np.sqrt(event.mc.tel[tel_id]
-                                                            #.photo_electron_image),
-                                              #ax=ax1)
-                        #disp1.cmap = plt.cm.inferno
-                        #disp1.add_colorbar()
-                        #plt.title("sqrt photo-electron image")
-
-                        #ax3 = fig.add_subplot(122)
-                        #disp3 = CameraDisplay(new_geom,
-                                              #image=np.sqrt(pmt_signal),
-                                              #ax=ax3)
-                        #disp3.overlay_moments(moments, color='seagreen', linewidth=3)
-                        #disp3.cmap = plt.cm.inferno
-                        #disp3.add_colorbar()
-                        #plt.title("sqrt cleaned image")
-                        #plt.show()
-
-
                         if moments.width < 1e-5 * u.m or \
                            moments.length < 1e-5 * u.m:
                             continue
+
                         if np.isnan([moments.width.value,
                                      moments.length.value]).any():
                             continue
+
+                        if False:
+                            from ctapipe.visualization import CameraDisplay
+                            fig = plt.figure(figsize=(17, 10))
+
+                            ax1 = fig.add_subplot(121)
+                            disp1 = CameraDisplay(cam_geom[tel_id],
+                                                  image=np.sqrt(event.mc.tel[tel_id]
+                                                                .photo_electron_image),
+                                                  ax=ax1)
+                            disp1.cmap = plt.cm.inferno
+                            disp1.add_colorbar()
+                            plt.title("sqrt photo-electron image")
+
+                            ax3 = fig.add_subplot(122)
+                            disp3 = CameraDisplay(new_geom,
+                                                  image=np.sqrt(pmt_signal),
+                                                  ax=ax3)
+                            disp3.overlay_moments(moments, color='seagreen', linewidth=3)
+                            disp3.cmap = plt.cm.inferno
+                            disp3.add_colorbar()
+                            plt.title("sqrt cleaned image")
+                            plt.suptitle(args.mode)
+                            plt.show()
 
                     except HillasParameterizationError as e:
                         print(e)
@@ -222,13 +236,13 @@ if __name__ == '__main__':
                     impact_dist_rec = linalg.length(tel_pos-pos_fit)
                     feature = [
                                 impact_dist_rec/u.m,
-                                #tot_signal,
-                                #max_signal,
-                                #moments.size,
-                                #NTels,
-                                #moments.width/u.m,
-                                #moments.length/u.m,
-                                #moments.skewness,
+                                tot_signal,
+                                max_signal,
+                                moments.size,
+                                NTels,
+                                moments.width/u.m,
+                                moments.length/u.m,
+                                moments.skewness,
                                 moments.kurtosis
                               ]
                     if np.isnan(feature).any():
@@ -248,13 +262,13 @@ if __name__ == '__main__':
 
     feature_labels = [
                         "impact_dist",
-                        #"tot_signal",
-                        #"max_signal",
-                        #"size",
-                        #"NTels",
-                        #"width",
-                        #"length",
-                        #"skewness",
+                        "tot_signal",
+                        "max_signal",
+                        "size",
+                        "NTels",
+                        "width",
+                        "length",
+                        "skewness",
                         "kurtosis"
                       ]
 
@@ -277,13 +291,14 @@ if __name__ == '__main__':
 
     # extract and show the importance of the various training features
     try:
-        classifier.show_importances(feature_labels)
+        if args.plot or args.write:
+            classifier.show_importances(feature_labels)
 
-        if args.write:
-            save_fig('{}/classification_importance_{}_{}'.format(args.figdir,
-                     args.mode, "".join(args.raw.split())))
-        if args.plot:
-            plt.pause(.5)
+            if args.write:
+                save_fig('{}/classification_importance_{}_{}'.format(args.figdir,
+                         args.mode, "".join(args.raw.split())))
+            if args.plot:
+                plt.pause(.5)
     except ValueError:
         for k in classifier.class_list:
             for a in classifier.Features[k]:
@@ -292,7 +307,7 @@ if __name__ == '__main__':
     if args.store:
         # learn on all events and save the classifier to disk
         classifier.learn(clf=clf)
-        clf_string = str(classifier.clf.__class__).split('.')[-1].split("'")[0]
+        clf_string = get_class_string(classifier.clf)
 
         classifier.save("{}/classifier_{}_{}_{}.pkl".format(args.outdir,
                         args.mode, "".join(args.raw.split()), clf_string))
@@ -300,15 +315,9 @@ if __name__ == '__main__':
     if args.check:
         # do cross validation: split the list of events in chunks, train on all chunks
         # but one and predict that chunk and assert prediction. repeat for all chunks
-        clf = classifier.self_check(min_tel=2, split_size=10, clf=clf)
+        clf = classifier.self_check(min_tel=3, split_size=10, clf=clf)
         # get the name of the classifier class as a string
-        clf_string = str(clf.__class__).split('.')[-1].split("'")[0]
-
-
-        for cl in ['g', 'p']:
-            print(cl)
-            print(classifier.prediction_results[cl])
-            print()
+        clf_string = get_class_string(clf)
 
         plt.tight_layout()
 
@@ -319,8 +328,9 @@ if __name__ == '__main__':
             # save the classification result for each event
             for cl in ['g', 'p']:
                 classifier.prediction_results[cl].write(
-                    'data/classification_results_{}_{}_{}_{}.fits'.format(cl,
-                    args.mode, "".join(args.raw.split()), clf_string), overwrite=True)
+                    'data/classification_results_{}_{}_{}_{}.fits'
+                    .format(cl, args.mode, "".join(args.raw.split()), clf_string),
+                    overwrite=True)
 
         # plot the performance of the classification on screen
         if args.plot:

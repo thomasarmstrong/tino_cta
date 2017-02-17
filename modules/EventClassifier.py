@@ -75,6 +75,7 @@ class EventClassifier:
     def learn(self, clf=None):
         trainFeatures = []
         trainClasses  = []
+
         for cl in self.Features.keys():
             for ev in self.Features[cl]:
                 trainFeatures += ev
@@ -86,6 +87,10 @@ class EventClassifier:
                 min_samples_split=2, random_state=0)
         clf.fit(trainFeatures, trainClasses)
         self.clf = clf
+
+        from sklearn.model_selection import cross_val_score
+        score = cross_val_score(clf, trainFeatures, trainClasses, scoring='accuracy')
+        print("cross validation score:", score)
 
     def save(self, path):
         from sklearn.externals import joblib
@@ -102,15 +107,10 @@ class EventClassifier:
         # probability for each class for every telescope
         predict_proba = self.clf.predict_proba(ev)
 
-        print("event:", ev)
-        print("predict_proba:", predict_proba)
-
         # index 0 is the probability for gamma
         proba_index = 0
         # gammaness as the weighted mean probability of each telescope for a gamma event
         gammaness = np.mean(proba_weighting(predict_proba), axis=0)[proba_index]
-        print("gammaness:", gammaness)
-        print()
 
         # check if prediction returned gamma (what we are selecting on)
         gamma_ratio = (len(predict_tels[predict_tels == 'g']) / len(ev))
@@ -147,8 +147,6 @@ class EventClassifier:
         if split_size is None:
             split_size = 10*max(NEvents//1000, 1)
 
-        split_size = NEvents//3
-
         print("NEvents:", NEvents)
 
         # a mask for the features; created here to not always have to recreate it in the
@@ -164,17 +162,16 @@ class EventClassifier:
             trainFeatures = []
             trainClasses  = []
 
-            # training the classifier on all events but a chunck taken
+            # training the classifier on all events but a chunk taken
             # out at a certain position
             for cl in self.Features.keys():
                 # reset the mask
                 mask = masks[cl]
-                mask[:] = True
+                mask[~mask] = True
                 # mask the chunk of features to test as False
                 mask[start:start+split_size] = False
 
-                # reshaping `self.Features[cl][mask]` somehow doesn't work
-                # so do it like this...
+                # filling the list of features to train on
                 for evs in self.Features[cl][mask]:
                     trainFeatures += [tels for tels in evs]
                     trainClasses += [cl]*len(evs)
@@ -183,8 +180,9 @@ class EventClassifier:
                 clf = RandomForestClassifier(n_estimators=40, max_depth=None,
                                              min_samples_split=2, random_state=0)
             clf.fit(trainFeatures, trainClasses)
+            self.clf = clf
 
-            # test the training on the previously excluded chunck
+            # test the training on the previously excluded chunk
             for cl in self.Features.keys():
                 for ev, en in zip(self.Features[cl][~mask],
                                   self.MCEnergy[cl][~mask]):
@@ -247,7 +245,7 @@ class EventClassifier:
         except ImportError:
             pass
 
-        for col, cl in enumerate(self.Features.keys()):
+        for col, cl in enumerate(["g", "p"]):
             if sum(self.total[cl].hist) > 0:
                 print("wrong {}: {} out of {} => {:2.2f}"
                       .format(cl, sum(self.wrong[cl].hist),
