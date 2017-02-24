@@ -57,6 +57,8 @@ if __name__ == '__main__':
     parser.add_argument('--add_offset', action='store_true',
                         help="adds a 15 PE offset to all pixels to supress 'Nbr < 0' "
                              "warnings from mrfilter")
+    parser.add_argument('--store', action='store_true',
+                        help="save the classifier as pickled data")
 
     args = parser.parse_args()
 
@@ -299,9 +301,11 @@ if __name__ == '__main__':
                         xlabel="log10(number of photo electrons)",
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
+    if args.store:
+        from os.path import expandvars
+        reco_table.write("rec_events_{}.hdf5".format(args.mode), format="hdf5",
+            path=expandvars("$PWD/data/reconstructed_events/rec_events_{}.hdf5".format(args.mode)))
     if args.write:
-        reco_table.write("data/reconstructed_events/rec_events_{}.hdf5"
-                         .format(args.mode), format="hdf5")
         save_fig("{}/reco_alpha_vs_photoelecrons_{}".format(args.outdir, args.mode))
     plt.pause(.1)
 
