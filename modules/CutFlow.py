@@ -66,7 +66,64 @@ class CutFlow():
         '''
         self.cuts[cut] = [function, 0]
 
+    def _check_cut(self, cut):
+        """
+        checks if `cut` is a valid name for a function to select on
+
+        Parameters
+        ----------
+        cut : string
+            name of the selection criterion
+
+        Raises
+        ------
+        UndefinedCutException if `cut` is not known
+        PureCountingCutException if `cut` has no associated function
+        (i.e. manual counting mode)
+        """
+
+        if cut not in self.cuts:
+            raise UndefinedCutException(
+                "unknown cut {} -- only know: {}"
+                .format(cut, [a for a in self.cuts.keys()]))
+        elif self.cuts[cut][0] is None:
+            raise PureCountingCutException(
+                "{} has no function associated".format(cut))
+
     def cut(self, cut, *args, **kwargs):
+        '''
+        selects the function associated with `cut` and hands it all
+        additional arguments provided. if the function returns `False`,
+        the event counter is incremented.
+
+        Parameters
+        ----------
+        cut : string
+            name of the selection criterion
+        args, kwargs: additional arguments
+            anything you want to hand to the associated function
+
+        Returns
+        -------
+        True if the function evaluats to True
+        False otherwise
+
+        Raises
+        ------
+        UndefinedCutException if `cut` is not known
+        PureCountingCutException if `cut` has no associated function
+        (i.e. manual counting mode)
+        '''
+
+        self._check_cut(cut)
+
+        if self.cuts[cut][0](*args, **kwargs):
+            return True
+        else:
+            self.cuts[cut][1] += 1
+            return False
+
+    def keep(self, cut, *args, **kwargs):
         '''
         selects the function associated with `cut` and hands it all
         additional arguments provided. if the function returns True,
@@ -90,13 +147,8 @@ class CutFlow():
         PureCountingCutException if `cut` has no associated function
         (i.e. manual counting mode)
         '''
-        if cut not in self.cuts:
-            raise UndefinedCutException(
-                "unknown cut {} -- only know: {}"
-                .format(cut, [a for a in self.cuts.keys()]))
-        elif self.cuts[cut][0] is None:
-            raise PureCountingCutException(
-                "{} has no function associated".format(cut))
+
+        self._check_cut(cut)
 
         if self.cuts[cut][0](*args, **kwargs):
             self.cuts[cut][1] += 1
