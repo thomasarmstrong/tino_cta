@@ -6,7 +6,7 @@ np.tau = 2*np.pi
 from astropy import units as u
 
 from matplotlib import pyplot as plt
-plt.style.use('seaborn-talk')
+#plt.style.use('seaborn-talk')
 #plt.style.use('t_slides')
 
 import signal
@@ -97,6 +97,8 @@ def make_argparser():
                         help="if set, use tail cleaning, otherwise wavelets")
     parser.add_argument('--dilate', default=False, action='store_true',
                         help="use dilate function for tailcut cleaning")
+    parser.add_argument('--no_reject_edge', dest='skip_edge_events', default=True,
+                        action='store_false', help="do not reject edge events")
     parser.add_argument('-w', '--write', action='store_true',
                         help="write output -- e.g. plots, classifiers, events")
     parser.add_argument('-p', '--plot',  action='store_true',
@@ -106,7 +108,7 @@ def make_argparser():
     parser.add_argument('-d', '--dry', dest='last', action='store_const',
                         const=1, default=None,
                         help="only consider first file per type")
-    parser.add_argument('--raw', type=str, default="-K -C1 -m3 -s3 -n4",
+    parser.add_argument('--raw', type=str, default="-K -C1 -m3 -s2,2,3 -n4",
                         help="raw option string for wavelet filtering")
     return parser
 
@@ -133,7 +135,7 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
             plt.savefig("{}.{}".format(outname, end))
 
 
-def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, vmax=None,
+def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
                         xlabel="", ylabel="", zlabel="", do_hex=True, do_violin=True,
                         cm=plt.cm.inferno, **kwargs):
 
@@ -149,8 +151,6 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         bin edges along the abscissa
     extent : 4-tuple of floats (default: None)
         extension of the abscissa, ordinate; given as is to plt.hexbin
-    vmin, vmax : floats (defaults: None)
-        lower and upper caps of the bin values to be plotted in plt.hexbin
     xlabel, ylabel : strings (defaults: "")
         labels for the two axes of either plot
     zlabel : string (default: "")
@@ -163,7 +163,6 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         more arguments to be passed to plt.hexbin
     """
 
-
     plt.figure()
 
     ''' make a normal 2D hexplot from the given data '''
@@ -175,8 +174,6 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
 
         plt.hexbin(abscissa,
                    ordinate,
-                   vmin=vmin,
-                   vmax=vmax,
                    gridsize=40,
                    extent=extent,
                    cmap=cm,
@@ -185,6 +182,8 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None, vmin=None, v
         cb.set_label(zlabel)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
+        plt.xlim(extent[:2])
+        plt.ylim(extent[2:])
 
     ''' prepare and draw the data for the violin plot '''
     if do_violin:

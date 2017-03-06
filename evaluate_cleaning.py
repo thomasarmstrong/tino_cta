@@ -56,7 +56,7 @@ from modules.reSampling import resample_hex_to_rect, \
 from helper_functions import *
 
 
-''' your favourite units here '''
+# your favourite units here
 angle_unit  = u.deg
 energy_unit = u.GeV
 dist_unit   = u.m
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     Imagecutflow.set_cut("hex image", lambda x: x.startswith("hex"))
 
     island_cleaning = True
-    skip_edge_events = True
+    skip_edge_events = args.skip_edge_events
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
                                  island_cleaning=island_cleaning,
@@ -113,12 +113,8 @@ if __name__ == '__main__':
     else:
         signal.signal(signal.SIGINT, signal_handler)
 
-    NTels = []
-    EnMC  = []
-
-    '''
-    keeping track of the hit distribution transverse to the shower axis on the camera
-    for different energy bins '''
+    # keeping track of the hit distribution transverse to the shower axis on the camera
+    # for different energy bins
     from modules.Histogram import nDHistogram
     pe_vs_dp = {'p': {}, 'w': {}, 't': {}}
     for k in pe_vs_dp.keys():
@@ -128,9 +124,9 @@ if __name__ == '__main__':
                     labels=["log10(signal)", "Delta P"])
 
     allowed_tels = None
-    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    # allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -229,7 +225,7 @@ if __name__ == '__main__':
 
                 clean_rect_img = wavelet_transform(
                     rect_img,
-                    raw_option_string="-K -C1 -m3 -s3 -n4")
+                    raw_option_string=args.raw)
 
                 clean_rect_img = kill_isolpix(clean_rect_img, threshold=2)
 
@@ -466,13 +462,11 @@ if __name__ == '__main__':
             if signal_handler.stop: break
         if signal_handler.stop: break
 
-    '''
-    print the cutflow '''
+    # print the cutflow
     print()
     Imagecutflow()
 
-    '''
-    if we don't want to plot anything, we can exit now '''
+    # if we don't want to plot anything, we can exit now
     if not args.plot:
         exit(0)
 
@@ -483,8 +477,8 @@ if __name__ == '__main__':
 
     data = vstack([tab1, tab2])
 
-    npe_edges = np.linspace(1, 6, 21)
-    npe_centres = (npe_edges[1:]+npe_edges[:-1])/2.
+    npe_centres = np.linspace(1, 6, 21)
+    npe_edges = (npe_centres[1:]+npe_centres[:-1])/2.
     data["log10(sig_p)"] = npe_centres[
             np.clip(
                 np.digitize(np.log10(data["sig_p"]), npe_edges)-1,
@@ -492,40 +486,42 @@ if __name__ == '__main__':
             ]
 
     data["log10(alpha)"] = np.log10(data["alpha"])
-
     data["mode"] = ['tail']*len(tab1) + ['wave']*len(tab2)
 
+    # sns.set_context("paper", rc={"lines.linewidth": 10})
     sns.violinplot(x="log10(sig_p)", y="log10(alpha)", hue="mode", data=data.to_pandas(),
-                   palette="Set3", inner="quartiles", split=True)
+                   palette="Set2", inner="quartiles", split=True)
+    #sns.swarmplot(x="log10(sig_p)", y="log10(alpha)", hue="mode", data=data.to_pandas(),
+                  #palette="Set1", split=False)
     plt.show()
 
-
-    '''
-    print how many telescopes participated in each log-signal bin '''
+    # print how many telescopes participated in each log-signal bin
     sig_p = performance_table["sig_p"]
     for k in ['p', 't', 'w']:
         print("type:", k)
-        for log_sig in pe_vs_dp[k].bin_edges[0][:-1]:
+        for log_sig_l, log_sig_h in zip(pe_vs_dp[k].bin_edges[0][:-1],
+                                        pe_vs_dp[k].bin_edges[0][1:]):
             print("signal range: {} -- {}\t number of tels {}".format(
-                log_sig, log_sig+1,
-                len(sig_p[(sig_p < 10**(log_sig+1)) & (sig_p > 10**log_sig)])))
+                log_sig_l, log_sig_h,
+                len(sig_p[(sig_p < 10**(log_sig_h)) & (sig_p > 10**log_sig_l)])))
         print()
 
     if args.write:
         performance_table.write("Eps_int_comparison.fits", overwrite=True)
-
 
     if args.verbose:
         pe_vs_dp_p = pe_vs_dp['p'].normalise()
         pe_vs_dp_w = pe_vs_dp['w'].normalise()
         plt.figure()
         plt.subplot(121)
-        plt.imshow(pe_vs_dp_p.data[1:-1, 1:-1],
+        shape = pe_vs_dp_p.data[1:-1, 1:-1].shape
+        norm = np.repeat(pe_vs_dp_p.data[1:-1, 1:-1].max(axis=1), shape[1]).reshape(shape)
+        plt.imshow(pe_vs_dp_p.data[1:-1, 1:-1] / norm,
                    extent=(pe_vs_dp_p.bin_edges[1][0].value,
                            pe_vs_dp_p.bin_edges[1][-1].value,
                            pe_vs_dp_p.bin_edges[0][0],
                            pe_vs_dp_p.bin_edges[0][-1]),
-                   cmap=plt.cm.hot,
+                   cmap=plt.cm.inferno,
                    origin='lower',
                    aspect='auto',
                    interpolation='none')
@@ -533,12 +529,14 @@ if __name__ == '__main__':
         plt.colorbar()
 
         plt.subplot(122)
-        plt.imshow(pe_vs_dp_w.data[1:-1, 1:-1],
+        shape = pe_vs_dp_w.data[1:-1, 1:-1].shape
+        norm = np.repeat(pe_vs_dp_w.data[1:-1, 1:-1].max(axis=1), shape[1]).reshape(shape)
+        plt.imshow(pe_vs_dp_w.data[1:-1, 1:-1] / norm,
                    extent=(pe_vs_dp_p.bin_edges[1][0].value,
                            pe_vs_dp_p.bin_edges[1][-1].value,
                            pe_vs_dp_p.bin_edges[0][0],
                            pe_vs_dp_p.bin_edges[0][-1]),
-                   cmap=plt.cm.hot,
+                   cmap=plt.cm.inferno,
                    origin='lower',
                    aspect='auto',
                    interpolation='none')
@@ -546,7 +544,7 @@ if __name__ == '__main__':
         plt.colorbar()
         plt.pause(.1)
 
-        for pe_bin in [2,3,4,5]:
+        for pe_bin in [2, 3, 4, 5]:
             if np.sum(pe_vs_dp_w.norm[pe_bin][1:-1]) > 0:
                 fig = plt.figure()
                 plt.style.use('t_slides')
@@ -575,9 +573,9 @@ if __name__ == '__main__':
                 plt.subplot(133)
 
                 ratio = np.zeros_like(pe_vs_dp_w.data[pe_bin][1:-1])
-                ratio[pe_vs_dp_p.data[pe_bin][1:-1]>0] = \
-                    pe_vs_dp_w.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1]>0] / \
-                    pe_vs_dp_p.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1]>0]
+                ratio[pe_vs_dp_p.data[pe_bin][1:-1] > 0] = \
+                    pe_vs_dp_w.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1] > 0] / \
+                    pe_vs_dp_p.data[pe_bin][1:-1][pe_vs_dp_p.data[pe_bin][1:-1] > 0]
 
                 plt.plot(bin_centres, ratio)
                 plt.title("signal ratio")
