@@ -36,8 +36,6 @@ if __name__ == '__main__':
                         default='plots')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
-    parser.add_argument('--store', action='store_true',
-                        help="save the classifier as pickled data")
     args = parser.parse_args()
 
     filenamelist_gamma  = glob("{}/gamma/run{}.*gz"

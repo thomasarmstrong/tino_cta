@@ -100,7 +100,9 @@ def make_argparser():
     parser.add_argument('--no_reject_edge', dest='skip_edge_events', default=True,
                         action='store_false', help="do not reject edge events")
     parser.add_argument('-w', '--write', action='store_true',
-                        help="write output -- e.g. plots, classifiers, events")
+                        help="write summary-level output -- e.g. plots, tables")
+    parser.add_argument('--store', action='store_true',
+                        help="write event data / trained classifier")
     parser.add_argument('-p', '--plot',  action='store_true',
                         help="do some plotting")
     parser.add_argument('-v', '--verbose',  action='store_true',

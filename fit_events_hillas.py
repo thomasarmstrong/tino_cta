@@ -54,11 +54,6 @@ if __name__ == '__main__':
                         "instead of the PMT signal")
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
-    parser.add_argument('--add_offset', action='store_true',
-                        help="adds a 15 PE offset to all pixels to supress 'Nbr < 0' "
-                             "warnings from mrfilter")
-    parser.add_argument('--store', action='store_true',
-                        help="save the classifier as pickled data")
 
     args = parser.parse_args()
 
@@ -80,7 +75,11 @@ if __name__ == '__main__':
     Imagecutflow = CutFlow("ImageCutFlow")
 
     Eventcutflow.set_cut("noCuts", None)
-    Eventcutflow.set_cut("min2Tels", lambda x: x >= 2)
+    Eventcutflow.set_cut("min2Tels", lambda x: x < 2)
+    Eventcutflow.set_cut("min2Images", lambda x: x < 2)
+    Eventcutflow.set_cut("GreatCircles", None)
+    Eventcutflow.set_cut("nan pos", lambda x: np.isnan(x.value).any())
+    Eventcutflow.set_cut("nan dir", lambda x: np.isnan(x).any())
 
     min_charge = "min charge >= {}".format(args.min_charge)
     Imagecutflow.set_cut(min_charge, lambda x: x >= args.min_charge)
@@ -94,13 +93,11 @@ if __name__ == '__main__':
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    reco_table = Table(names=("NTels", "EnMC", "xi1", "xi2", "DR1", "DR2"),
-                       dtype=('i', 'f', 'f', 'f', 'f', 'f'))
+    reco_table = Table(names=("NTels", "EnMC", "xi", "DR"),
+                       dtype=('i', 'f', 'f', 'f'))
     reco_table["EnMC"].unit = energy_unit
-    reco_table["xi1"].unit = angle_unit
-    reco_table["xi2"].unit = angle_unit
-    reco_table["DR1"].unit = dist_unit
-    reco_table["DR2"].unit = dist_unit
+    reco_table["xi"].unit = angle_unit
+    reco_table["DR"].unit = dist_unit
 
     tel_signal = []
     tel_signal_pe = []
@@ -125,7 +122,7 @@ if __name__ == '__main__':
 
             Eventcutflow.count("noCuts")
 
-            if not Eventcutflow.cut("min2Tels", len(event.dl0.tels_with_data)):
+            if Eventcutflow.cut("min2Tels", len(event.dl0.tels_with_data)):
                 continue
 
             print('Scanning input file... count = {}'.format(event.count))
@@ -170,14 +167,14 @@ if __name__ == '__main__':
                         continue
                 # end if args.photons
 
-                if not Imagecutflow.cut(min_charge, np.sum(pmt_signal)):
+                if not Imagecutflow.keep(min_charge, np.sum(pmt_signal)):
                     continue
 
                 try:
                     h = hillas_parameters(new_geom.pix_x,
                                           new_geom.pix_y,
                                           pmt_signal)
-                    if h.length > 0*u.m:
+                    if h.length > 0 and h.width > 0:
                         hillas_dict[tel_id] = h
                 except HillasParameterizationError as e:
                     print(e)
@@ -185,13 +182,11 @@ if __name__ == '__main__':
 
                 Imagecutflow.count("Hillas")
 
-            if len(hillas_dict) < 2:
+            if Eventcutflow.cut("min2Images", len(hillas_dict)):
                 continue
 
-            Eventcutflow.count("min2Images")
-
             fit.get_great_circles(hillas_dict, event.inst, *tel_orientation,
-                                  cam_geom[tel_id].cam_rotation)
+                                  cam_rotation=cam_geom[tel_id].cam_rotation)
 
             Eventcutflow.count("GreatCircles")
 
@@ -211,65 +206,35 @@ if __name__ == '__main__':
             shower_core = convert_astropy_array([shower.core_x, shower.core_y])
 
             try:
-                result1 = fit.fit_origin_crosses()[0]
-                result2 = fit.fit_origin_minimise(result1)
-
-                seed = (0, 0)*dist_unit
-                pos_fit1 = fit.fit_core_minimise(seed)
-                try:
-                    pos_fit2 = fit.fit_core_crosses()
-                except Exception as e:
-                    print([c.norm for c in fit.circles.values()])
-                    raise e
-
-            except TooFewTelescopesException as e:
-                print(e)
+                fit_position = fit.fit_core_crosses()
+            except Exception as e:
+                print([c.norm for c in fit.circles.values()])
+                raise e
+            if Eventcutflow.cut("nan pos", fit_position):
                 continue
 
-            xi1 = linalg.angle(result1, shower_org).to(angle_unit)
-            xi2 = linalg.angle(result2, shower_org).to(angle_unit)
-            diff1 = linalg.length(pos_fit1[:2]-shower_core)
-            diff2 = linalg.length(pos_fit2[:2]-shower_core)
-
-            if np.isnan([diff1.value, diff2.value]).any():
+            fit_origin = fit.fit_origin_crosses()[0]
+            if Eventcutflow.cut("nan dir", fit_origin):
                 continue
-            Eventcutflow.count("pos nan")
 
-            if np.isnan([xi1.value, xi2.value]).any():
-                continue
-            Eventcutflow.count("dir nan")
+            print("fit_position:", fit_position)
+            print("fit_origin:", fit_origin)
+
+            xi = linalg.angle(fit_origin, shower_org).to(angle_unit)
+            diff = linalg.length(fit_position[:2]-shower_core)
 
             reco_table.add_row([len(fit.circles), event.mc.energy.to(energy_unit),
-                                xi1.to(angle_unit), xi2.to(angle_unit),
-                                diff1.to(dist_unit), diff2.to(dist_unit)])
+                                xi.to(angle_unit), diff.to(dist_unit)])
 
             print()
-            print("xi1 = {:4.3f}".format(xi1))
-            print("xi2 = {:4.3f}".format(xi2))
-            print("x1-xi2 = {:.3e}".format(xi1-xi2))
+            print("xi = {:4.3f}".format(xi))
+            print("xi res (68-percentile) = {:4.3f} {}"
+                  .format(np.percentile(reco_table["xi"], 68), angle_unit))
 
-            NEvents = len(reco_table)
             print()
-            print("xi1 res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table["xi1"], 68), angle_unit))
-            print("xi2 res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table["xi2"], 68), angle_unit))
-            print("median difference = {:.3e} {} (d<0 -> xi1 is better)"
-                  .format(np.percentile(reco_table["xi1"]-reco_table["xi2"], 50),
-                          angle_unit))
-            print()
-
-            print("reco1 = {:4.3f}".format(diff1))
-            print("reco2 = {:4.3f}".format(diff2))
-            print("core1 res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table["DR1"], 68), dist_unit))
-            print("core2 res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table["DR2"], 68), dist_unit))
-            print("median difference = {:.3e} {} (d<0 -> DR1 is better)"
-                  .format(np.percentile(reco_table["DR1"]-reco_table["DR2"], 50),
-                          dist_unit))
-            print()
-            print("Events:", NEvents)
+            print("reco = {:4.3f}".format(diff))
+            print("core res (68-percentile) = {:4.3f} {}"
+                  .format(np.percentile(reco_table["DR"], 68), dist_unit))
             print()
 
             if signal_handler.stop: break
@@ -305,6 +270,8 @@ if __name__ == '__main__':
         from os.path import expandvars
         reco_table.write("rec_events_{}.hdf5".format(args.mode), format="hdf5",
             path=expandvars("$PWD/data/reconstructed_events/rec_events_{}.hdf5".format(args.mode)))
+
+    plt.tight_layout()
     if args.write:
         save_fig("{}/reco_alpha_vs_photoelecrons_{}".format(args.outdir, args.mode))
     plt.pause(.1)
@@ -319,6 +286,8 @@ if __name__ == '__main__':
                         xlabel="log10(signal size)",
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
+
+    plt.tight_layout()
     if args.write:
         save_fig("{}/reco_alpha_vs_signal_{}".format(args.outdir, args.mode))
     plt.pause(.1)
@@ -333,6 +302,7 @@ if __name__ == '__main__':
                         xlabel="log10(length/width)",
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
+    plt.tight_layout()
 
     lovw_edges = np.linspace(0, 1, 16)
     plot_hex_and_violin(1-hillas_width/hillas_length,
@@ -343,11 +313,12 @@ if __name__ == '__main__':
                         ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
     plt.suptitle(args.mode)
 
+    plt.tight_layout()
     if args.write:
         save_fig("{}/reco_alpha_vs_eccentricity_{}".format(args.outdir, args.mode))
     plt.pause(.1)
 
-    xis = reco_table["xi1"]
+    xis = reco_table["xi"]
 
     figure = plt.figure()
     plt.hist(xis, bins=np.linspace(0, .1, 50), log=True)
@@ -358,7 +329,7 @@ if __name__ == '__main__':
 
     # convert the xi-list into a dict with the number of used telescopes as keys
     xi_vs_tel = {}
-    for xi, ntel in reco_table["xi1", "NTels"]:
+    for xi, ntel in reco_table["xi", "NTels"]:
         if ntel not in xi_vs_tel:
             xi_vs_tel[ntel] = [xi]
         else:
@@ -370,7 +341,7 @@ if __name__ == '__main__':
 
     # convert the xi-list in to an energy-binned dict with the bin centre as keys
     xi_vs_energy = {}
-    for en, xi in reco_table["EnMC", "xi1"]:
+    for en, xi in reco_table["EnMC", "xi"]:
 
         # get the bin number this event belongs into
         sbin = np.digitize(np.log10(en), Energy_edges)-1
@@ -400,6 +371,8 @@ if __name__ == '__main__':
     plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\xi_2$ / deg)")
     plt.grid()
+
+    plt.tight_layout()
     if args.write:
         save_fig('{}/reco_xi_vs_E_NTel_{}'.format(args.outdir, args.mode))
 
@@ -407,7 +380,7 @@ if __name__ == '__main__':
 
     # convert the diffs-list into a dict with the number of used telescopes as keys
     diff_vs_tel = {}
-    for diff, ntel in reco_table["DR2", "NTels"]:
+    for diff, ntel in reco_table["DR", "NTels"]:
         if ntel not in diff_vs_tel:
             diff_vs_tel[ntel] = [diff]
         else:
@@ -417,7 +390,7 @@ if __name__ == '__main__':
     convert the diffs-list in to an energy-binned dict with
     the bin centre as keys '''
     diff_vs_energy = {}
-    for en, diff in reco_table["EnMC", "DR2"]:
+    for en, diff in reco_table["EnMC", "DR"]:
 
         # get the bin number this event belongs into
         sbin = np.digitize(np.log10(en), Energy_edges)-1
@@ -447,6 +420,8 @@ if __name__ == '__main__':
     plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\Delta R$ / m)")
     plt.grid()
+
+    plt.tight_layout()
     if args.write:
         save_fig('{}/reco_dist_vs_E_NTel_{}'.format(args.outdir, args.mode))
     plt.show()
