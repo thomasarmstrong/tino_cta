@@ -110,8 +110,7 @@ if __name__ == '__main__':
     allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
-    # allowed_tels = [a for a in allowed_tels]
-    # allowed_tels += [a for a in range(34, 40)]
+
     for filename in sorted(filenamelist)[:args.last]:
 
         print("filename = {}".format(filename))
@@ -141,8 +140,8 @@ if __name__ == '__main__':
                                         event.inst.pixel_pos[tel_id][0],
                                         event.inst.pixel_pos[tel_id][1],
                                         event.inst.optical_foclen[tel_id])
-                    tel_phi[tel_id] = 0.*u.deg
-                    tel_theta[tel_id] = 20.*u.deg
+                    tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
+                    tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
 
                 if args.photon:
                     pmt_signal = event.mc.tel[tel_id].photo_electron_image
@@ -189,7 +188,8 @@ if __name__ == '__main__':
 
             Eventcutflow.count("min2Images")
 
-            fit.get_great_circles(hillas_dict, event.inst, *tel_orientation)
+            fit.get_great_circles(hillas_dict, event.inst, *tel_orientation,
+                                  cam_geom[tel_id].cam_rotation)
 
             Eventcutflow.count("GreatCircles")
 
@@ -252,7 +252,7 @@ if __name__ == '__main__':
                   .format(np.percentile(reco_table["xi1"], 68), angle_unit))
             print("xi2 res (68-percentile) = {:4.3f} {}"
                   .format(np.percentile(reco_table["xi2"], 68), angle_unit))
-            print("median difference = {:.3e} {} (d<0 ⇒ xi1 is better)"
+            print("median difference = {:.3e} {} (d<0 -> xi1 is better)"
                   .format(np.percentile(reco_table["xi1"]-reco_table["xi2"], 50),
                           angle_unit))
             print()
@@ -263,7 +263,7 @@ if __name__ == '__main__':
                   .format(np.percentile(reco_table["DR1"], 68), dist_unit))
             print("core2 res (68-percentile) = {:4.3f} {}"
                   .format(np.percentile(reco_table["DR2"], 68), dist_unit))
-            print("median difference = {:.3e} {} (d<0 ⇒ DR1 is better)"
+            print("median difference = {:.3e} {} (d<0 -> DR1 is better)"
                   .format(np.percentile(reco_table["DR1"]-reco_table["DR2"], 50),
                           dist_unit))
             print()
