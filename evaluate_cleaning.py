@@ -611,6 +611,7 @@ if __name__ == '__main__':
                 extent=(-3, 0, 1.5, 5),
                 do_violin=False)
         plt.suptitle(mode)
+        plt.tight_layout()
         plt.pause(.1)
 
         '''
@@ -622,6 +623,7 @@ if __name__ == '__main__':
                             xlabel="log10(number of photo electrons)",
                             ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
         plt.suptitle(mode)
+        plt.tight_layout()
         if args.write:
             save_fig("plots/alpha_vs_photoelecrons_{}".format(mode))
         plt.pause(.1)
@@ -636,6 +638,7 @@ if __name__ == '__main__':
                             xlabel="log10(signal size)",
                             ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
         plt.suptitle(mode)
+        plt.tight_layout()
         if args.write:
             save_fig("plots/alpha_vs_signal_{}".format(mode))
         plt.pause(.1)
@@ -649,10 +652,10 @@ if __name__ == '__main__':
                             xlabel="log10(length/width)",
                             ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
         plt.suptitle(mode)
+        plt.tight_layout()
         if args.write:
             save_fig("plots/alpha_vs_lenOVwidth_{}".format(mode))
         plt.pause(.1)
-
 
     plt.show()
 

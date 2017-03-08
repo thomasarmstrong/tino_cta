@@ -188,8 +188,8 @@ class ImageCleaner:
         self.cutflow.count("wavelet cleaning")
 
         cleaned_img = self.island_cleaning(cleaned_img,
-                                            neighbours=self.hex_neighbours_1ring,
-                                            threshold=self.island_threshold)
+                                           neighbours=self.hex_neighbours_1ring,
+                                           threshold=self.island_threshold)
 
         unrot_geom, unrot_img = convert_geometry_back(
                                 rot_geom, cleaned_img, cam_geom.cam_id, foclen)
@@ -205,7 +205,7 @@ class ImageCleaner:
                               boundary_thresh=self.tail_thresh_low)
         if self.dilate:
             dilate(cam_geom, mask)
-        img[mask == False] = 0
+        img[~mask] = 0
 
         self.cutflow.count("tailcut cleaning")
 
