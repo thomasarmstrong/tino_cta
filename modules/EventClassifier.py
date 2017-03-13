@@ -22,8 +22,8 @@ def convert_astropy_array(arr, unit=None):
 
 
 def proba_weighting(x):
-    """ gives more weight to outliers -- i.e. close to 0 and 1 """
     return x
+    """ gives more weight to outliers -- i.e. close to 0 and 1 """
     return 10*x**3 - 15*x**4 + 6*x**5
 
 
@@ -67,10 +67,14 @@ class EventClassifier:
                                    nbins=self.nbins, ranges=self.ranges)
         return mydict
 
-    def equalise_nevents(self, NEvents):
+    def equalise_nevents(self, NEvents=None):
+        minEvents = min([len(self.Features[cl]) for cl in self.class_list])
+        if NEvents is None or NEvents > minEvents:
+            NEvents = minEvents
+
         for cl in self.Features.keys():
-            self.Features[cl] = self.Features[cl][:NEvents]
-            self.MCEnergy[cl] = self.MCEnergy[cl][:NEvents]
+            self.Features[cl] = self.Features[cl][:minEvents]
+            self.MCEnergy[cl] = self.MCEnergy[cl][:minEvents]
 
     def learn(self, clf=None):
         trainFeatures = []
@@ -199,6 +203,7 @@ class EventClassifier:
 
                     # if sufficient telescopes agree, assume it's a gamma
                     if gamma_ratio > agree_threshold:
+                    # if gammaness > .75:
                         PredictClass = "g"
                     else:
                         PredictClass = "p"
@@ -274,7 +279,7 @@ class EventClassifier:
 
             tax = ax[2, col]
             tax.hist(pred_table[cl]["right ratio"], bins=20, range=(0, 1))
-            tax.set_title("fraction of classifiers per event agreeing to {}"
+            tax.set_title("fraction agreeing to {}"
                           .format(particle))
             tax.set_xlabel("agree ratio")
             tax.set_ylabel("events")

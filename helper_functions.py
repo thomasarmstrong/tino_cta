@@ -48,16 +48,11 @@ def apply_mc_calibration_ASTRI(adcs, gains, peds, adc_tresh=3500):
     """
     apply basic calibration for ASTRI telescopes with two gains
     """
-    gains0 = gains[0]
-    gains1 = gains[1]
-
-    peds0 = peds[0]
-    peds1 = peds[1]
 
     calibrated = [(adc0-ped0)*gain0 if adc0 < adc_tresh
                   else (adc1-ped1)*gain1
                   for adc0, adc1, gain0, gain1, ped0, ped1
-                  in zip(adcs[0], adcs[1], gains0, gains1, peds0, peds1)]
+                  in zip(*adcs, *gains, *peds)]
 
     return np.array(calibrated)
 

@@ -57,14 +57,14 @@ if __name__ == '__main__':
     tel_orientation = (tel_phi, tel_theta)
 
     # counting events and where they might have gone missing
-    Eventcutflow = {"p": CutFlow("EventCutFlow"),
-                    "g": CutFlow("EventCutFlow")}
-    Imagecutflow = {"p": CutFlow("ImageCutFlow"),
-                    "g": CutFlow("ImageCutFlow")}
+    Eventcutflow = {"p": CutFlow("EventCutFlow Protons"),
+                    "g": CutFlow("EventCutFlow Gammas")}
+    Imagecutflow = {"p": CutFlow("ImageCutFlow Protons"),
+                    "g": CutFlow("ImageCutFlow Gammas")}
     for E in Eventcutflow.values():
         E.set_cut("noCuts", None)
-        E.set_cut("min2Tels trig", lambda x: x >= 2)
-        E.set_cut("min2Tels reco", lambda x: x >= 2)
+        E.set_cut("min2Tels trig", lambda x: x < 2)
+        E.set_cut("min2Tels reco", lambda x: x < 2)
 
     # class that wraps tail cuts and wavelet cleaning
     Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
@@ -108,8 +108,7 @@ if __name__ == '__main__':
                 mc_shower_core = np.array([mc_shower.core_x.value,
                                            mc_shower.core_y.value]) * u.m
 
-                if not Eventcutflow[cl].cut("min2Tels trig",
-                                            len(event.dl0.tels_with_data)):
+                if Eventcutflow[cl].cut("min2Tels trig", len(event.dl0.tels_with_data)):
                     continue
 
                 # telescope loop
@@ -120,7 +119,7 @@ if __name__ == '__main__':
                     Imagecutflow[cl].count("noCuts")
 
                     pmt_signal = apply_mc_calibration_ASTRI(
-                                    event.dl0.tel[tel_id].adc_sums,
+                                    event.r0.tel[tel_id].adc_sums,
                                     event.mc.tel[tel_id].dc_to_pe,
                                     event.mc.tel[tel_id].pedestal)
 
@@ -158,12 +157,7 @@ if __name__ == '__main__':
                                                     new_geom.pix_y,
                                                     pmt_signal)
 
-                        if moments.width < 1e-5 * u.m or \
-                           moments.length < 1e-5 * u.m:
-                            continue
-
-                        if np.isnan([moments.width.value,
-                                     moments.length.value]).any():
+                        if not (moments.width > 0 and moments.length > 0):
                             continue
 
                         if False:
@@ -200,7 +194,7 @@ if __name__ == '__main__':
 
                     Imagecutflow[cl].count("Hillas")
 
-                if not Eventcutflow[cl].cut("min2Tels reco", len(hillas_dict)):
+                if Eventcutflow[cl].cut("min2Tels reco", len(hillas_dict)):
                     continue
 
                 try:
@@ -208,12 +202,12 @@ if __name__ == '__main__':
                     fit.get_great_circles(hillas_dict,
                                           event.inst,
                                           tel_phi, tel_theta)
-                    pos_fit_cr = fit.fit_core_crosses()
+                    pos_fit_cr, err_est_pos = fit.fit_core_crosses()
                 except Exception as e:
                     print(e)
                     continue
 
-                if np.isnan(pos_fit_cr).any():
+                if np.isnan(pos_fit_cr.value).any():
                     continue
 
                 pos_fit = pos_fit_cr
@@ -221,7 +215,7 @@ if __name__ == '__main__':
                 Eventcutflow[cl].count("position fit")
 
                 # now prepare the features for the classifier
-                features = []
+                features_dict = {}
                 NTels = len(hillas_dict)
                 for tel_id in hillas_dict.keys():
                     Imagecutflow[cl].count("pre-features")
@@ -232,7 +226,7 @@ if __name__ == '__main__':
 
                     impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                     impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                    feature = [
+                    features = [
                                 impact_dist_rec/u.m,
                                 tot_signal,
                                 max_signal,
@@ -241,16 +235,31 @@ if __name__ == '__main__':
                                 moments.width/u.m,
                                 moments.length/u.m,
                                 moments.skewness,
-                                moments.kurtosis
+                                moments.kurtosis,
+                                err_est_pos/u.m
                               ]
-                    if np.isnan(feature).any():
+                    if np.isnan(features).any():
                         continue
 
                     Imagecutflow[cl].count("features nan")
 
-                    features.append(feature)
-                if len(features):
-                    classifier.Features[cl].append(features)
+                    features_dict[tel_id] = features
+                if len(features_dict):
+                    if False:
+                        # populating missing telescopes with zero-features
+                        for i in range(10):
+                            if i not in features_dict.keys():
+                                features_dict[i] = [0] * len(features)
+
+                        # flattening the features into a single list
+                        new_features = []
+                        for tel_id in range(10):
+                            new_features += features_dict[tel_id]
+                        classifier.Features[cl].append(new_features)
+                    else:
+                        classifier.Features[cl].append([a for a
+                                                        in features_dict.values()])
+
                     classifier.MCEnergy[cl].append(mc_shower.energy)
 
                 if signal_handler.stop:
@@ -267,15 +276,15 @@ if __name__ == '__main__':
                         "width",
                         "length",
                         "skewness",
-                        "kurtosis"
+                        "kurtosis",
+                        "err_est_pos"
                       ]
 
     print()
 
     # reduce the number of events so that
     # they are the same in gammas and protons
-    NEvents = min([len(classifier.Features[cl]) for cl in classifier.class_list])
-    classifier.equalise_nevents(NEvents)
+    classifier.equalise_nevents()
 
     # try neural network
     from sklearn.neural_network import MLPClassifier

@@ -79,12 +79,13 @@ if __name__ == '__main__':
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
 
-    Eventcutflow.set_cut("noCuts", None)
-    Eventcutflow.set_cut("min2Tels", lambda x: x < 2)
-    Eventcutflow.set_cut("min2Images", lambda x: x < 2)
-    Eventcutflow.set_cut("GreatCircles", None)
-    Eventcutflow.set_cut("nan pos", lambda x: np.isnan(x.value).any())
-    Eventcutflow.set_cut("nan dir", lambda x: np.isnan(x).any())
+    Eventcutflow.set_cuts({"noCuts": None,
+                           "min2Tels": lambda x: x < 2,
+                           "min2Images": lambda x: x < 2,
+                           "GreatCircles": None,
+                           "nan pos": lambda x: np.isnan(x.value).any(),
+                           "nan dir": lambda x: np.isnan(x.value).any()}
+                         )
 
     min_charge_string = "min charge >= {}".format(args.min_charge)
     Imagecutflow.set_cut(min_charge_string, lambda x: x < args.min_charge)
@@ -103,18 +104,18 @@ if __name__ == '__main__':
 
     # this class defines the reconstruction parameters to keep track of
     class RecoEvent(tb.IsDescription):
-        NTels = tb.Int16Col(dflt=1, pos = 0)
-        EnMC = tb.Float32Col(dflt=1, pos=1)
-        xi = tb.Float32Col(dflt=1, pos=2)
-        DeltaR = tb.Float32Col(dflt=1, pos=3)
-        ErrEstPos = tb.Float32Col(dflt=1, pos=4)
-    if args.store:
-        reco_outfile = tb.open_file(
-            "data/reconstructed_events/fit_events_hillas.h5", mode="w")
-    else:
-        reco_outfile = tb.open_file(
-            "/tmp/fit_events_hillas.h5", mode="w")
-    group = reco_outfile.create_group("/", "events")
+        NTels_trigg = tb.Int16Col(dflt=1, pos=0)
+        NTels_clean = tb.Int16Col(dflt=1, pos=1)
+        EnMC = tb.Float32Col(dflt=1, pos=2)
+        xi = tb.Float32Col(dflt=1, pos=3)
+        DeltaR = tb.Float32Col(dflt=1, pos=4)
+        ErrEstPos = tb.Float32Col(dflt=1, pos=5)
+
+    reco_outfile = tb.open_file(
+            "data/reconstructed_events/rec_events_{}.h5".format(args.mode), mode="w",
+            # if we don't want to write the event list to disk, need to add more arguments
+            **({} if args.store else {"driver": "H5FD_CORE",
+                                      "driver_core_backing_store": False}))
     reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
     reco_event = reco_table.row
 
@@ -123,7 +124,7 @@ if __name__ == '__main__':
     allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
-    for filename in sorted(filenamelist)[:args.last]:
+    for filename in sorted(filenamelist)[:5][:args.last]:
 
         print("filename = {}".format(filename))
 
@@ -223,7 +224,8 @@ if __name__ == '__main__':
             diff = linalg.length(fit_position[:2]-shower_core)
 
             # store the reconstruction data in the PyTable
-            reco_event["NTels"] = len(fit.circles)
+            reco_event["NTels_trigg"] = len(event.dl0.tels_with_data)
+            reco_event["NTels_clean"] = len(fit.circles)
             reco_event["EnMC"] = event.mc.energy / energy_unit
             reco_event["xi"] = xi / angle_unit
             reco_event["DeltaR"] = diff / dist_unit
@@ -274,10 +276,9 @@ if __name__ == '__main__':
     if not args.plot:
         exit(0)
 
-    reco_table.cols.xi
-
     figure = plt.figure()
-    plt.hist(reco_table.cols.xi, bins=np.linspace(0, .5, 50), log=True)
+    xi_edges = np.linspace(0, 5, 20)
+    plt.hist(reco_table.cols.xi, bins=xi_edges, log=True)
     plt.xlabel(r"$\xi$ / deg")
     if args.write:
         save_fig('{}/reco_xi_{}'.format(args.outdir, args.mode), draw_rectangles=True)
@@ -285,7 +286,7 @@ if __name__ == '__main__':
 
     # convert the xi-list into a dict with the number of used telescopes as keys
     xi_vs_tel = {}
-    for xi, ntel in zip(reco_table.cols.xi, reco_table.cols.NTels):
+    for xi, ntel in zip(reco_table.cols.xi, reco_table.cols.NTels_clean):
         if ntel not in xi_vs_tel:
             xi_vs_tel[ntel] = [xi]
         else:
@@ -294,6 +295,7 @@ if __name__ == '__main__':
     print(args.mode)
     for ntel, xis in xi_vs_tel.items():
         print("NTel: {} -- median xi: {}".format(ntel, np.median(xis)))
+        print("histogram:", np.histogram(xis, bins=xi_edges))
 
     # create a list of energy bin-edges and -centres for violin plots
     Energy_edges = np.linspace(2, 8, 13)
@@ -320,7 +322,8 @@ if __name__ == '__main__':
                    [a for a in xi_vs_tel.keys()],
                    points=60, widths=.75, showextrema=False, showmedians=True)
     plt.xlabel("Number of Telescopes")
-    plt.ylabel(r"log($\xi_2$ / deg)")
+    plt.ylabel(r"log($\xi$ / deg)")
+    plt.ylim(-3, 2)
     plt.grid()
 
     plt.subplot(212)
@@ -329,7 +332,8 @@ if __name__ == '__main__':
                    points=60, widths=(Energy_edges[1]-Energy_edges[0])/1.5,
                    showextrema=False, showmedians=True)
     plt.xlabel(r"log(Energy / GeV)")
-    plt.ylabel(r"log($\xi_2$ / deg)")
+    plt.ylabel(r"log($\xi$ / deg)")
+    plt.ylim(-3, 2)
     plt.grid()
 
     plt.tight_layout()

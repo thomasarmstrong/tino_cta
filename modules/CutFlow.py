@@ -53,18 +53,35 @@ class CutFlow():
 
         Parameters
         ----------
-        function : function
-            a function that is your selection criterion
-            should return True if event shall pass and False if event
-            shall be rejected
         cut : string
             name of the cut/stage where you want to count
+        function : function
+            a function that is your selection criterion
 
         Notes
         -----
-        Will be an alias to add_cut
+        add_cut and set_cut are aliases
         '''
         self.cuts[cut] = [function, 0]
+
+    def set_cuts(self, cut_dict):
+        '''
+        sets functions that select on whatever you want to count
+        sets the counter corresponding to the selection criterion to 0
+        that means: it overwrites whatever you counted before under this
+        name
+
+        Parameters
+        ----------
+        cut_dict : {string: functor} dictionary
+            dictionary of {name: function} of cuts to add as your selection criteria
+
+        Notes
+        -----
+        add_cuts and set_cuts are aliases
+        '''
+        for cut, function in cut_dict.items():
+            self.cuts[cut] = [function, 0] 
 
     def _check_cut(self, cut):
         """
@@ -84,11 +101,11 @@ class CutFlow():
 
         if cut not in self.cuts:
             raise UndefinedCutException(
-                "unknown cut {} -- only know: {}"
+                "unknown cut '{}' -- only know: {}"
                 .format(cut, [a for a in self.cuts.keys()]))
         elif self.cuts[cut][0] is None:
             raise PureCountingCutException(
-                "{} has no function associated".format(cut))
+                "'{}' has no function associated".format(cut))
 
     def cut(self, cut, *args, **kwargs):
         '''
@@ -169,7 +186,7 @@ class CutFlow():
 
         Returns
         -------
-        t : astropy.Table
+        t : `astropy.table.Table`
             the table containing the cut names, counted events and
             efficiencies -- sorted in the order the cuts were added if not
             specified otherwise
@@ -202,7 +219,7 @@ class CutFlow():
 
         Returns
         -------
-        t : astropy.Table
+        t : `astropy.table.Table`
             the table containing the cut names, counted events and
             efficiencies -- sorted in the order the cuts were added if not
             specified otherwise
@@ -212,7 +229,7 @@ class CutFlow():
             base_value = max([a[1] for a in self.cuts.values()])
         elif base_cut not in self.cuts:
             raise UndefinedCutException(
-                "unknown cut {} -- only know: {}"
+                "unknown cut '{}' -- only know: {}"
                 .format(base_cut, [a for a in self.cuts.keys()]))
         else:
             base_value = self.cuts[base_cut][1]
@@ -231,4 +248,5 @@ class CutFlow():
         return t
 
     add_cut = set_cut
+    add_cuts = set_cuts
     __getitem__ = count

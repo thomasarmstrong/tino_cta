@@ -2,6 +2,7 @@ import numpy as np
 from numpy import log, exp, pi
 
 from scipy.optimize import minimize
+from scipy.special import loggamma
 
 from itertools import count
 
@@ -44,7 +45,7 @@ def log_gamma(end, start=1):
     '''
 
     return np.sign(end-start) * \
-        sum(log(i) for i in np.arange(min(start, end), max(start, end)))
+        np.sum(np.log(np.arange(min(start, end), max(start, end))))
 
 
 def P_e(k, N, e):
@@ -87,9 +88,8 @@ def P_e(k, N, e):
         return 0
 
     # log-ed version
-    # res2 = log_gamma(N+2) + k*log(e) + (N-k)*log(1-e) - log_gamma(N-k+1) -
-    #        log_gamma(k+1)
-    # return exp(res3)
+    #res2 = loggamma(N+2) + k*log(e) + (N-k)*np.log(1-e) - loggamma(N-k+1) - loggamma(k+1)
+    #return exp(res2)
 
     # optimised version (sum_{0..N} - sum_{0..k} = sum_{k..N})
     res3 = log_gamma(N+2, k+1) + k*log(e) + (N-k)*log(1-e) - log_gamma(N-k+1)
@@ -278,17 +278,23 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         pars = [2, 5]
     else:
-        pars = sys.argv[:2]
+        pars = [int(sys.argv[1]), int(sys.argv[2])]
 
-    print("get_efficiency_uncertainties_minimize({}, {}):".format(pars[0], pars[1]))
-    print(get_efficiency_uncertainties_minimize(pars[0], pars[1]))
+    from astropy.stats.funcs import binom_conf_interval as uncert
+
+    print("get_efficiency_uncertainties_minimize({}, {}):".format(*pars))
+    print(get_efficiency_uncertainties_minimize(*pars))
+
+    print()
+    print("astropy.stats.funcs.binom_conf_interval:")
+    print(uncert(*pars))
 
     import numpy as np
     import matplotlib.pyplot as plt
 
     print()
     print("creating test distributions for N=5 and k = {0,...,5}")
-    dt = 0.001
+    dt = 0.005
     t = np.arange(0.0, 1.+dt, dt)
     y0 = [P_e(0, 5, x) for x in t]
     y1 = [P_e(1, 5, x) for x in t]
@@ -306,6 +312,14 @@ if __name__ == "__main__":
     print("k=5: ", sum(y5) * dt)
 
     plt.figure(1)
-    plt.plot(y0, 'bo', y1, 'ro', y2, 'yo', y3, 'go', y4, "bo", y5, "ro")
+    plt.plot(t, y0, 'bo', t, y1, 'ro', t, y2, 'yo', t, y3, 'go', t, y4, "bo", t, y5, "ro")
     plt.show()
 
+
+from astropy.stats.funcs import binom_conf_interval as uncert
+def test_astropy(pars=(500, 1000)):
+    uncert(*pars)
+
+
+def test_own(pars=(500, 1000)):
+    get_efficiency_uncertainties_minimize(*pars)
