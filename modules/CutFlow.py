@@ -25,7 +25,7 @@ class CutFlow():
         self.cuts = OrderedDict()
         self.name = name
 
-    def count(self, cut):
+    def count(self, cut, weight=1):
         '''
         counts an event/image at a given stage of the analysis
 
@@ -33,6 +33,8 @@ class CutFlow():
         ----------
         cut : string
             name of the cut/stage where you want to count
+        weight : int or float, optional (default: 1)
+            weight of the current element
 
         Notes
         -----
@@ -40,9 +42,9 @@ class CutFlow():
         Will be an alias to __getitem__
         '''
         if cut not in self.cuts:
-            self.cuts[cut] = [None, 1]
+            self.cuts[cut] = [None, weight]
         else:
-            self.cuts[cut][1] += 1
+            self.cuts[cut][1] += weight
 
     def set_cut(self, cut, function):
         '''
@@ -64,7 +66,7 @@ class CutFlow():
         '''
         self.cuts[cut] = [function, 0]
 
-    def set_cuts(self, cut_dict):
+    def set_cuts(self, cut_dict, clear=False):
         '''
         sets functions that select on whatever you want to count
         sets the counter corresponding to the selection criterion to 0
@@ -75,13 +77,19 @@ class CutFlow():
         ----------
         cut_dict : {string: functor} dictionary
             dictionary of {name: function} of cuts to add as your selection criteria
+        clear : bool, optional (default: False)
+            if set to `True`, clear the cut-dictionary before applying the new cuts
 
         Notes
         -----
         add_cuts and set_cuts are aliases
         '''
+
+        if clear:
+            self.cuts = OrderedDict()
+
         for cut, function in cut_dict.items():
-            self.cuts[cut] = [function, 0] 
+            self.cuts[cut] = [function, 0]
 
     def _check_cut(self, cut):
         """
@@ -107,7 +115,7 @@ class CutFlow():
             raise PureCountingCutException(
                 "'{}' has no function associated".format(cut))
 
-    def cut(self, cut, *args, **kwargs):
+    def cut(self, cut, *args, weight=1, **kwargs):
         '''
         selects the function associated with `cut` and hands it all
         additional arguments provided. if the function returns `False`,
@@ -119,6 +127,8 @@ class CutFlow():
             name of the selection criterion
         args, kwargs: additional arguments
             anything you want to hand to the associated function
+        weight : int or float, optional (default: 1)
+            weight of the current element
 
         Returns
         -------
@@ -137,10 +147,10 @@ class CutFlow():
         if self.cuts[cut][0](*args, **kwargs):
             return True
         else:
-            self.cuts[cut][1] += 1
+            self.cuts[cut][1] += weight
             return False
 
-    def keep(self, cut, *args, **kwargs):
+    def keep(self, cut, *args, weight=1, **kwargs):
         '''
         selects the function associated with `cut` and hands it all
         additional arguments provided. if the function returns True,
@@ -152,6 +162,8 @@ class CutFlow():
             name of the selection criterion
         args, kwargs: additional arguments
             anything you want to hand to the associated function
+        weight : int or float, optional (default: 1)
+            weight of the current element
 
         Returns
         -------
@@ -168,7 +180,7 @@ class CutFlow():
         self._check_cut(cut)
 
         if self.cuts[cut][0](*args, **kwargs):
-            self.cuts[cut][1] += 1
+            self.cuts[cut][1] += weight
             return True
         else:
             return False

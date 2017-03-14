@@ -7,11 +7,12 @@ from itertools import chain
 
 from helper_functions import *
 
+# imports the PS module
 from ctapipe.analysis.Sensitivity import *
+# imports a few spectral flux functions
 from ctapipe.analysis.Sensitivity import (crab_source_rate, Eminus2, CR_background_rate,
                                           )
 
-edges_energy = np.linspace(0, 6, 28)
 # FIXME need to know:
 # • N simulated events
 # • simulated energy spectrum
@@ -20,7 +21,7 @@ edges_energy = np.linspace(0, 6, 28)
 
 if __name__ == "__main__":
 
-    args = make_argparser().parse_args()
+    edges_energy = np.linspace(0, 6, 28)
 
     gammas = Table.read("/local/home/tmichael/Data/cta/Tarek/"
                         "CTA_MARS_gamma_3_3HB1-ND.fits")
@@ -33,11 +34,11 @@ if __name__ == "__main__":
     print("E min, max proton:", np.min(proton['MC_ENERGY']), np.max(proton['MC_ENERGY']))
     print("E min, max electr:", np.min(electr['MC_ENERGY']), np.max(electr['MC_ENERGY']))
 
+    gen_spectrum = lambda x: (x/u.GeV) ** (-2) / (u.GeV * u.s * u.m**2)
+
     NGammas_simulated = 5e6
     Nproton_simulated = 5e6
     Nelectr_simulated = 5e6
-
-    gen_spectrum = lambda x: (x/u.GeV) ** (-2) / (u.GeV * u.s * u.m**2)
 
     gen_area_g = (5*u.km)**2 * np.pi
     gen_area_p = (5*u.km)**2 * np.pi

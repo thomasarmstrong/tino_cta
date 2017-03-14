@@ -39,6 +39,8 @@ from modules.CutFlow import CutFlow
 
 from helper_functions import *
 
+from collections import OrderedDict
+
 
 # your favourite units here
 angle_unit  = u.deg
@@ -79,12 +81,13 @@ if __name__ == '__main__':
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
 
-    Eventcutflow.set_cuts({"noCuts": None,
-                           "min2Tels": lambda x: x < 2,
-                           "min2Images": lambda x: x < 2,
-                           "GreatCircles": None,
-                           "nan pos": lambda x: np.isnan(x.value).any(),
-                           "nan dir": lambda x: np.isnan(x.value).any()}
+    Eventcutflow.set_cuts(OrderedDict([
+                            ("noCuts", None),
+                            ("min2Tels", lambda x: x < 2),
+                            ("min2Images", lambda x: x < 2),
+                            ("GreatCircles", None),
+                            ("nan pos", lambda x: np.isnan(x.value).any()),
+                            ("nan dir", lambda x: np.isnan(x.value).any())])
                          )
 
     min_charge_string = "min charge >= {}".format(args.min_charge)
