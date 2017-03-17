@@ -121,8 +121,6 @@ class ImageCleaner:
             self.wavelet_transform = WaveletTransform()
             self.wavelet_options = wavelet_options
             self.island_threshold = 2
-
-            self.wavelet_options = "-K -C1 -m3 -s3 -n4"
         elif mode == "tail":
             self.clean = self.clean_tail
             self.tail_thresh_up = tail_thresh_up

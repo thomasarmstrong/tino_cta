@@ -21,10 +21,18 @@ def convert_astropy_array(arr, unit=None):
         return np.array([a.to(unit).value for a in arr])*unit
 
 
-def proba_weighting(x):
-    return x
+def proba_drifting(x):
     """ gives more weight to outliers -- i.e. close to 0 and 1 """
     return 10*x**3 - 15*x**4 + 6*x**5
+
+
+def proba_weighting(xs, weights):
+    s = np.sum(weights)
+
+    for x, w in zip(xs, weights):
+        print(x, x/w, s)
+    print()
+    return [x * (w / s) for x, w in zip(xs, weights)]
 
 
 class EventClassifier:
@@ -109,17 +117,19 @@ class EventClassifier:
         predict_tels = self.clf.predict(ev)
 
         # probability for each class for every telescope
-        predict_proba = self.clf.predict_proba(ev)
-
         # index 0 is the probability for gamma
         proba_index = 0
-        # gammaness as the weighted mean probability of each telescope for a gamma event
-        gammaness = np.mean(proba_weighting(predict_proba), axis=0)[proba_index]
+        predict_proba_g = self.clf.predict_proba(ev)[..., proba_index]
+
+
+        # gammaness as the (weighted) mean probability of each telescope for a gamma event
+        gammaness_o = np.mean(predict_proba_g)
+        gammaness_d = np.mean(proba_drifting(predict_proba_g))
 
         # check if prediction returned gamma (what we are selecting on)
         gamma_ratio = (len(predict_tels[predict_tels == 'g']) / len(ev))
 
-        return gammaness, gamma_ratio
+        return gamma_ratio, gammaness_o, gammaness_d
 
     def show_importances(self, feature_labels=None, clf=None):
         import matplotlib.pyplot as plt
@@ -138,11 +148,13 @@ class EventClassifier:
                 color='r', align='center')
 
     def self_check(self, min_tel=3, agree_threshold=.75, clf=None,
-                   split_size=None, verbose=True):
+                   split_size=None, pytable=None, verbose=True):
         import matplotlib.pyplot as plt
 
-        pred_table = {'g': Table(names=("NTels", "Energy", "gammaness", "right ratio")),
-                      'p': Table(names=("NTels", "Energy", "gammaness", "right ratio"))}
+        pred_table = {'g': Table(names=("NTels", "Energy", "gammaness_o", "gammaness_d",
+                                         "right ratio")),
+                      'p': Table(names=("NTels", "Energy", "gammaness_o", "gammaness_d",
+                                        "right ratio"))}
         self.prediction_results = pred_table
 
         start = 0
@@ -196,14 +208,14 @@ class EventClassifier:
 
                     log_en = np.log10(en/u.GeV)
 
-                    gammaness, gamma_ratio = self.predict(ev)
+                    gamma_ratio, gammaness_o, gammaness_d,= self.predict(ev)
                     right_ratio = gamma_ratio if cl == 'g' else (1-gamma_ratio)
 
-                    pred_table[cl].add_row([len(ev), en, gammaness, right_ratio])
+                    pred_table[cl].add_row([len(ev), en, gammaness_o, gammaness_d,
+                                            right_ratio])
 
                     # if sufficient telescopes agree, assume it's a gamma
                     if gamma_ratio > agree_threshold:
-                    # if gammaness > .75:
                         PredictClass = "g"
                     else:
                         PredictClass = "p"
@@ -243,7 +255,7 @@ class EventClassifier:
 
         # plotting
         plt.style.use('seaborn-talk')
-        fig, ax = plt.subplots(3, 2)
+        fig, ax = plt.subplots(4, 2)
 
         try:
             from modules.EfficiencyUncertainties import get_efficiency_uncertainties
@@ -264,7 +276,7 @@ class EventClassifier:
                 y_eff_lerrors = errors[:, 1]
                 y_eff_uerrors = errors[:, 2]
             except ImportError:
-                y_eff         = [0]*len(self.total[cl].hist)
+                y_eff         = self.wrong[cl].hist/ self.total[cl].hist
                 y_eff_lerrors = [0]*len(self.total[cl].hist)
                 y_eff_uerrors = [0]*len(self.total[cl].hist)
 
@@ -277,15 +289,26 @@ class EventClassifier:
             tax.set_xlabel("log(E/GeV)")
             tax.set_ylabel("incorrect / all")
 
-            tax = ax[2, col]
+            tax = ax[1, col]
             tax.hist(pred_table[cl]["right ratio"], bins=20, range=(0, 1))
             tax.set_title("fraction agreeing to {}"
                           .format(particle))
             tax.set_xlabel("agree ratio")
             tax.set_ylabel("events")
 
-            tax = ax[1, col]
-            histo = np.histogram2d(pred_table[cl]["NTels"], pred_table[cl]["gammaness"],
+            tax = ax[2, col]
+            histo = np.histogram2d(pred_table[cl]["NTels"], pred_table[cl]["gammaness_d"],
+                                   bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+            histo_normed = histo / histo.max(axis=0)
+            im = tax.imshow(histo_normed, interpolation='none', origin='lower',
+                            aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+            cb = fig.colorbar(im, ax=tax)
+            tax.set_title("arbitrary gammaness per event")
+            tax.set_xlabel("NTels")
+            tax.set_ylabel("drifted gammaness")
+
+            tax = ax[3, col]
+            histo = np.histogram2d(pred_table[cl]["NTels"], pred_table[cl]["gammaness_o"],
                                    bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
             histo_normed = histo / histo.max(axis=0)
             im = tax.imshow(histo_normed, interpolation='none', origin='lower',

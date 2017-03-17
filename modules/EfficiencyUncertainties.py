@@ -164,8 +164,7 @@ def test_func(arg, k, N, conf=.68, de=.001, func=P_e):
         return b
 
 
-def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e,
-                                          soft_limit=1000):
+def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e):
     """
     calculates the mean and confidence intervall of the selection efficiency from `k`
     selected out of `N` total events by minimising the length of the confidence intervall
@@ -181,9 +180,6 @@ def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e,
         stepsize in numerical integration
     func : callable, optional (default: `P_e`)
         function to be integrated
-    soft_limit : integer, optional (default: 1000)
-        if `N > soft_limit` a simplified and faster approach for the error is used;
-        coverage is probably totally wrong though
 
     Returns
     -------
@@ -216,14 +212,8 @@ def get_efficiency_uncertainties_minimize(k, N, conf=.68, de=0.0005, func=P_e,
             results[i] = [0, 0, 0, 0, 0]
             continue
 
-        elif _N > soft_limit:
-            test_func.min_a = (_k-np.sqrt(_k)/2)/(_N+np.sqrt(_N)/2)
-            test_func.min_b = (_k+np.sqrt(_k)/2)/(_N-np.sqrt(_N)/2)
-            print("soft limit")
-
-        else:
-            minimize(test_func, [0], args=(_k, _N, conf, de, func), bounds=[(0, 1)],
-                     method='L-BFGS-B', options={'disp': False, 'eps': 1e-3})
+        minimize(test_func, [0], args=(_k, _N, conf, de, func), bounds=[(0, 1)],
+                    method='L-BFGS-B', options={'disp': False, 'eps': 1e-3})
 
         mean = _k/_N
 

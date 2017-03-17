@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from helper_functions import *
 
 from sys import exit, path
@@ -32,18 +34,13 @@ if __name__ == '__main__':
     parser = make_argparser()
     parser.add_argument('-o', '--outdir', type=str,
                         default='data/classify_pickle')
-    parser.add_argument('--figdir', type=str,
-                        default='plots')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
 
-    filenamelist_gamma  = glob("{}/gamma/run{}.*gz"
-                               .format(args.indir, args.runnr))
-    filenamelist_proton = glob("{}/proton/run{}.*gz"
-                               .format(args.indir, args.runnr))
+    filenamelist_gamma  = glob("{}/gamma/run*gz".format(args.indir))
+    filenamelist_proton = glob("{}/proton/run*gz".format(args.indir))
 
-    print("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
     if len(filenamelist_gamma) == 0:
         print("no gammas found")
         exit()
@@ -68,7 +65,7 @@ if __name__ == '__main__':
 
     # class that wraps tail cuts and wavelet cleaning
     Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
-                           skip_edge_events=False)
+                           skip_edge_events=False)  # args.skip_edge_events)
 
     # simple hillas-based shower reco
     fit = FitGammaHillas()
@@ -82,8 +79,8 @@ if __name__ == '__main__':
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    for filenamelist_class in [sorted(filenamelist_gamma)[:1],
-                               sorted(filenamelist_proton)[:5]]:
+    for filenamelist_class in [sorted(filenamelist_gamma)[:14],
+                               sorted(filenamelist_proton)[:100]]:
         signal_handler.stop = False
 
         # get type of event for the classifier
@@ -257,8 +254,9 @@ if __name__ == '__main__':
                             new_features += features_dict[tel_id]
                         classifier.Features[cl].append(new_features)
                     else:
-                        classifier.Features[cl].append([a for a
-                                                        in features_dict.values()])
+                        classifier.Features[cl].append(
+                            [b+[a] for a, b in features_dict.items()])
+                            #[a for a in features_dict.values()])
 
                     classifier.MCEnergy[cl].append(mc_shower.energy)
 
@@ -277,7 +275,8 @@ if __name__ == '__main__':
                         "length",
                         "skewness",
                         "kurtosis",
-                        "err_est_pos"
+                        "err_est_pos",
+                        "tel_id",
                       ]
 
     print()
@@ -302,7 +301,7 @@ if __name__ == '__main__':
             classifier.show_importances(feature_labels)
 
             if args.write:
-                save_fig('{}/classification_importance_{}_{}'.format(args.figdir,
+                save_fig('{}/classification_importance_{}_{}'.format(args.plots_dir,
                          args.mode, "".join(args.raw.split())))
             if args.plot:
                 plt.pause(.5)
@@ -322,17 +321,18 @@ if __name__ == '__main__':
     if args.check:
         # do cross validation: split the list of events in chunks, train on all chunks
         # but one and predict that chunk and assert prediction. repeat for all chunks
-        clf = classifier.self_check(min_tel=3, split_size=10, clf=clf)
+        clf = classifier.self_check(min_tel=4, split_size=50, clf=clf)
         # get the name of the classifier class as a string
         clf_string = get_class_string(clf)
 
-        plt.tight_layout()
+        plt.subplots_adjust(left=0.1, right=0.98, top=0.92, bottom=0.08,
+                            hspace=0.85, wspace=0.28)
 
         if args.write:
             # save performance plots of classification
-            save_fig('{}/classification_performance_{}_{}_{}'.format(args.figdir,
+            save_fig('{}/classification_performance_{}_{}_{}'.format(args.plots_dir,
                      args.mode, "".join(args.raw.split()), clf_string))
-            # save the classification result for each event
+            # save the classification result for each channel
             for cl in ['g', 'p']:
                 classifier.prediction_results[cl].write(
                     'data/classification_results_{}_{}_{}_{}.fits'
@@ -341,7 +341,9 @@ if __name__ == '__main__':
 
         # plot the performance of the classification on screen
         if args.plot:
-            plt.suptitle(" ** ".join([args.mode, args.raw, clf_string]))
+            plt.suptitle(" ** ".join([args.mode, args.raw, clf_string,
+                                      "NEvents: {}".format(len(classifier.Features["g"]))
+                                      ]))
             plt.pause(.1)
 
     # print the CutFlow tables
@@ -359,10 +361,10 @@ if __name__ == '__main__':
 
         # also write them as latex to disk
         if args.write:
-            e_cf.write("data/event_table_{}_{}_{}_{}.tex".format(cl,
-                       args.mode, "".join(args.raw.split()), clf_string))
-            i_cf.write("data/image_table_{}_{}_{}_{}.tex".format(cl,
-                       args.mode, "".join(args.raw.split()), clf_string))
+            e_cf.write("data/event_cutflow_table_{}_{}_{}_{}.tex".format(cl,
+                       args.mode, "".join(args.raw.split()), clf_string), overwrite=True)
+            i_cf.write("data/image_cutflow_table_{}_{}_{}_{}.tex".format(cl,
+                       args.mode, "".join(args.raw.split()), clf_string), overwrite=True)
     if args.plot:
         plt.show()
 

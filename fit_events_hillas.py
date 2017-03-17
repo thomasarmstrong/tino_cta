@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 from sys import exit, path
 from os.path import expandvars
 import math
@@ -42,16 +45,17 @@ from helper_functions import *
 from collections import OrderedDict
 
 
-# your favourite units here
-angle_unit  = u.deg
-energy_unit = u.GeV
-dist_unit   = u.m
+def main():
 
+    # your favourite units here
+    angle_unit  = u.deg
+    energy_unit = u.GeV
+    dist_unit   = u.m
 
-if __name__ == '__main__':
 
     parser = make_argparser()
-    parser.add_argument('-o', '--outdir',   type=str, default="plots")
+    parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
+    parser.add_argument('-o', '--out_file', type=str, default="rec_events")
     parser.add_argument('--photon',  action='store_true',
                         help="use the mc photo-electrons container "
                         "instead of the PMT signal")
@@ -60,10 +64,12 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.proton:
-        filenamelist = glob("{}/proton/*run{}*gz".format(args.indir, args.runnr))
+    if args.infile_list:
+        filenamelist = ["{}/{}".format(args.indir, f) for f in args.infile_list]
+    elif args.proton:
+        filenamelist = glob("{}/proton/*gz".format(args.indir))
     else:
-        filenamelist = glob("{}/gamma/*run{}*gz".format(args.indir, args.runnr))
+        filenamelist = glob("{}/gamma/*gz".format(args.indir))
 
     # filenamelist = ["/local/home/tmichael/Data/cta/Prod3/gamma_20deg_0deg_"
     # "run10251___cta-prod3-merged_desert-2150m-Paranal-subarray-3_cone10.simtel"]
@@ -115,7 +121,7 @@ if __name__ == '__main__':
         ErrEstPos = tb.Float32Col(dflt=1, pos=5)
 
     reco_outfile = tb.open_file(
-            "data/reconstructed_events/rec_events_{}.h5".format(args.mode), mode="w",
+            "{}/{}_{}.h5".format(args.events_dir,args.out_file, args.mode), mode="w",
             # if we don't want to write the event list to disk, need to add more arguments
             **({} if args.store else {"driver": "H5FD_CORE",
                                       "driver_core_backing_store": False}))
@@ -284,7 +290,7 @@ if __name__ == '__main__':
     plt.hist(reco_table.cols.xi, bins=xi_edges, log=True)
     plt.xlabel(r"$\xi$ / deg")
     if args.write:
-        save_fig('{}/reco_xi_{}'.format(args.outdir, args.mode), draw_rectangles=True)
+        save_fig('{}/reco_xi_{}'.format(args.plots_dir, args.mode), draw_rectangles=True)
     plt.pause(.1)
 
     # convert the xi-list into a dict with the number of used telescopes as keys
@@ -390,3 +396,7 @@ if __name__ == '__main__':
     if args.write:
         save_fig('{}/reco_dist_vs_E_NTel_{}'.format(args.outdir, args.mode))
     plt.show()
+
+
+if __name__ == '__main__':
+    main()

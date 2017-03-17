@@ -86,7 +86,10 @@ def make_argparser():
                         help="minimum charge per telescope after cleaning")
     parser.add_argument('-i', '--indir',   type=str,
                         default=expandvars("$HOME/Data/cta/ASTRI9/"))
-    parser.add_argument('-r', '--runnr',   type=str, default="*")
+    parser.add_argument('-f', '--infile_list',   type=str, default="", nargs='*',
+                        help="give a specific list of files to run on")
+    parser.add_argument('--plots_dir', type=str, default="plots",
+                        help="path to store plots")
     parser.add_argument('--tail', dest="mode", action='store_const',
                         const="tail", default="wave",
                         help="if set, use tail cleaning, otherwise wavelets")
