@@ -21,71 +21,106 @@ from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
 
 from helper_functions import *
 from modules.CutFlow import CutFlow
+from modules.EventClassifier import *
 from modules.ImageCleaning import ImageCleaner, \
                                   EdgeEventException, UnknownModeException
 
 
-from datapipe.classifiers.EventClassifier \
-        import EventClassifier
 
 from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
 
 
+# PyTables
+import tables as tb
+
+
+def main():
 
 
 
+    # your favourite units here
+    angle_unit  = u.deg
+    energy_unit = u.GeV
+    dist_unit   = u.m
 
 
-
-
-if __name__ == '__main__':
 
     parser = make_argparser()
+    parser.add_argument('--classifier_dir', type=str,
+                        default='data/classify_pickle')
+    parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
+    parser.add_argument('-o', '--out_file', type=str, default="classified_events")
+    parser.add_argument('--proton',  action='store_true',
+                        help="do protons instead of gammas")
     args = parser.parse_args()
 
-    filenamelist_gamma  = glob("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
-    filenamelist_proton = glob("{}/proton/run{}.*gz".format(args.indir, args.runnr))
+    if args.infile_list:
+        filenamelist = ["{}/{}".format(args.indir, f) for f in args.infile_list]
+    elif args.proton:
+        filenamelist = glob("{}/proton/*gz".format(args.indir))
+    else:
+        filenamelist = glob("{}/gamma/*gz".format(args.indir))
 
-    print("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
-    if len(filenamelist_gamma) == 0:
-        print("no gammas found")
-        exit()
-    if len(filenamelist_proton) == 0:
-        print("no protons found")
-        exit()
+    if len(filenamelist) == 0:
+        print("no files found; check indir: {}".format(args.indir))
+        exit(-1)
 
-    '''
-    prepare InstrumentDescription '''
-    InstrDesc = load_hessio(filenamelist_gamma[0])
+    cam_geom = {}
+    tel_phi = {}
+    tel_theta = {}
+    tel_orientation = (tel_phi, tel_theta)
 
-    '''
-    wrapper for the scikit learn classifier '''
-    classifier = EventClassifier()
-    classifier.setup_geometry(*InstrDesc,
-                              phi=180*u.deg, theta=20*u.deg)
-    classifier.cleaner = ImageCleaner(args.mode)
-    classifier.load("data/classify_pickle/classifier_" +
-                    args.mode + "_rec-sim-dist.pkl")
+    # counting events and where they might have gone missing
+    Eventcutflow = CutFlow("EventCutFlow")
+    Imagecutflow = CutFlow("ImageCutFlow")
+    Eventcutflow.set_cut("noCuts", None)
+    Eventcutflow.set_cut("min2Tels trig", lambda x: x < 2)
+    Eventcutflow.set_cut("min2Tels reco", lambda x: x < 2)
 
-    '''
-    simple hillas-based shower reco '''
+    # class that wraps tail cuts and wavelet cleaning
+    Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
+                           skip_edge_events=False)  # args.skip_edge_events)
+
+    # simple hillas-based shower reco
     fit = FitGammaHillas()
-    fit.setup_geometry(*InstrDesc,
-                       phi=180*u.deg, theta=20*u.deg)
 
-    '''
-    class that wraps tail cuts and wavelet cleaning for ASTRI telescopes '''
-    Cleaner = ImageCleaner(mode=args.mode)
+    # wrapper for the scikit learn classifier
+    classifier = EventClassifier(cutflow=Eventcutflow)
+    classifier.load("{}/classifier_{}_{}_{}.pkl".format(
+        args.classifier_dir, args.mode, "".join(args.raw.split()),
+        "RandomForestClassifier"))
 
-    '''
-    to have geometry information accessible here as well '''
-    tel_geom = classifier.tel_geom
-
-    '''
-    catch ctr-c signal to exit current loop and still display results '''
+    # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
+
+
+
+    # this class defines the reconstruction parameters to keep track of
+    class RecoEvent(tb.IsDescription):
+        NTels_trig = tb.Int16Col(dflt=1, pos=0)
+        NTels_reco = tb.Int16Col(dflt=1, pos=1)
+        EnMC = tb.Float32Col(dflt=1, pos=2)
+        phi = tb.Float32Col(dflt=1, pos=3)
+        theta = tb.Float32Col(dflt=1, pos=4)
+        off_angle = tb.Float32Col(dflt=1, pos=5)
+        ErrEstPos = tb.Float32Col(dflt=1, pos=6)
+        gamma_ratio = tb.Float32Col(dflt=1, pos=7)
+        gammaness_o = tb.Float32Col(dflt=1, pos=8)
+        gammaness_d = tb.Float32Col(dflt=1, pos=9)
+
+    channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
+    reco_outfile = tb.open_file(
+            "{}/{}_{}_{}.h5".format(args.events_dir, args.out_file, channel, args.mode),
+            mode="w",
+            # if we don't want to write the event list to disk, need to add more arguments
+            **({} if args.store else {"driver": "H5FD_CORE",
+                                      "driver_core_backing_store": False}))
+    reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
+    reco_event = reco_table.row
+
+
 
     agree_threshold = .75
     min_tel = 2
@@ -93,259 +128,211 @@ if __name__ == '__main__':
 
 
     source_orig = None
-    fit_origs   = {'g':[], 'p':[]}
-    MC_Energy   = {'g':[], 'p':[]}
-    multiplicity = {'g':[], 'p':[]}
 
-    events_total         = {'g':0, 'p':0}
-    events_passd_telcut1 = {'g':0, 'p':0}
-    events_passd_telcut2 = {'g':0, 'p':0}
-    events_passd_gsel    = {'g':0, 'p':0}
-    telescopes_total     = {'g':0, 'p':0}
-    telescopes_passd     = {'g':0, 'p':0}
 
-    for filenamelist_class in [filenamelist_gamma,
-                               filenamelist_proton]:
+    allowed_tels = range(10)  # smallest ASTRI array
+    # allowed_tels = range(34)  # all ASTRI telescopes
+    for filename in filenamelist[:args.last]:
+        print("filename = {}".format(filename))
 
-        cl = "g" if "gamma" in filenamelist_class[0] else "p"
+        source = hessio_event_source(filename,
+                                        allowed_tels=allowed_tels,
+                                        max_events=args.max_events)
 
-        for filename in sorted(filenamelist_class)[:args.last]:
-            print("filename = {}".format(filename))
+        # event loop
+        for event in source:
 
-            source = hessio_event_source(
-                filename,
-                allowed_tels=range(10),  # smallest ASTRI aray
-                # allowed_tels=range(34),  # all ASTRI telescopes
-                max_events=args.max_events)
+            Eventcutflow.count("noCuts")
 
-            for event in source:
-                events_total[cl] += 1
+            mc_shower = event.mc
+            mc_shower_core = np.array([mc_shower.core_x.value,
+                                        mc_shower.core_y.value]) * u.m
 
-                mc_shower = event.mc
-                mc_shower_core = np.array([mc_shower.core_x.value,
-                                           mc_shower.core_y.value]) * u.m
+            if Eventcutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
+                continue
+
+            # telescope loop
+            tot_signal = 0
+            max_signal = 0
+            hillas_dict = {}
+            for tel_id in event.dl0.tels_with_data:
+                Imagecutflow.count("noCuts")
 
                 if source_orig is None:
-                    '''
-                    corsika measures azimuth the other way around,
-                    using phi=-az '''
-                    source_dir = linalg.set_phi_theta(-mc_shower.az,
-                                                      90.*u.deg+mc_shower.alt)
-                    '''
-                    shower direction is downwards, shower origin up '''
-                    source_orig = -source_dir
+                    source_orig = linalg.set_phi_theta(
+                        event.mc.tel[tel_id].azimuth_raw * u.rad,
+                        (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad)
 
-                NTels = len(event.dl0.tels_with_data)
-                '''
-                skip events with less than minimum hit telescopes '''
-                if NTels < min_tel:
-                    continue
-                events_passd_telcut1[cl] += 1
+                pmt_signal = apply_mc_calibration_ASTRI(
+                                event.r0.tel[tel_id].adc_sums,
+                                event.mc.tel[tel_id].dc_to_pe,
+                                event.mc.tel[tel_id].pedestal)
 
-                '''
-                telescope loop '''
-                tot_signal = 0
-                hillas_dict1 = {}
-                hillas_dict2 = {}
-                for tel_id in event.dl0.tels_with_data:
-                    classifier.total_images += 1
+                max_signal = np.max(pmt_signal)
 
-                    pmt_signal = apply_mc_calibration_ASTRI(
-                                event.dl0.tel[tel_id].adc_sums, tel_id)
-                    '''
-                    trying to clean the image '''
-                    try:
-                        pmt_signal, pix_x, pix_y = \
-                            Cleaner.clean(pmt_signal, tel_geom[tel_id])
-                    except FileNotFoundError as e:
-                        print(e)
-                        continue
-                    except EdgeEventException:
-                        continue
-                    except UnknownModeException as e:
-                        print(e)
-                        print("asked for unknown mode... what are you doing?")
-                        exit(-1)
+                # guessing camera geometry
+                if tel_id not in cam_geom:
+                    cam_geom[tel_id] = CameraGeometry.guess(
+                                        event.inst.pixel_pos[tel_id][0],
+                                        event.inst.pixel_pos[tel_id][1],
+                                        event.inst.optical_foclen[tel_id])
+                    tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
+                    tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
 
-                    '''
-                    trying to do the hillas reconstruction of the images '''
-                    try:
-                        moments, h_moments = hillas_parameters(pix_x, pix_y,
-                                                               pmt_signal)
-
-                        hillas_dict1[tel_id] = moments
-                        hillas_dict2[tel_id] = h_moments
-                        tot_signal += moments.size
-
-                    except HillasParameterizationError as e:
-                        print(e)
-                        print("ignoring this camera")
-                        pass
-
-                '''
-                telescope loop done, now do the core fit '''
-                fit.get_great_circles(hillas_dict1)
-                seed = np.sum([[fit.telescopes["TelX"][tel_id-1],
-                                fit.telescopes["TelY"][tel_id-1]]
-                        for tel_id in fit.circles.keys()], axis=0) * u.m
-                pos_fit = fit.fit_core(seed)
-
-                '''
-                now prepare the features for the classifier '''
-                features = []
-                NTels = len(hillas_dict1)
-                for tel_id in hillas_dict1.keys():
-                    tel_idx = np.searchsorted(
-                                classifier.telescopes['TelID'],
-                                tel_id)
-                    tel_pos = np.array([
-                        classifier.telescopes["TelX"][tel_idx],
-                        classifier.telescopes["TelY"][tel_idx]
-                                        ]) * u.m
-
-                    moments = hillas_dict1[tel_id]
-                    h_moments = hillas_dict2[tel_id]
-
-                    impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
-                    impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                    features.append([
-                                impact_dist_rec / u.m,
-                                impact_dist_sim / u.m,
-                                tot_signal,
-                                moments.size,
-                                NTels,
-                                moments.width, moments.length,
-                                h_moments.Skewness,
-                                h_moments.Kurtosis,
-                                h_moments.Asymmetry
-                                ])
-
-                telescopes_total[cl] += len(set(event.trig.tels_with_trigger) &
-                                            set(event.dl0.tels_with_data))
-                telescopes_passd[cl] += len(features)
-
-                if len(features) == 0:
-                    continue
-
+                # trying to clean the image
                 try:
-                    predict = classifier.predict(
-                        [tel[:1]+tel[2:] for tel in features])
+                    pmt_signal, new_geom = \
+                        Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
+                                        event.inst.optical_foclen[tel_id])
+
+                    if np.count_nonzero(pmt_signal) < 3:
+                        continue
+
+                except FileNotFoundError as e:
+                    print(e)
+                    continue
+                except EdgeEventException:
+                    continue
+
+                Imagecutflow.count("cleaning")
+
+                # trying to do the hillas reconstruction of the images
+                try:
+                    moments = hillas_parameters(new_geom.pix_x,
+                                                new_geom.pix_y,
+                                                pmt_signal)
+
+                    if not (moments.width > 0 and moments.length > 0):
+                        continue
+
+                    if False:
+                        from ctapipe.visualization import CameraDisplay
+                        fig = plt.figure(figsize=(17, 10))
+
+                        ax1 = fig.add_subplot(121)
+                        disp1 = CameraDisplay(cam_geom[tel_id],
+                                                image=np.sqrt(event.mc.tel[tel_id]
+                                                            .photo_electron_image),
+                                                ax=ax1)
+                        disp1.cmap = plt.cm.inferno
+                        disp1.add_colorbar()
+                        plt.title("sqrt photo-electron image")
+
+                        ax3 = fig.add_subplot(122)
+                        disp3 = CameraDisplay(new_geom,
+                                                image=np.sqrt(pmt_signal),
+                                                ax=ax3)
+                        disp3.overlay_moments(moments, color='seagreen', linewidth=3)
+                        disp3.cmap = plt.cm.inferno
+                        disp3.add_colorbar()
+                        plt.title("sqrt cleaned image")
+                        plt.suptitle(args.mode)
+                        plt.show()
+
+                except HillasParameterizationError as e:
+                    print(e)
+                    print("ignoring this camera")
+                    pass
+
+                hillas_dict[tel_id] = moments
+                tot_signal += moments.size
+
+                Imagecutflow.count("Hillas")
+
+            if Eventcutflow.cut("min2Tels reco", len(hillas_dict)):
+                continue
+
+            try:
+                # telescope loop done, now do the core fit
+                fit.get_great_circles(hillas_dict,
+                                        event.inst,
+                                        tel_phi, tel_theta)
+                pos_fit_cr, err_est_pos = fit.fit_core_crosses()
+            except Exception as e:
+                print(e)
+                continue
+
+            if np.isnan(pos_fit_cr.value).any():
+                continue
+
+            pos_fit = pos_fit_cr
+
+            Eventcutflow.count("position fit")
+
+            # now prepare the features for the classifier
+            features_dict = {}
+            NTels = len(hillas_dict)
+            for tel_id in hillas_dict.keys():
+                Imagecutflow.count("pre-features")
+
+                tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
+
+                moments = hillas_dict[tel_id]
+
+                impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
+                impact_dist_rec = linalg.length(tel_pos-pos_fit)
+                features = [
+                            impact_dist_rec/u.m,
+                            tot_signal,
+                            max_signal,
+                            moments.size,
+                            NTels,
+                            moments.width/u.m,
+                            moments.length/u.m,
+                            moments.skewness,
+                            moments.kurtosis,
+                            err_est_pos/u.m
+                            ]
+                if np.isnan(features).any():
+                    continue
+
+                Imagecutflow.count("features nan")
+
+                features_dict[tel_id] = features
+
+            if len(features_dict):
+                try:
+                    gamma_ratio, gammaness_o, gammaness_d = classifier.predict(
+                        [b+[a] for a, b in features_dict.items()])
                 except Exception as e:
                     print("error: ", e)
-                    print("Ntels: {}, Nfeatures: {}".format(
-                        len(set(event.trig.tels_with_trigger) &
-                            set(event.dl0.tels_with_data)),
-                        len(features)))
                     print("skipping event")
                     continue
 
-                isGamma = [1 if (tel == "g") else 0 for tel in predict]
+            fit_dir, crossings = fit.fit_origin_crosses()
 
-                '''
-                skip events with less than minimum hit telescopes
-                where the event is not on the edge '''
-                if len(isGamma) < min_tel: continue
-                events_passd_telcut2[cl] += 1
-                '''
-                skip events where too few classifiers agree it's a gamma '''
-                if np.mean(isGamma) <= agree_threshold: continue
-                events_passd_gsel[cl] += 1
+            off_angle = linalg.angle(fit_dir, source_orig)
+            phi, theta = linalg.get_phi_theta(fit_dir)
+            phi = (phi if phi > 0 else phi+360*u.deg)
 
-                '''
-                reconstruct direction now '''
-                # fit.get_great_circles(hillas_dict1)
-                result1, crossings = fit.fit_origin_crosses()
-                result2 = result1
+            reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
+            reco_event["NTels_reco"] = NTels
+            reco_event["EnMC"] = event.mc.energy / energy_unit
+            reco_event["phi"] = phi / angle_unit
+            reco_event["theta"] = theta / angle_unit
+            reco_event["off_angle"] = off_angle / angle_unit
+            reco_event["ErrEstPos"] = err_est_pos / dist_unit
+            reco_event["gamma_ratio"] = gamma_ratio
+            reco_event["gammaness_o"] = gammaness_o
+            reco_event["gammaness_d"] = gammaness_d
+            reco_event.append()
+            reco_table.flush()
 
-                fit_origs[cl].append(result2)
-                MC_Energy[cl].append(event.mc.energy/u.GeV)
-                multiplicity[cl].append(NTels)
+            print("this channel: {}".format(channel))
+            print("off_angle: {}". format(off_angle))
+            print("gamma_ratio: {}".format(gamma_ratio))
+            print("gammaness_o: {}".format(gammaness_o))
+            print("gammaness_d: {}".format(gammaness_d))
+            print()
+
 
             if signal_handler.stop:
-                stop = False
                 break
+        if signal_handler.stop:
+            break
 
-    off_angles = {'p': [], 'g': []}
-    phi = {'g': [], 'p': []}
-    the = {'g': [], 'p': []}
-    for cl, in fit_origs.keys():
-        for fit in fit_origs[cl]:
-            off_angles[cl].append(linalg.angle(fit, source_orig)/u.deg)
-            phithe = linalg.get_phi_theta(fit)
-            phi[cl].append((phithe[0] if phithe[0] > 0
-                            else phithe[0]+360*u.deg)/u.deg)
-            the[cl].append(phithe[1]/u.deg)
-        off_angles[cl] = np.array(off_angles[cl])
+    Eventcutflow()
+    Imagecutflow()
 
-    if args.write:
-        from astropy.table import Table
-        for cl in ['g', 'p']:
-            Table([off_angles[cl], MC_Energy[cl], phi[cl], the[cl], NTels[cl]],
-                  names=("off_angles", "MC_Energy", "phi", "theta", "multiplicity")
-                  ).write("data/selected_events/selected_events_{}_{}.fits".format(
-                            args.mode, cl),
-                          overwrite=True)
-
-    for cl in ['g', 'p']:
-        print(cl)
-        print("telescopes_total: {}, telescopes_passd: {}, passed/total: {}"
-              .format(telescopes_total[cl], telescopes_passd[cl],
-                      telescopes_passd[cl]/telescopes_total[cl]))
-        print("events_total: {},\n"
-              "events_passd_telcut1: {}, passed/total telcut1: {},\n"
-              "events_passd_telcut2: {}, passed/total telcut2: {},\n"
-              "events_passd_gsel: {}, passed/total gsel: {} \n"
-              "passd gsel / passd telcut: {}"
-              .format(events_total[cl],
-                      events_passd_telcut1[cl],
-                      events_passd_telcut1[cl]/events_total[cl]
-                      if events_total[cl] > 0 else 0,
-                      events_passd_telcut2[cl],
-                      events_passd_telcut2[cl]/events_total[cl]
-                      if events_total[cl] > 0 else 0,
-                      events_passd_gsel[cl],
-                      events_passd_gsel[cl]/events_total[cl]
-                      if events_total[cl] > 0 else 0,
-                      events_passd_gsel[cl]/events_passd_telcut2[cl]
-                      if events_passd_telcut2[cl] > 0 else 0))
-        print()
-
-    print("selected {} gammas and {} proton events"
-          .format(len(fit_origs['g']), len(fit_origs['p'])))
-
-    weight_g = 1
-    weight_p = 1e5
-
-    if args.plot:
-        fig = plt.figure()
-        plt.subplot(311)
-        plt.hist([off_angles['p'], off_angles['g']],
-                 weights=[[weight_p]*len(off_angles['p']),
-                          [weight_g]*len(off_angles['g'])],
-                 rwidth=1, bins=50, stacked=True)
-        plt.xlabel("alpha")
-
-        plt.subplot(312)
-        plt.hist([off_angles['p']**2, off_angles['g']**2],
-                 weights=[[weight_p]*len(off_angles['p']),
-                          [weight_g]*len(off_angles['g'])],
-                 rwidth=1, bins=50, stacked=True)
-        plt.xlabel("alpha²")
-
-        plt.subplot(313)
-        plt.hist([-np.cos(off_angles['p']), -np.cos(off_angles['g'])],
-                 weights=[[weight_p]*len(off_angles['p']),
-                          [weight_g]*len(off_angles['g'])],
-                 rwidth=1, bins=50, stacked=True)
-        plt.xlabel("-cos(alpha)")
-        plt.pause(.1)
-
-        fig2 = plt.figure()
-        unit = u.deg
-        plt.hist2d(convert_astropy_array(chain(phi['p'], phi['g']), unit),
-                   convert_astropy_array(chain(the['p'], the['g']), unit),
-                   range=([[(180-3), (180+3)],
-                           [(20-3), (20+3)]]*u.deg).to(unit).value)
-        plt.xlabel("phi / {}".format(unit))
-        plt.ylabel("theta / {}".format(unit))
-        plt.show()
+if __name__ == '__main__':
+    main()
