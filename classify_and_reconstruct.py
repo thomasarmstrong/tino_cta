@@ -37,8 +37,6 @@ import tables as tb
 
 def main():
 
-
-
     # your favourite units here
     angle_unit  = u.deg
     energy_unit = u.GeV
@@ -101,7 +99,7 @@ def main():
     class RecoEvent(tb.IsDescription):
         NTels_trig = tb.Int16Col(dflt=1, pos=0)
         NTels_reco = tb.Int16Col(dflt=1, pos=1)
-        EnMC = tb.Float32Col(dflt=1, pos=2)
+        MC_Energy = tb.Float32Col(dflt=1, pos=2)
         phi = tb.Float32Col(dflt=1, pos=3)
         theta = tb.Float32Col(dflt=1, pos=4)
         off_angle = tb.Float32Col(dflt=1, pos=5)
@@ -117,7 +115,7 @@ def main():
             # if we don't want to write the event list to disk, need to add more arguments
             **({} if args.store else {"driver": "H5FD_CORE",
                                       "driver_core_backing_store": False}))
-    reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
+    reco_table = reco_outfile.create_table("/", "reco_events", RecoEvent)
     reco_event = reco_table.row
 
 
@@ -132,7 +130,7 @@ def main():
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    for filename in filenamelist[:args.last]:
+    for filename in sorted(filenamelist[:args.last]):
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -307,7 +305,7 @@ def main():
 
             reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
             reco_event["NTels_reco"] = NTels
-            reco_event["EnMC"] = event.mc.energy / energy_unit
+            reco_event["MC_Energy"] = event.mc.energy / energy_unit
             reco_event["phi"] = phi / angle_unit
             reco_event["theta"] = theta / angle_unit
             reco_event["off_angle"] = off_angle / angle_unit
@@ -318,14 +316,6 @@ def main():
             reco_event.append()
             reco_table.flush()
 
-            print("this channel: {}".format(channel))
-            print("off_angle: {}". format(off_angle))
-            print("gamma_ratio: {}".format(gamma_ratio))
-            print("gammaness_o: {}".format(gammaness_o))
-            print("gammaness_d: {}".format(gammaness_d))
-            print()
-
-
             if signal_handler.stop:
                 break
         if signal_handler.stop:
@@ -334,5 +324,14 @@ def main():
     Eventcutflow()
     Imagecutflow()
 
+    N_selected = len([ x for x in reco_table.where(
+        """(NTels_reco > min_tel) & (gamma_ratio > agree_threshold)""")])
+    N_total = len(reco_table)
+    print("fraction selected events:")
+    print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
+
 if __name__ == '__main__':
     main()
+
+
+

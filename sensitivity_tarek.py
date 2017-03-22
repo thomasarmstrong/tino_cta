@@ -75,9 +75,9 @@ if __name__ == "__main__":
                                         'p': Nproton_simulated,
                                         'e': Nelectr_simulated},
 
-                    spectra={'g': gen_spectrum,
-                             'p': gen_spectrum,
-                             'e': gen_spectrum},
+                    generator_spectra={'g': gen_spectrum,
+                                       'p': gen_spectrum,
+                                       'e': gen_spectrum},
 
                     rates={'g': Eminus2, 'p': CR_background_rate, 'e': Eminus2},
                     generator_areas={'g': gen_area_g,
