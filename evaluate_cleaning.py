@@ -76,9 +76,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.proton:
-        filenamelist = glob("{}/proton/*run{}*gz".format(args.indir, args.runnr))
+        filenamelist = glob("{}/proton/*gz".format(args.indir))
     else:
-        filenamelist = glob("{}/gamma/*run{}*gz".format(args.indir, args.runnr))
+        filenamelist = glob("{}/gamma/*gz".format(args.indir))
 
     if len(filenamelist) == 0:
         print("no files found; check indir: {}".format(args.indir))
@@ -91,11 +91,10 @@ if __name__ == '__main__':
 
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
-    Imagecutflow.set_cut("noCuts", None)
-    Imagecutflow.set_cut("hex image", lambda x: x.startswith("hex"))
+
 
     island_cleaning = True
-    skip_edge_events = args.skip_edge_events
+    skip_edge_events = False # args.skip_edge_events
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
                                  island_cleaning=island_cleaning,
@@ -124,9 +123,9 @@ if __name__ == '__main__':
                     labels=["log10(signal)", "Delta P"])
 
     allowed_tels = None
-    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    #allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
-    # allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -135,9 +134,6 @@ if __name__ == '__main__':
                                      max_events=args.max_events)
 
         for event in source:
-
-            if 1 < event.mc.energy / u.TeV < 10:
-                continue
 
             print()
             print('Scanning input file... count = {}'.format(event.count))
@@ -161,84 +157,81 @@ if __name__ == '__main__':
                                         event.inst.pixel_pos[tel_id][0],
                                         event.inst.pixel_pos[tel_id][1],
                                         event.inst.optical_foclen[tel_id])
-                    tel_phi[tel_id] = 0.*u.deg
-                    tel_theta[tel_id] = 20.*u.deg
+                    tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
+                    tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
 
-                #if not Imagecutflow.cut("hex image", cam_geom[tel_id].pix_type):
-                    #continue
 
                 '''
                 applying ASTRI or general pixel calibration '''
                 if cam_geom[tel_id] == "ASTRI":
                     cal_signal = apply_mc_calibration_ASTRI(
-                                    event.dl0.tel[tel_id].adc_sums,
+                                    event.r0.tel[tel_id].adc_sums,
                                     event.mc.tel[tel_id].dc_to_pe,
                                     event.mc.tel[tel_id].pedestal)
                 else:
                     cal_signal = apply_mc_calibration(
-                        event.dl0.tel[tel_id].adc_sums[0],
+                        event.r0.tel[tel_id].adc_sums[0],
                         event.mc.tel[tel_id].dc_to_pe[0],
                         event.mc.tel[tel_id].pedestal[0])
 
-                Imagecutflow.count("calibration")
 
                 #
                 # resampling of the hex grid into sqare grid
-                pix_x, pix_y = cam_geom[tel_id].pix_x, cam_geom[tel_id].pix_y
-                hex_size = (cam_geom[tel_id].pix_area[0] *
-                            (2/3**0.5)**3)**0.5 / 2
-                nx, ny = 150, 150
+                #pix_x, pix_y = cam_geom[tel_id].pix_x, cam_geom[tel_id].pix_y
+                #hex_size = (cam_geom[tel_id].pix_area[0] *
+                            #(2/3**0.5)**3)**0.5 / 2
+                #nx, ny = 150, 150
 
-                if cam_geom[tel_id].cam_id not in qr_to_pix_id_map_tel_map:
-                    qr_to_pix_id_map = make_qr_to_pix_id_map(pix_x.value,
-                                                             pix_y.value,
-                                                             hex_size.value)
-                    qr_to_pix_id_map_tel_map[cam_geom[tel_id].cam_id] = qr_to_pix_id_map
+                #if cam_geom[tel_id].cam_id not in qr_to_pix_id_map_tel_map:
+                    #qr_to_pix_id_map = make_qr_to_pix_id_map(pix_x.value,
+                                                             #pix_y.value,
+                                                             #hex_size.value)
+                    #qr_to_pix_id_map_tel_map[cam_geom[tel_id].cam_id] = qr_to_pix_id_map
 
-                resample_x, resample_y, resample_img = \
-                    resample_hex_to_rect(cal_signal, geom=cam_geom[tel_id],
-                                         nx=nx, ny=ny)
+                #resample_x, resample_y, resample_img = \
+                    #resample_hex_to_rect(cal_signal, geom=cam_geom[tel_id],
+                                         #nx=nx, ny=ny)
 
 
 
-                min_x = np.min(pix_x)
-                max_x = np.max(pix_x)
-                min_y = np.min(pix_y)
-                max_y = np.max(pix_y)
+                #min_x = np.min(pix_x)
+                #max_x = np.max(pix_x)
+                #min_y = np.min(pix_y)
+                #max_y = np.max(pix_y)
 
-                lim_x, lim_y = 0.57, 1.04
-                trimmed_x   = resample_x  [(np.abs(resample_x) < lim_x) &
-                                           (np.abs(resample_y) < lim_y)]
-                trimmed_y   = resample_y  [(np.abs(resample_x) < lim_x) &
-                                           (np.abs(resample_y) < lim_y)]
-                trimmed_img = resample_img[(np.abs(resample_x) < lim_x) &
-                                           (np.abs(resample_y) < lim_y)]
+                #lim_x, lim_y = 0.57, 1.04
+                #trimmed_x   = resample_x  [(np.abs(resample_x) < lim_x) &
+                                           #(np.abs(resample_y) < lim_y)]
+                #trimmed_y   = resample_y  [(np.abs(resample_x) < lim_x) &
+                                           #(np.abs(resample_y) < lim_y)]
+                #trimmed_img = resample_img[(np.abs(resample_x) < lim_x) &
+                                           #(np.abs(resample_y) < lim_y)]
 
-                from datapipe.denoising.wavelets_mrfilter import WaveletTransform
-                wavelet_transform = WaveletTransform()
-                rect_img = np.histogram2d(trimmed_x, trimmed_y, weights=trimmed_img,
-                                          bins=(np.linspace(min_x, max_x, nx),
-                                                np.linspace(min_y, max_y, ny)))[0].T
+                #from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+                #wavelet_transform = WaveletTransform()
+                #rect_img = np.histogram2d(trimmed_x, trimmed_y, weights=trimmed_img,
+                                          #bins=(np.linspace(min_x, max_x, nx),
+                                                #np.linspace(min_y, max_y, ny)))[0].T
 
-                rect_x, rect_y = np.meshgrid(np.linspace(min_x, max_x, nx-1),
-                                             np.linspace(min_y, max_y, ny-1))
+                #rect_x, rect_y = np.meshgrid(np.linspace(min_x, max_x, nx-1),
+                                             #np.linspace(min_y, max_y, ny-1))
 
-                clean_rect_img = wavelet_transform(
-                    rect_img,
-                    raw_option_string=args.raw)
+                #clean_rect_img = wavelet_transform(
+                    #rect_img,
+                    #raw_option_string=args.raw)
 
-                clean_rect_img = kill_isolpix(clean_rect_img, threshold=2)
+                #clean_rect_img = kill_isolpix(clean_rect_img, threshold=2)
 
-                from copy import copy
-                trim_geom = copy(cam_geom[tel_id])
-                trim_geom.pix_x = rect_x.ravel()
-                trim_geom.pix_y = rect_y.ravel()
-                trim_geom.mask = np.ones_like(clean_rect_img.ravel())
-                trim_geom.pixel_shape = "rectangular"
-                trim_geom.cam_rotation = 0 * u.deg
-                trim_geom.pix_area = np.ones_like(clean_rect_img.ravel()) * .6 *\
-                    abs(trimmed_x[0]-trimmed_x[1]) * \
-                    abs(trimmed_y[0]-trimmed_y[ny])*u.m*u.m
+                #from copy import copy
+                #trim_geom = copy(cam_geom[tel_id])
+                #trim_geom.pix_x = rect_x.ravel()
+                #trim_geom.pix_y = rect_y.ravel()
+                #trim_geom.mask = np.ones_like(clean_rect_img.ravel())
+                #trim_geom.pixel_shape = "rectangular"
+                #trim_geom.cam_rotation = 0 * u.deg
+                #trim_geom.pix_area = np.ones_like(clean_rect_img.ravel()) * .6 *\
+                    #abs(trimmed_x[0]-trimmed_x[1]) * \
+                    #abs(trimmed_y[0]-trimmed_y[ny])*u.m*u.m
 
                 #fig = plt.figure()
                 #ax1 = fig.add_subplot(221)
@@ -291,8 +284,7 @@ if __name__ == '__main__':
                     pmt_signal_t, new_geom_t = \
                         Cleaner['t'].clean(cal_signal.copy(), cam_geom[tel_id],
                                            event.inst.optical_foclen[tel_id])
-                    geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id],
-                            's': trim_geom}
+                    geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id]}
                 except (FileNotFoundError, EdgeEventException) as e:
                     print(e)
                     continue
@@ -310,9 +302,9 @@ if __name__ == '__main__':
                     hillas['t'] = hillas_parameters(new_geom_t.pix_x,
                                                     new_geom_t.pix_y,
                                                     pmt_signal_t)
-                    hillas['s'] = hillas_parameters(trim_geom.pix_x,
-                                                    trim_geom.pix_y,
-                                                    clean_rect_img.ravel())
+                    #hillas['s'] = hillas_parameters(trim_geom.pix_x,
+                                                    #trim_geom.pix_y,
+                                                    #clean_rect_img.ravel())
                 except HillasParameterizationError as e:
                     print(e)
                     continue
@@ -331,9 +323,7 @@ if __name__ == '__main__':
                 alpha = {}
                 length = {}
                 width = {}
-                for k in ['p', 'w', 't', 's']:
-
-                    h = hillas[k]
+                for k, h in hillas.items():
 
                     fit.get_great_circles({tel_id: h},
                                           event.inst, tel_phi, tel_theta)
@@ -371,7 +361,7 @@ if __name__ == '__main__':
                 '''
                 do some plotting '''
                 if args.plot_c and signal_handler.draw:
-                    fig = plt.figure()
+                    fig = plt.figure(figsize=(10,10))
 
                     ax1 = fig.add_subplot(221)
                     disp1 = CameraDisplay(cam_geom[tel_id],
@@ -391,25 +381,25 @@ if __name__ == '__main__':
                     plt.title("calibrated noisy image")
 
                     ax3 = fig.add_subplot(223)
-                    disp3 = CameraDisplay(trim_geom,
-                                          image=clean_rect_img.ravel(),
-                                          ax=ax3)
-                    disp3.overlay_moments(hillas['s'], color='seagreen', linewidth=3)
-                    disp3.cmap = plt.cm.hot
-                    disp3.add_colorbar()
-                    plt.title("wave trimm cleaned ; alpha = {:4.3f}"
-                              .format(alpha['t']))
-
-                    #disp3 = CameraDisplay(new_geom_t,
-                                          #image=np.sqrt(pmt_signal_t),
+                    #disp3 = CameraDisplay(trim_geom,
+                                          #image=clean_rect_img.ravel(),
                                           #ax=ax3)
+                    #disp3.overlay_moments(hillas['s'], color='seagreen', linewidth=3)
                     #disp3.cmap = plt.cm.hot
                     #disp3.add_colorbar()
-                    #disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
-                    #plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
-                              #.format(Cleaner['t'].tail_thresh_up,
-                                      #Cleaner['t'].tail_thresh_low,
-                                      #alpha['t']))
+                    #plt.title("wave trimm cleaned ; alpha = {:4.3f}"
+                              #.format(alpha['t']))
+
+                    disp3 = CameraDisplay(new_geom_t,
+                                          image=np.sqrt(pmt_signal_t),
+                                          ax=ax3)
+                    disp3.cmap = plt.cm.hot
+                    disp3.add_colorbar()
+                    disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
+                    plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
+                              .format(Cleaner['t'].tail_thresh_up,
+                                      Cleaner['t'].tail_thresh_low,
+                                      alpha['t']))
 
                     ax4 = fig.add_subplot(224)
                     disp4 = CameraDisplay(new_geom_w,
@@ -438,7 +428,7 @@ if __name__ == '__main__':
                 '''
                 now fill the table '''
                 performance_table.add_row([Epsilon_intensity_w, Epsilon_intensity_t,
-                                           alpha['w'], alpha['t'], alpha['s'],
+                                           alpha['w'], alpha['t'], -100, #alpha['s'],
                                            width['w'], length['w'],
                                            width['t'], length['t'],
                                            sum_w, sum_t, sum_p,

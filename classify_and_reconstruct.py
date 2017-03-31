@@ -230,7 +230,7 @@ def main():
                 except HillasParameterizationError as e:
                     print(e)
                     print("ignoring this camera")
-                    pass
+                    continue
 
                 hillas_dict[tel_id] = moments
                 tot_signal += moments.size

@@ -26,6 +26,7 @@ from modules.EventClassifier import *
 
 
 def get_class_string(cls):
+    print(cls)
     return str(cls.__class__).split('.')[-1].split("'")[0]
 
 
@@ -212,7 +213,7 @@ if __name__ == '__main__':
                 Eventcutflow[cl].count("position fit")
 
                 # now prepare the features for the classifier
-                features_dict = {}
+                features_evt = {}
                 NTels = len(hillas_dict)
                 for tel_id in hillas_dict.keys():
                     Imagecutflow[cl].count("pre-features")
@@ -223,7 +224,7 @@ if __name__ == '__main__':
 
                     impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                     impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                    features = [
+                    features_tel = [
                                 impact_dist_rec/u.m,
                                 tot_signal,
                                 max_signal,
@@ -235,29 +236,14 @@ if __name__ == '__main__':
                                 moments.kurtosis,
                                 err_est_pos/u.m
                               ]
-                    if np.isnan(features).any():
+                    if np.isnan(features_tel).any():
                         continue
 
                     Imagecutflow[cl].count("features nan")
 
-                    features_dict[tel_id] = features
-                if len(features_dict):
-                    if False:
-                        # populating missing telescopes with zero-features
-                        for i in range(10):
-                            if i not in features_dict.keys():
-                                features_dict[i] = [0] * len(features)
-
-                        # flattening the features into a single list
-                        new_features = []
-                        for tel_id in range(10):
-                            new_features += features_dict[tel_id]
-                        classifier.Features[cl].append(new_features)
-                    else:
-                        classifier.Features[cl].append(
-                            [b+[a] for a, b in features_dict.items()])
-                            #[a for a in features_dict.values()])
-
+                    features_evt[tel_id] = features_tel
+                if len(features_evt):
+                    classifier.Features[cl].append(features_evt)
                     classifier.MCEnergy[cl].append(mc_shower.energy)
 
                 if signal_handler.stop:
@@ -267,48 +253,123 @@ if __name__ == '__main__':
 
     feature_labels = [
                         "impact_dist",
-                        "tot_signal",
-                        "max_signal",
-                        "size",
-                        "NTels",
+                        "sum_signal_evt",
+                        "max_signal_cam",
+                        "sum_signal_cam",
+                        "NTels_rec",
                         "width",
                         "length",
                         "skewness",
                         "kurtosis",
                         "err_est_pos",
-                        "tel_id",
                       ]
 
     print()
+
+
+    # try neural network
+    from sklearn.neural_network import MLPClassifier, BernoulliRBM
+
 
     # reduce the number of events so that
     # they are the same in gammas and protons
     classifier.equalise_nevents()
 
-    # try neural network
-    from sklearn.neural_network import MLPClassifier
-    clf = MLPClassifier(
-                        #solver='lbfgs',  # default: 'adam'
-                        random_state=1,
-                        alpha=1e-5,
-                        #hidden_layer_sizes=(5, 2)  # default: (100,)
-                        )
+    trainFeatures = []
+    trainClasses  = []
+
+    for cl in classifier.class_list:
+        trainFeatures += classifier.Features[cl]
+        trainClasses += [cl == "g"]*len(classifier.Features[cl])
+
+    clf_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
+                  'random_state': 0}
+    #clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
+                  #'hidden_layer_sizes': (50,50,)}
+    # BernoulliRBM' object has no attribute 'predict_proba'
+    #clf_kwargs = {'classifier': BernoulliRBM}
+
+    clf = fancy_EventClassifier(**clf_kwargs)
+            #n_estimators=40, max_depth=None, min_samples_split=2, random_state=0)
+            #BernoulliRBM)
+            #MLPClassifier, random_state=1, alpha=1e-5, hidden_layer_sizes=(100, 2))
+    print(clf)
+    clf.fit(trainFeatures, trainClasses)
+
+    # save the classifier to disk
+    if args.store:
+        clf.save("{}/classifier_{}_{}_{}.pkl".format(args.outdir,
+                        args.mode, args.raw.replace(" ", ""), clf))
+
+
+    if args.plot:
+        # extract and show the importance of the various training features
+        try:
+            clf.show_importances(feature_labels)
+            plt.suptitle("{} ** {}".format(
+                "wavelets" if args.mode == "wave" else "tailcuts",
+                clf))
+            if args.write:
+                save_fig('{}/classification_importance_{}_{}_{}'.format(args.plots_dir,
+                            args.mode, args.raw.replace(" ", ""), clf))
+        except AttributeError as e:
+            print("{} classifier does not support feature importances".format(clf))
+
+        # plot area under curve for a few cross-validations
+        from sklearn.metrics import roc_curve, auc
+        from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+        plt.figure()
+        colours = ["darkorange", "r", "b", "g", "black"]
+        #for i in range(4):
+            #X_train, X_test, y_train, y_test = train_test_split(trainFeatures,
+                                                                #trainClasses,
+                                                                #test_size=.5,
+                                                                #random_state=i)
+
+        X, y = np.array(trainFeatures), np.array(trainClasses)
+        sss = StratifiedShuffleSplit(n_splits=5, test_size=0.5, random_state=0)
+        for i, (train_index, test_index) in enumerate(sss.split(X, y)):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+
+            clf = fancy_EventClassifier(**clf_kwargs)
+
+            clf.fit(X_train, y_train)
+
+            y_score = clf.predict_proba(X_test)[:,1]
+
+            fpr, tpr, _ = roc_curve(y_test, y_score)
+            roc_auc = auc(fpr, tpr)
+
+            lw = 2
+            plt.plot(fpr, tpr, color=colours[i],
+                    lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+
+        # plot a diagonal line that represents purely random choices
+        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver operating characteristic example')
+        plt.suptitle("{} ** {}".format(
+            "wavelets" if args.mode == "wave" else "tailcuts",
+            clf))
+        plt.legend(loc="lower right", title="different cross validations")
+
+        if args.write:
+            save_fig('{}/classification_area_under_curve_{}_{}_{}'.format(args.plots_dir,
+                        args.mode, args.raw.replace(" ", ""), clf))
+
+        plt.show()
+
+
+    exit()
+
+    # clf_mlp
     clf = None
 
-    # extract and show the importance of the various training features
-    try:
-        if args.plot or args.write:
-            classifier.show_importances(feature_labels)
 
-            if args.write:
-                save_fig('{}/classification_importance_{}_{}'.format(args.plots_dir,
-                         args.mode, "".join(args.raw.split())))
-            if args.plot:
-                plt.pause(.5)
-    except ValueError:
-        for k in classifier.class_list:
-            for a in classifier.Features[k]:
-                print(a)
 
     if args.store:
         # learn on all events and save the classifier to disk
@@ -316,7 +377,7 @@ if __name__ == '__main__':
         clf_string = get_class_string(classifier.clf)
 
         classifier.save("{}/classifier_{}_{}_{}.pkl".format(args.outdir,
-                        args.mode, "".join(args.raw.split()), clf_string))
+                        args.mode, args.raw.replace(" ", ""), clf_string))
 
     if args.check:
         # do cross validation: split the list of events in chunks, train on all chunks
@@ -331,12 +392,12 @@ if __name__ == '__main__':
         if args.write:
             # save performance plots of classification
             save_fig('{}/classification_performance_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, "".join(args.raw.split()), clf_string))
+                     args.mode, args.raw.replace(" ", ""), clf_string))
             # save the classification result for each channel
             for cl in ['g', 'p']:
                 classifier.prediction_results[cl].write(
                     'data/classification_results_{}_{}_{}_{}.fits'
-                    .format(cl, args.mode, "".join(args.raw.split()), clf_string),
+                    .format(cl, args.mode, args.raw.replace(" ", ""), clf_string),
                     overwrite=True)
 
         # plot the performance of the classification on screen
@@ -362,49 +423,8 @@ if __name__ == '__main__':
         # also write them as latex to disk
         if args.write:
             e_cf.write("data/event_cutflow_table_{}_{}_{}_{}.tex".format(cl,
-                       args.mode, "".join(args.raw.split()), clf_string), overwrite=True)
+                       args.mode, args.raw.replace(" ", ""), clf_string), overwrite=True)
             i_cf.write("data/image_cutflow_table_{}_{}_{}_{}.tex".format(cl,
-                       args.mode, "".join(args.raw.split()), clf_string), overwrite=True)
+                       args.mode, args.raw.replace(" ", ""), clf_string), overwrite=True)
     if args.plot:
         plt.show()
-
-    ##from sklearn.model_selection import train_test_split
-    ##from sklearn.preprocessing import StandardScaler
-    ##from sklearn.datasets import make_moons, make_circles, make_classification
-
-    ##from sklearn.neural_network import MLPClassifier
-    #from sklearn.neighbors import KNeighborsClassifier
-    #from sklearn.svm import SVC
-    ##from sklearn.gaussian_process import GaussianProcessClassifier
-    ##from sklearn.gaussian_process.kernels import RBF
-    #from sklearn.tree import DecisionTreeClassifier
-    #from sklearn.ensemble import AdaBoostClassifier
-    #from sklearn.naive_bayes import GaussianNB
-    #from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
-    #from sklearn.ensemble import RandomForestClassifier
-    #from sklearn.ensemble import ExtraTreesClassifier
-    #from sklearn import svm
-
-    #for clf in [KNeighborsClassifier(3),
-                #SVC(kernel="linear", C=0.025),
-                #SVC(gamma=2, C=1),
-                ##GaussianProcessClassifier(1.0 * RBF(1.0), warm_start=True),
-                #DecisionTreeClassifier(max_depth=5),
-                #RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
-                ##MLPClassifier(alpha=1),
-                #AdaBoostClassifier(),
-                #GaussianNB(),
-                #QuadraticDiscriminantAnalysis()]:
-        #classifier.learn(clf)
-
-        #for cl in classifier.Features.keys():
-            #trainFeatures   = []
-            #trainClasses    = []
-            #for ev in classifier.Features[cl]:
-                #trainFeatures += ev
-                #trainClasses  += [cl]*len(ev)
-
-            #print(cl,"score:", classifier.clf.score(trainFeatures, trainClasses) )
-        #print()
-
-

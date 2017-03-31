@@ -12,8 +12,6 @@ from helper_functions import *
 from ctapipe.analysis.Sensitivity import *
 from ctapipe.analysis.Sensitivity import crab_source_rate, CR_background_rate, Eminus2
 
-import pandas as pd
-
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-talk')
 plt.style.use('t_slides')
@@ -24,8 +22,8 @@ gammas: 0.1 to 330 TeV
 proton: 0.1 to 600 TeV
 '''
 #edges_energy = np.linspace(0, 6, 28)
-edges_gammas = np.linspace(2, np.log10(330000), 14)
-edges_proton = np.linspace(2, np.log10(600000), 15)
+edges_gammas = np.linspace(2, np.log10(330000), 28)
+edges_proton = np.linspace(2, np.log10(600000), 30)
 
 angle_unit = u.deg
 energy_unit = u.GeV
@@ -35,6 +33,21 @@ observation_time = 50*u.h
 
 # PyTables
 import tables as tb
+# pandas data frames
+import pandas as pd
+
+def open_pytable_as_pandas(filename, mode='r'):
+    pyt_infile = tb.open_file(filename, mode=mode)
+    pyt_table = pyt_infile.root.reco_events
+
+    return pd.DataFrame(pyt_table[:])
+
+
+def selection_mask(event_table, nhits=3, gamma_ratio=.75):
+    return (event_table["NTels_reco"] > nhits) \
+         & (event_table["gamma_ratio"] > gamma_ratio)
+         #& (event_table["gammaness"] > gammaness)
+
 
 if __name__ == "__main__":
 
@@ -43,28 +56,16 @@ if __name__ == "__main__":
     parser.add_argument('--in_file', type=str, default="classified_events")
     args = parser.parse_args()
 
-    gammas_infile = tb.open_file(
-            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "gamma", "wave"),
-            mode='r')
-    gammas_pyt = gammas_infile.root.reco_events
+    gammas = open_pytable_as_pandas(
+            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "gamma", "wave"))
 
-    proton_infile = tb.open_file(
-            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "proton", "wave"),
-            mode='r')
-    proton_pyt = proton_infile.root.reco_event
-
-    gammas = pd.DataFrame(gammas_pyt[:])
-    proton = pd.DataFrame(proton_pyt[:])
+    proton = open_pytable_as_pandas(
+            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "proton", "wave"))
 
     # applying some cuts
     if True:
-        mask_g = (gammas["NTels_reco"] > 3) & (gammas["gamma_ratio"] > .75)
-        mask_p = (proton["NTels_reco"] > 3) & (proton["gamma_ratio"] > .75)
-        gammas = gammas[mask_g]
-        proton = proton[mask_p]
-
-    NGammas_selected = len(gammas['off_angle'])
-    NProton_selected = len(proton['off_angle'])
+        gammas = gammas[selection_mask(gammas)]
+        proton = proton[selection_mask(proton)]
 
     NReuse_Gammas = 10
     NReuse_Proton = 20
@@ -75,12 +76,16 @@ if __name__ == "__main__":
     NGammas_simulated = NGammas_per_File * 20
     NProton_simulated = NProton_per_File * 101
 
-    print("gammas selected / simulated", NGammas_selected, NGammas_simulated)
-    print("proton selected / simulated", NProton_selected, NProton_simulated)
+    print("gammas simulated:", NGammas_simulated)
+    print("proton simulated:", NProton_simulated)
+    print()
+    print("observation time:", observation_time)
+    print("gammas selected (wavelets):", len(gammas))
+    print("proton selected (wavelets):", len(proton))
 
     SensCalc = Sensitivity_PointSource(
-                        mc_energies={'g': gammas['EnMC'],
-                                     'p': proton['EnMC']},
+                        mc_energies={'g': gammas['MC_Energy'],
+                                     'p': proton['MC_Energy']},
                         off_angles={'g': gammas['off_angle'].values*angle_unit,
                                     'p': proton['off_angle'].values*angle_unit},
                         energy_bin_edges={'g': edges_gammas,
@@ -101,8 +106,9 @@ if __name__ == "__main__":
     NExpGammas = sum(exp_events_per_E['g'])
     NExpProton = sum(exp_events_per_E['p'])
 
-    print("expected gammas:", NExpGammas)
-    print("expected proton:", NExpProton)
+    print()
+    print("expected gammas (wavelets):", NExpGammas)
+    print("expected proton (wavelets):", NExpProton)
 
     if args.plot and args.verbose:
         plt.figure()
@@ -116,33 +122,53 @@ if __name__ == "__main__":
         plt.pause(.1)
 
     weights = SensCalc.scale_events_to_expected_events()
-    sensitivities = SensCalc.get_sensitivity()
+    sensitivities = SensCalc.get_sensitivity(
+                                sensitivity_energy_bin_edges=np.linspace(2, 6, 17))
 
     # now for tailcut
-    gammas_t = Table.read("data/selected_events/"
-                          "selected_events_tail_g.fits")
-    proton_t = Table.read("data/selected_events/"
-                          "selected_events_tail_p.fits")
+    gammas_t = open_pytable_as_pandas(
+            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "gamma", "tail"))
+
+    proton_t = open_pytable_as_pandas(
+            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "proton", "tail"))
+
+    # applying some cuts
+    if True:
+        gammas_t = gammas_t[selection_mask(gammas_t)]
+        proton_t = proton_t[selection_mask(proton_t)]
+
+
 
     SensCalc_t = Sensitivity_PointSource(
                     mc_energies={'g': gammas_t['MC_Energy'],
                                  'p': proton_t['MC_Energy']},
-                    off_angles={'g': gammas_t['off_angles']*angle_unit,
-                                'p': proton_t['off_angles']*angle_unit},
+                    off_angles={'g': gammas_t['off_angle']*angle_unit,
+                                'p': proton_t['off_angle']*angle_unit},
                     energy_bin_edges={'g': edges_gammas,
-                                      'p': edges_proton},
+                                      'p': edges_proton}, verbose=True,
                     energy_unit=energy_unit, flux_unit=flux_unit)
 
     sensitivities_t = SensCalc_t.calculate_sensitivities(
-                            n_simulated_events={'g': NGammas_simulated,
-                                                'p': NProton_simulated},
-                            generator_spectra={'g': Eminus2, 'p': Eminus2},
+                            generator_energy_hists=SensCalc.generator_energy_hists,
                             generator_areas={'g': np.pi * (1000*u.m)**2,
-                                            'p': np.pi * (2000*u.m)**2},
+                                             'p': np.pi * (2000*u.m)**2},
                             observation_time=observation_time,
-                            rates={'g': Eminus2,
-                                   'p': CR_background_rate})
+                            rates={'g': crab_source_rate,
+                                   'p': CR_background_rate},
+                            sensitivity_energy_bin_edges=np.linspace(2, 6, 17))
     weights_t = SensCalc_t.event_weights
+
+    print()
+    print("gammas selected (tailcuts):", len(gammas_t))
+    print("proton selected (tailcuts):", len(proton_t))
+
+    NExpGammas_t = sum(SensCalc_t.exp_events_per_energy_bin['g'])
+    NExpProton_t = sum(SensCalc_t.exp_events_per_energy_bin['p'])
+
+    print()
+    print("expected gammas (tailcuts):", NExpGammas_t)
+    print("expected proton (tailcuts):", NExpProton_t)
+
 
     # do some plotting
     if args.plot:
@@ -152,10 +178,14 @@ if __name__ == "__main__":
         plt.figure()
         plt.loglog(
             10 ** edges_gammas[:-1],
-            SensCalc.effective_areas['g'])
+            SensCalc.effective_areas['g'], label="wavelets")
+        plt.loglog(
+            10 ** edges_gammas[:-1],
+            SensCalc_t.effective_areas['g'], label="tailcuts")
         plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
         plt.ylabel("effective area")
         plt.suptitle("gammas")
+        plt.legend()
         plt.pause(.1)
 
         # the point-source sensitivity binned in energy
@@ -163,11 +193,11 @@ if __name__ == "__main__":
         plt.semilogy(
             sensitivities["Energy MC"],
             sensitivities["Sensitivity"],
-            label=args.mode)
+            label="wavelets")
         plt.semilogy(
             sensitivities_t["Energy MC"],
             sensitivities_t["Sensitivity"],
-            label="tail")
+            label="tailcuts")
         plt.legend()
         plt.xlabel('E / {:latex}'.format(SensCalc.energy_unit))
         plt.gca().set_xscale("log")
@@ -180,9 +210,9 @@ if __name__ == "__main__":
             fig2 = plt.figure()
             plt.hexbin(
                 [(ph-180)*np.sin(th*u.deg) for
-                    ph, th in zip(chain(gammas['phi'], proton_pyt['phi']),
-                                  chain(gammas['theta'], proton_pyt['theta']))],
-                [a for a in chain(gammas['theta'], proton_pyt['theta'])],
+                    ph, th in zip(chain(gammas['phi'], proton['phi']),
+                                  chain(gammas['theta'], proton['theta']))],
+                [a for a in chain(gammas['theta'], proton['theta'])],
                 gridsize=41, extent=[-2, 2, 18, 22],
                 C=[a for a in chain(weights['g'], weights['p'])],
                 bins='log'
@@ -193,26 +223,36 @@ if __name__ == "__main__":
                        .format(angle_unit))
             plt.ylabel(r"$\vartheta$ / {:latex}".format(angle_unit))
             if args.write:
-                save_fig("plots/skymap_{}".format(args.mode))
+                save_fig("plots/skymap")
 
         '''
         plot the angular distance of the reconstructed shower direction
         from the pseudo source in different scales '''
         figure = plt.figure()
-        #plt.subplot(211)
-        #plt.hist([off_angles['p'], off_angles['g']],
-                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 #range=(0, 5),
-                 #bins=25)
-        #plt.xlabel(r"$\vartheta / \mathrm{"+str(angle_unit)+"}$")
-        #plt.ylabel("expected events in {}".format(ObsTime))
-        ##plt.ylim([0, 3000])
+        plt.subplot(211)
+        if True:
+            bins = 50
+            NProtons = np.sum(proton_t['off_angle']
+                              [(proton_t['off_angle'].values**2) < 10])
+            proton_weight_flat_t = np.ones(bins) * NProtons/bins
+            proton_angle_flat_t = np.linspace(0, 10, bins, False)
+            proton_angle_t = proton_angle_flat_t
+            proton_weight_t = proton_weight_flat_t
+        else:
+            proton_angle_t = proton_t['off_angle']**2
+            proton_weight_t = weights_t['p']
+        plt.hist([proton_angle_t, gammas_t["off_angle"]],
+                 weights=[proton_weight_t, weights_t['g']], rwidth=1, stacked=True,
+                 range=(0, 10), label=("protons", "gammas"),
+                 log=True, bins=bins)
+        plt.xlabel(r"$\vartheta / \mathrm{"+str(angle_unit)+"}$")
+        plt.ylabel("expected events in {}".format(SensCalc.observation_time))
+        plt.ylim([1e-1, 1e6])
+        plt.title("tailcuts")
+        plt.legend()
 
-        #if args.write:
-            #tikz_save("plots/"+args.mode+"_proto_significance.tex",
-                        #draw_rectangles=True)
 
-        #plt.subplot(212)
+        plt.subplot(212)
         if True:
             bins = 50
             NProtons = np.sum(proton['off_angle'][(proton['off_angle'].values**2) < 10])
@@ -232,8 +272,11 @@ if __name__ == "__main__":
         plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
         plt.ylabel("expected events in {}".format(SensCalc.observation_time))
         plt.ylim([1e-1, 1e6])
+        plt.title("wavelets")
         plt.legend()
-        plt.suptitle(args.mode)
+
+        if args.write:
+            save_fig("plots/theta_square")
 
         plt.pause(.1)
         #plt.subplot(313)

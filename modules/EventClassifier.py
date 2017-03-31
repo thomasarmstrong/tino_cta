@@ -1,16 +1,15 @@
 import numpy as np
 
-from itertools import chain
-
 from astropy import units as u
 from astropy.table import Table
 
 from ctapipe.io import CameraGeometry
 
-from ctapipe.utils import linalg
 from ctapipe.utils.fitshistogram import Histogram
 
+from sklearn.ensemble.forest import ForestClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.base import BaseEstimator
 
 
 def convert_astropy_array(arr, unit=None):
@@ -35,8 +34,70 @@ def proba_weighting(xs, weights):
     return [x * (w / s) for x, w in zip(xs, weights)]
 
 
-class EventClassifier:
+class fancy_EventClassifier:
+    def __init__(self, classifier=RandomForestClassifier, **kwargs):
 
+        self.kwargs = kwargs
+        self.clf = classifier(**kwargs)
+
+    def __getattr__(self, attr):
+        return getattr(self.clf, attr)
+
+    def __str__(self):
+        # return the class name of the used classifier
+        return str(self.clf).split("(")[0]
+
+    def fit(self, X, y):
+
+        trainFeatures = []
+        trainClasses  = []
+
+        for evt, cl in zip(X, y):
+            for i, tel in evt.items():
+                trainFeatures.append(tel)
+            trainClasses  += [cl]*len(evt)
+        return self.clf.fit(trainFeatures, trainClasses)
+
+    def predict_proba(self, X):
+
+        predict_proba = []
+        for evt in X:
+            tels = [tel for tel in evt.values()]
+            proba = self.clf.predict_proba(tels)
+            #predict_proba.append(np.mean(proba, axis=0))
+            predict_proba.append(np.mean(proba_drifting(proba), axis=0))
+
+        return np.array(predict_proba)
+
+    def save(self, path):
+        from sklearn.externals import joblib
+        joblib.dump(self, path)
+
+    @staticmethod
+    def load(path):
+        from sklearn.externals import joblib
+        return joblib.load(path)
+
+    def show_importances(self, feature_labels=None):
+        import matplotlib.pyplot as plt
+        importances = self.clf.feature_importances_
+        bins = range(importances.shape[0])
+        plt.figure()
+        plt.title("Feature Importances")
+        if feature_labels:
+            importances, feature_labels = \
+                zip(*sorted(zip(importances, feature_labels), reverse=True))
+            plt.xticks(bins, feature_labels, rotation=17)
+        plt.bar(bins, importances,
+                color='r', align='center')
+
+
+
+
+
+
+
+class EventClassifier:
     def __init__(self,
                  class_list=['g', 'p'],
                  axis_names=["log(E / GeV)"],

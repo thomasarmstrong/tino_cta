@@ -9,18 +9,28 @@ from ctapipe.image.cleaning import tailcuts_clean, dilate
 
 from .CutFlow import CutFlow
 
-from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, \
-                                             convert_geometry_back
+
+try:
+    from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, \
+                                                 convert_geometry_back
+except:
+    print("something missing from ctapipe.image.geometry_converter -- numba?")
 
 
 from sys import path
 from os.path import expandvars
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/sap-cta-data-pipeline/"))
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/snippets/ctapipe/"))
-from datapipe.denoising.wavelets_mrfilter import WaveletTransform
-from extract_and_crop_simtel_images import crop_astri_image
+
+
+try:
+    from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+except:
+    print("something missing from datapipe.denoising.wavelets_mrfilter -- skimage?")
+
+
+try:
+    from .extract_and_crop_simtel_images import crop_astri_image
+except:
+    print("something missing from extract_and_crop_simtel_images")
 
 
 class UnknownModeException(Exception):
@@ -120,12 +130,12 @@ class ImageCleaner:
             self.clean = self.clean_wave
             self.wavelet_transform = WaveletTransform()
             self.wavelet_options = wavelet_options
-            self.island_threshold = 2
+            self.island_threshold = 4.5
         elif mode == "tail":
             self.clean = self.clean_tail
             self.tail_thresh_up = tail_thresh_up
             self.tail_thresh_low = tail_thresh_low
-            self.island_threshold = 3.5
+            self.island_threshold = 4.5
             self.dilate = dilate
         else:
             raise UnknownModeException(
@@ -150,7 +160,8 @@ class ImageCleaner:
     def clean_wave_astri(self, img, cam_geom):
         cropped_img = crop_astri_image(img)
         cleaned_img = self.wavelet_transform.clean_image(
-                        cropped_img, raw_option_string=self.wavelet_options)
+                        cropped_img, raw_option_string=self.wavelet_options,
+                        tmp_files_directory="/tmp/")
 
         self.cutflow.count("wavelet cleaning")
 
@@ -178,6 +189,10 @@ class ImageCleaner:
     def clean_wave_hex(self, img, cam_geom, foclen):
         rot_geom, rot_img = convert_geometry_1d_to_2d(
                                 cam_geom, img, cam_geom.cam_id)
+
+        square_mask = rot_geom.mask
+        rot_img[~square_mask] = np.random.normal(0.13, 5.77,
+                                                 np.count_nonzero(~square_mask))
 
         cleaned_img = self.wavelet_transform(
                 rot_img,

@@ -11,11 +11,13 @@ from glob import glob
 from bisect import insort
 
 import matplotlib.pyplot as plt
-from matplotlib import cm
 
 from astropy import units as u
 
-import tables as tb
+try:
+    import tables as tb
+except:
+    print("no pytables installed")
 
 from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
@@ -30,12 +32,6 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
 
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/sap-cta-data-pipeline"))
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/snippets/ctapipe"))
-
-from extract_and_crop_simtel_images import crop_astri_image
 
 from modules.ImageCleaning import ImageCleaner, EdgeEventException
 from modules.CutFlow import CutFlow
@@ -70,9 +66,6 @@ def main():
         filenamelist = glob("{}/proton/*gz".format(args.indir))
     else:
         filenamelist = glob("{}/gamma/*gz".format(args.indir))
-
-    # filenamelist = ["/local/home/tmichael/Data/cta/Prod3/gamma_20deg_0deg_"
-    # "run10251___cta-prod3-merged_desert-2150m-Paranal-subarray-3_cone10.simtel"]
 
     if len(filenamelist) == 0:
         print("no files found; check indir: {}".format(args.indir))
@@ -111,22 +104,25 @@ def main():
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    # this class defines the reconstruction parameters to keep track of
-    class RecoEvent(tb.IsDescription):
-        NTels_trigg = tb.Int16Col(dflt=1, pos=0)
-        NTels_clean = tb.Int16Col(dflt=1, pos=1)
-        EnMC = tb.Float32Col(dflt=1, pos=2)
-        xi = tb.Float32Col(dflt=1, pos=3)
-        DeltaR = tb.Float32Col(dflt=1, pos=4)
-        ErrEstPos = tb.Float32Col(dflt=1, pos=5)
+    try:
+        # this class defines the reconstruction parameters to keep track of
+        class RecoEvent(tb.IsDescription):
+            NTels_trigg = tb.Int16Col(dflt=1, pos=0)
+            NTels_clean = tb.Int16Col(dflt=1, pos=1)
+            EnMC = tb.Float32Col(dflt=1, pos=2)
+            xi = tb.Float32Col(dflt=1, pos=3)
+            DeltaR = tb.Float32Col(dflt=1, pos=4)
+            ErrEstPos = tb.Float32Col(dflt=1, pos=5)
 
-    reco_outfile = tb.open_file(
-            "{}/{}_{}.h5".format(args.events_dir,args.out_file, args.mode), mode="w",
-            # if we don't want to write the event list to disk, need to add more arguments
-            **({} if args.store else {"driver": "H5FD_CORE",
-                                      "driver_core_backing_store": False}))
-    reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
-    reco_event = reco_table.row
+        reco_outfile = tb.open_file(
+                "{}/{}_{}.h5".format(args.events_dir,args.out_file, args.mode), mode="w",
+                # if we don't want to write the event list to disk, need to add more arguments
+                **({} if args.store else {"driver": "H5FD_CORE",
+                                        "driver_core_backing_store": False}))
+        reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
+        reco_event = reco_table.row
+    except:
+        print("no pytables installed")
 
     # define here which telescopes to loop over
     allowed_tels = None
@@ -232,28 +228,31 @@ def main():
             xi = linalg.angle(fit_origin, shower_org).to(angle_unit)
             diff = linalg.length(fit_position[:2]-shower_core)
 
-            # store the reconstruction data in the PyTable
-            reco_event["NTels_trigg"] = len(event.dl0.tels_with_data)
-            reco_event["NTels_clean"] = len(fit.circles)
-            reco_event["EnMC"] = event.mc.energy / energy_unit
-            reco_event["xi"] = xi / angle_unit
-            reco_event["DeltaR"] = diff / dist_unit
-            reco_event["ErrEstPos"] = err_est_dist / dist_unit
-            reco_event.append()
-            reco_table.flush()
+            try:
+                # store the reconstruction data in the PyTable
+                reco_event["NTels_trigg"] = len(event.dl0.tels_with_data)
+                reco_event["NTels_clean"] = len(fit.circles)
+                reco_event["EnMC"] = event.mc.energy / energy_unit
+                reco_event["xi"] = xi / angle_unit
+                reco_event["DeltaR"] = diff / dist_unit
+                reco_event["ErrEstPos"] = err_est_dist / dist_unit
+                reco_event.append()
+                reco_table.flush()
 
-            # print some performance
-            print()
-            print("xi = {:4.3f}".format(xi))
-            print("pos = {:4.3f}".format(diff))
-            print("err_est_dist: {:4.3f}".format(err_est_dist))
+                # print some performance
+                print()
+                print("xi = {:4.3f}".format(xi))
+                print("pos = {:4.3f}".format(diff))
+                print("err_est_dist: {:4.3f}".format(err_est_dist))
 
-            print()
-            print("xi res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table.cols.xi, 68), angle_unit))
-            print("core res (68-percentile) = {:4.3f} {}"
-                  .format(np.percentile(reco_table.cols.DeltaR, 68), dist_unit))
-            print()
+                print()
+                print("xi res (68-percentile) = {:4.3f} {}"
+                    .format(np.percentile(reco_table.cols.xi, 68), angle_unit))
+                print("core res (68-percentile) = {:4.3f} {}"
+                    .format(np.percentile(reco_table.cols.DeltaR, 68), dist_unit))
+                print()
+            except:
+                pass
 
             # this plots
             # • the MC shower core

@@ -1,5 +1,3 @@
-from os.path import expandvars
-
 import numpy as np
 np.tau = 2*np.pi
 
@@ -78,6 +76,7 @@ def convert_astropy_array(arr, unit=None):
 
 
 def make_argparser():
+    from os.path import expandvars
     import argparse
     parser = argparse.ArgumentParser(description='show single telescope')
     parser.add_argument('-m', '--max_events', type=int, default=None,
@@ -125,6 +124,7 @@ def tikz_save(arg, **kwargs):
                       figurewidth  = '\\figurewidth', **kwargs)
     except:
         print("matplotlib2tikz is not installed")
+        print("no .tex is saved")
 
 
 def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):

@@ -4,6 +4,9 @@ path.append(expandvars("$CTA_SOFT/"
             "jeremie_cta/sap-cta-data-pipeline"))
 path.append(expandvars("$CTA_SOFT/"
             "jeremie_cta/snippets/ctapipe"))
+from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+wavelet_transform = WaveletTransform()
+
 
 from glob import glob
 import argparse
@@ -31,20 +34,20 @@ from ctapipe.image.geometry_converter import *
 
 
 path.append(expandvars("$CTA_SOFT/tino_cta"))
-from modules.ImageCleaning import kill_isolpix
+from modules.ImageCleaning import *
 from helper_functions import *
 
+from copy import deepcopy
 
 global tel_geom
 
-wavelet_transform = WaveletTransform()
 
 fig = None
 from ctapipe.visualization import CameraDisplay
-def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electrons):
+def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_electrons):
     rot_x, rot_y = unskew_hex_pixel_grid(cam_geom.pix_x, cam_geom.pix_y,
                                          cam_geom.cam_rotation)
-    colors = cm.hot(signal/max(signal))
+    colors = cm.inferno(pmt_signal/max(pmt_signal))
 
     x_edges, y_edges, x_scale = get_orthogonal_grid_edges(rot_x, rot_y)
 
@@ -58,11 +61,28 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
     square_mask = new_geom.mask
 
     cleaned_img = wavelet_transform(new_signal,
-                                    raw_option_string="-K -C1 -m1 -f2 -s3 -n4")
-    cleaned_img = kill_isolpix(cleaned_img)
+                                    raw_option_string=args.raw)
 
     unrot_img = cleaned_img[square_mask == 1]
-    unrot_colors = cm.hot(unrot_img/max(unrot_img))
+    unrot_colors = cm.inferno(unrot_img/max(unrot_img))
+
+    cleaned_img_ik = kill_isolpix(cleaned_img, threshold=2)
+    unrot_img_ik = cleaned_img_ik[square_mask == 1]
+    unrot_colors_ik = cm.inferno(unrot_img_ik/max(unrot_img_ik))
+
+
+    square_image_add_noise = np.copy(new_signal)
+    square_image_add_noise[~square_mask] = np.random.normal(0.13, 5.77,
+                                                           np.count_nonzero(~square_mask))
+
+    square_image_add_noise_cleaned = wavelet_transform(square_image_add_noise,
+                                            raw_option_string=args.raw)
+
+    square_image_add_noise_cleaned_ik = kill_isolpix(square_image_add_noise_cleaned,
+                                                     threshold=2)
+    unrot_geom, unrot_noised_signal = convert_geometry_back(
+        new_geom, square_image_add_noise_cleaned_ik, cam_geom.cam_id,
+        event.inst.optical_foclen[tel_id])
 
     global fig
     global cb1, ax1
@@ -71,8 +91,11 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
     global cb4, ax4
     global cb5, ax5
     global cb6, ax6
+    global cb7, ax7
+    global cb8, ax8
+    global cb9, ax9
     if fig is None:
-        fig = plt.figure()
+        fig = plt.figure(figsize=(10, 10))
     else:
         fig.delaxes(ax1)
         fig.delaxes(ax2)
@@ -80,52 +103,96 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
         fig.delaxes(ax4)
         fig.delaxes(ax5)
         fig.delaxes(ax6)
+        fig.delaxes(ax7)
+        fig.delaxes(ax8)
+        fig.delaxes(ax9)
         cb1.remove()
         cb2.remove()
         cb3.remove()
+        cb4.remove()
         cb5.remove()
         cb6.remove()
-    ax1 = fig.add_subplot(231)
-    disp1 = CameraDisplay(cam_geom, image=pmt_signal, ax=ax1)
-    disp1.cmap = plt.cm.hot
-    disp1.add_colorbar()
-    cb1 = disp1.colorbar
-    plt.title("noisy image")
+        cb7.remove()
+        cb8.remove()
+        cb9.remove()
 
-    ax2 = fig.add_subplot(232)
-    plt.hist2d(rot_x, rot_y, bins=(x_edges, y_edges), cmap=cm.hot,
-               weights=signal)
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.title("noisy, slanted image")
-    cb2 = plt.colorbar()
-
-    ax3 = fig.add_subplot(233)
-    plt.imshow(np.sqrt(cleaned_img.T), interpolation='none', cmap=cm.hot, origin='lower')
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.title("cleaned, slanted image")
-    cb3 = plt.colorbar()
-    ax3.set_axis_off()
-
-    ax4 = fig.add_subplot(234)
-    plt.imshow(square_mask.T, interpolation='none', cmap=cm.hot, origin='lower')
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.title("mask for slanted image")
-    ax4.set_axis_off()
-
-    ax5 = fig.add_subplot(235)
-    disp5 = CameraDisplay(cam_geom, image=photo_electrons, ax=ax5)
+    ax1 = fig.add_subplot(333)
+    disp1 = CameraDisplay(cam_geom, image=photo_electrons, ax=ax1)
     plt.gca().set_aspect('equal', adjustable='box')
     plt.title("photo-electron image")
-    disp5.add_colorbar()
-    cb5 = disp5.colorbar
+    disp1.cmap = plt.cm.inferno
+    disp1.add_colorbar()
+    cb1 = disp1.colorbar
 
-    ax6 = fig.add_subplot(236)
-    disp6 = CameraDisplay(unrot_geom, image=np.sqrt(unrot_img),
-                          ax=ax6)
+    ax2 = fig.add_subplot(336)
+    disp2 = CameraDisplay(cam_geom, image=pmt_signal, ax=ax2)
     plt.gca().set_aspect('equal', adjustable='box')
-    plt.title("cleaned, original geometry")
-    disp6.add_colorbar()
-    cb6 = disp6.colorbar
+    disp2.cmap = plt.cm.inferno
+    disp2.add_colorbar()
+    cb2 = disp2.colorbar
+    plt.title("noisy image")
+
+    ax3 = fig.add_subplot(331)
+    plt.hist2d(rot_x, rot_y, bins=(x_edges, y_edges), cmap=cm.inferno,
+               weights=pmt_signal)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("noisy, slanted image")
+    cb3 = plt.colorbar()
+
+    ax4 = fig.add_subplot(334)
+    plt.imshow(np.sqrt(cleaned_img.T), interpolation='none', cmap=cm.inferno,
+               origin='lower')
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("cleaned, slanted image, islands not killed")
+    cb4 = plt.colorbar()
+    ax4.set_axis_off()
+
+    ax5 = fig.add_subplot(337)
+    plt.imshow(np.sqrt(cleaned_img_ik.T), interpolation='none', cmap=cm.inferno,
+               origin='lower')
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("cleaned, slanted image, islands killed")
+    cb5 = plt.colorbar()
+    ax5.set_axis_off()
+
+
+
+    ax6 = fig.add_subplot(332)
+    plt.imshow(square_image_add_noise.T, interpolation='none', cmap=cm.inferno,
+               origin='lower')
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("slanted image, noise added")
+    cb6 = plt.colorbar()
+    ax6.set_axis_off()
+
+
+    ax7 = fig.add_subplot(335)
+    plt.imshow(np.sqrt(square_image_add_noise_cleaned.T), interpolation='none',
+               cmap=cm.inferno,
+               origin='lower')
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("slanted image, noise added, cleaned")
+    cb7 = plt.colorbar()
+    ax7.set_axis_off()
+
+    ax8 = fig.add_subplot(338)
+    plt.imshow(np.sqrt(square_image_add_noise_cleaned_ik.T), interpolation='none',
+               cmap=cm.inferno,
+               origin='lower')
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("slanted image, noise added, cleaned")
+    cb8 = plt.colorbar()
+    ax8.set_axis_off()
+
+
+    ax9 = fig.add_subplot(339)
+    disp9 = CameraDisplay(unrot_geom, image=unrot_noised_signal,
+                          ax=ax9)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("cleaned, original geometry, islands killed")
+    disp9.cmap = plt.cm.inferno
+    disp9.add_colorbar()
+    cb9 = disp9.colorbar
 
     plt.pause(.1)
     response = input("press return to continue")
@@ -136,43 +203,38 @@ def transform_and_clean_hex_image(signal, cam_geom, optical_foclen, photo_electr
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='show single telescope')
-    parser.add_argument('-m', '--max-events', type=int, default=None)
-    parser.add_argument('-i', '--indir',   type=str,
-                        default=expandvars("$HOME/Data/cta/ASTRI9"))
-    parser.add_argument('-r', '--runnr',   type=str, default="*")
-    parser.add_argument('-t', '--teltype', type=str, default="SST_ASTRI")
-    parser.add_argument('--tail', dest="mode", action='store_true')
+    parser = make_argparser()
+    parser.add_argument('--proton',  action='store_true',
+                        help="do protons instead of gammas")
     args = parser.parse_args()
 
-    filenamelist_gamma  = glob("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
-    filenamelist_proton = glob("{}/proton/run{}.*gz".format(args.indir, args.runnr))
+    if args.infile_list:
+        filenamelist = ["{}/{}".format(args.indir, f) for f in args.infile_list]
+    elif args.proton:
+        filenamelist = glob("{}/proton/*gz".format(args.indir))
+    else:
+        filenamelist = glob("{}/gamma/*gz".format(args.indir))
 
-    print("{}/gamma/run{}.*gz".format(args.indir, args.runnr))
-    if len(filenamelist_gamma) == 0:
-        print("no gammas found...")
-    if len(filenamelist_proton) == 0:
-        print("no protons found...")
+    if len(filenamelist) == 0:
+        print("no files found; check indir: {}".format(args.indir))
+        exit(-1)
+
 
     cam_geom = {}
 
-    allowed_tels = range(34, 39)
-    # allowed_tels=range(10), # smallest ASTRI aray
-    # allowed_tels=range(34), # all ASTRI telescopes
-
-    for filename in chain(sorted(filenamelist_gamma)[:], sorted(filenamelist_proton)[:]):
-        filename = expandvars(
-                         "$HOME/Data/cta/Prod3/gamma_20deg_180deg_run1000___cta-prod3"
-                         "-demo_desert-2150m-Paranal-demo2sect_cone10.simtel.gz")
+    # define here which telescopes to loop over
+    allowed_tels = None
+    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    # allowed_tels = range(34)  # all ASTRI telescopes
+    allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
-                                     #allowed_tels=allowed_tels,
+                                     allowed_tels=allowed_tels,
                                      max_events=args.max_events)
 
         for event in source:
-
-            pmt_signal = None
 
             for tel_id in event.dl0.tels_with_data:
 
@@ -181,15 +243,15 @@ if __name__ == '__main__':
                                         event.inst.pixel_pos[tel_id][0],
                                         event.inst.pixel_pos[tel_id][1],
                                         event.inst.optical_foclen[tel_id])
-                if cam_geom[tel_id].pix_type is not "hexagonal":
-                    continue
 
-                if False:
-                    pmt_signal = apply_mc_calibration_ASTRI(
-                        event.dl0.tel[tel_id].adc_sums, tel_id)
+                if cam_geom[tel_id].cam_id == "ASTRI":
+                    cal_signal = apply_mc_calibration_ASTRI(
+                                    event.r0.tel[tel_id].adc_sums,
+                                    event.mc.tel[tel_id].dc_to_pe,
+                                    event.mc.tel[tel_id].pedestal)
                 else:
-                    pmt_signal = apply_mc_calibration(
-                        event.dl0.tel[tel_id].adc_sums[0],
+                    cal_signal = apply_mc_calibration(
+                        event.r0.tel[tel_id].adc_sums[0],
                         event.mc.tel[tel_id].dc_to_pe[0],
                         event.mc.tel[tel_id].pedestal[0])
 
@@ -197,7 +259,7 @@ if __name__ == '__main__':
                     ''' TODO switch to cleaning module if still desired '''
                 else:
 
-                    transform_and_clean_hex_image(pmt_signal,
+                    transform_and_clean_hex_image(cal_signal,
                                                   cam_geom[tel_id],
                                                   event.inst.optical_foclen[tel_id],
                                                   event.mc.tel[tel_id].photo_electron_image)

@@ -6,3 +6,7 @@ data/
 plots*
 __pycache__
 .cache
+
+datapipe.tar.gz
+modules.tar.gz
+extract_and_crop_simtel_images.py
