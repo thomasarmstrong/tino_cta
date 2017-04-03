@@ -58,6 +58,9 @@ class fancy_EventClassifier:
             trainClasses  += [cl]*len(evt)
         return self.clf.fit(trainFeatures, trainClasses)
 
+    def predict(self, X):
+        return type(self.clf).predict(self, X)
+
     def predict_proba(self, X):
 
         predict_proba = []
@@ -71,12 +74,17 @@ class fancy_EventClassifier:
 
     def save(self, path):
         from sklearn.externals import joblib
-        joblib.dump(self, path)
+        joblib.dump(self.clf, path)
 
-    @staticmethod
-    def load(path):
+    @classmethod
+    def load(cls, path):
         from sklearn.externals import joblib
-        return joblib.load(path)
+        clf = joblib.load(path)
+        self = cls(type(clf))
+
+        self.clf = clf
+
+        return self
 
     def show_importances(self, feature_labels=None):
         import matplotlib.pyplot as plt
