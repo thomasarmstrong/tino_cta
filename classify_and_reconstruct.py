@@ -1,9 +1,5 @@
 from sys import exit, path
 from os.path import expandvars
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/sap-cta-data-pipeline/"))
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/snippets/ctapipe/"))
 
 from itertools import chain
 
@@ -56,9 +52,9 @@ def main():
     if args.infile_list:
         filenamelist = ["{}/{}".format(args.indir, f) for f in args.infile_list]
     elif args.proton:
-        filenamelist = glob("{}/proton/*gz".format(args.indir))
+        filenamelist = sorted(glob("{}/proton/*gz".format(args.indir)))[100:101]
     else:
-        filenamelist = glob("{}/gamma/*gz".format(args.indir))
+        filenamelist = sorted(glob("{}/gamma/*gz".format(args.indir)))[14:15]
 
     if len(filenamelist) == 0:
         print("no files found; check indir: {}".format(args.indir))
@@ -84,10 +80,10 @@ def main():
     fit = FitGammaHillas()
 
     # wrapper for the scikit learn classifier
-    classifier = EventClassifier(cutflow=Eventcutflow)
-    classifier.load("{}/classifier_{}_{}_{}.pkl".format(
-        args.classifier_dir, args.mode, "".join(args.raw.split()),
-        "RandomForestClassifier"))
+    classifier = fancy_EventClassifier.load(
+        "{}/classifier_{}_{}_{}.pkl".format(args.classifier_dir, args.mode,
+                                            args.raw.replace(' ', ''),
+                                            "RandomForestClassifier"))
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -104,9 +100,7 @@ def main():
         theta = tb.Float32Col(dflt=1, pos=4)
         off_angle = tb.Float32Col(dflt=1, pos=5)
         ErrEstPos = tb.Float32Col(dflt=1, pos=6)
-        gamma_ratio = tb.Float32Col(dflt=1, pos=7)
-        gammaness_o = tb.Float32Col(dflt=1, pos=8)
-        gammaness_d = tb.Float32Col(dflt=1, pos=9)
+        gammaness = tb.Float32Col(dflt=1, pos=9)
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
     reco_outfile = tb.open_file(
@@ -258,7 +252,7 @@ def main():
             Eventcutflow.count("position fit")
 
             # now prepare the features for the classifier
-            features_dict = {}
+            features_evt = {}
             NTels = len(hillas_dict)
             for tel_id in hillas_dict.keys():
                 Imagecutflow.count("pre-features")
@@ -269,7 +263,7 @@ def main():
 
                 impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                 impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                features = [
+                features_tel = [
                             impact_dist_rec/u.m,
                             tot_signal,
                             max_signal,
@@ -281,21 +275,19 @@ def main():
                             moments.kurtosis,
                             err_est_pos/u.m
                             ]
-                if np.isnan(features).any():
+                if np.isnan(features_tel).any():
                     continue
 
                 Imagecutflow.count("features nan")
 
-                features_dict[tel_id] = features
+                features_evt[tel_id] = features_tel
 
-            if len(features_dict):
-                try:
-                    gamma_ratio, gammaness_o, gammaness_d = classifier.predict(
-                        [b+[a] for a, b in features_dict.items()])
-                except Exception as e:
-                    print("error: ", e)
-                    print("skipping event")
-                    continue
+            if not features_evt:
+                continue
+
+            predict_proba = classifier.predict_proba([features_evt])
+            print(predict_proba)
+            gammaness = predict_proba[0,1]
 
             fit_dir, crossings = fit.fit_origin_crosses()
 
@@ -310,9 +302,7 @@ def main():
             reco_event["theta"] = theta / angle_unit
             reco_event["off_angle"] = off_angle / angle_unit
             reco_event["ErrEstPos"] = err_est_pos / dist_unit
-            reco_event["gamma_ratio"] = gamma_ratio
-            reco_event["gammaness_o"] = gammaness_o
-            reco_event["gammaness_d"] = gammaness_d
+            reco_event["gammaness"] = gammaness
             reco_event.append()
             reco_table.flush()
 
@@ -324,14 +314,30 @@ def main():
     Eventcutflow()
     Imagecutflow()
 
+    if args.plot:
+        gammaness = [x['gammaness'] for x in reco_table]
+        NTels_rec = [x['NTels_reco'] for x in reco_table]
+
+        fig = plt.figure()
+        ax = plt.subplot(111)
+        histo = np.histogram2d(NTels_rec, gammaness,
+                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+        histo_normed = histo / histo.max(axis=0)
+        im = ax.imshow(histo_normed, interpolation='none', origin='lower',
+                        aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+        cb = fig.colorbar(im, ax=ax)
+        ax.set_xlabel("NTels")
+        ax.set_ylabel("drifted gammaness")
+        plt.title(" ** ".join([args.mode, "protons" if args.proton else "gamma"]))
+
+
     N_selected = len([ x for x in reco_table.where(
-        """(NTels_reco > min_tel) & (gamma_ratio > agree_threshold)""")])
+        """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
     N_total = len(reco_table)
     print("fraction selected events:")
     print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
 
+    plt.show()
+
 if __name__ == '__main__':
     main()
-
-
-
