@@ -267,10 +267,6 @@ if __name__ == '__main__':
     print()
 
 
-    # try neural network
-    from sklearn.neural_network import MLPClassifier, BernoulliRBM
-
-
     # reduce the number of events so that
     # they are the same in gammas and protons
     classifier.equalise_nevents()
@@ -280,21 +276,20 @@ if __name__ == '__main__':
 
     for cl in classifier.class_list:
         trainFeatures += classifier.Features[cl]
-        trainClasses += [cl == "g"]*len(classifier.Features[cl])
+        trainClasses += [cl]*len(classifier.Features[cl])
 
     clf_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
                   'random_state': 0}
+
+    # try neural network
+    #from sklearn.neural_network import MLPClassifier
     #clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
                   #'hidden_layer_sizes': (50,50,)}
-    # BernoulliRBM' object has no attribute 'predict_proba'
-    #clf_kwargs = {'classifier': BernoulliRBM}
 
     clf = fancy_EventClassifier(**clf_kwargs)
-            #n_estimators=40, max_depth=None, min_samples_split=2, random_state=0)
-            #BernoulliRBM)
-            #MLPClassifier, random_state=1, alpha=1e-5, hidden_layer_sizes=(100, 2))
-    print(clf)
     clf.fit(trainFeatures, trainClasses)
+
+    print(clf)
 
     # save the classifier to disk
     if args.store:
@@ -320,11 +315,6 @@ if __name__ == '__main__':
         from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
         plt.figure()
         colours = ["darkorange", "r", "b", "g", "black"]
-        #for i in range(4):
-            #X_train, X_test, y_train, y_test = train_test_split(trainFeatures,
-                                                                #trainClasses,
-                                                                #test_size=.5,
-                                                                #random_state=i)
 
         X, y = np.array(trainFeatures), np.array(trainClasses)
         sss = StratifiedShuffleSplit(n_splits=5, test_size=0.5, random_state=0)
@@ -336,9 +326,9 @@ if __name__ == '__main__':
 
             clf.fit(X_train, y_train)
 
-            y_score = clf.predict_proba(X_test)[:,1]
+            y_score = clf.predict_proba(X_test)[:,0]
 
-            fpr, tpr, _ = roc_curve(y_test, y_score)
+            fpr, tpr, _ = roc_curve(y_test == "g", y_score)
             roc_auc = auc(fpr, tpr)
 
             lw = 2
@@ -351,7 +341,7 @@ if __name__ == '__main__':
         plt.ylim([0.0, 1.05])
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
-        plt.title('Receiver operating characteristic example')
+        plt.title('Receiver operating characteristic')
         plt.suptitle("{} ** {}".format(
             "wavelets" if args.mode == "wave" else "tailcuts",
             clf))
@@ -361,70 +351,45 @@ if __name__ == '__main__':
             save_fig('{}/classification_area_under_curve_{}_{}_{}'.format(args.plots_dir,
                         args.mode, args.raw.replace(" ", ""), clf))
 
-        plt.show()
 
+        histos = {'g': None, 'p': None}
+        sss = StratifiedShuffleSplit(n_splits=5, test_size=0.19, random_state=0)
+        for i, (train_index, test_index) in enumerate(sss.split(X, y)):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
 
-    exit()
+            clf = fancy_EventClassifier(**clf_kwargs)
 
-    # clf_mlp
-    clf = None
+            clf.fit(X_train, y_train)
 
+            for cl in histos.keys():
+                test = X_test[y_test==cl]
+                NTels = [len(evt) for evt in test]
 
+                try:
+                    y_score = clf.predict_proba(test)[:,0]
+                except:
+                    continue
 
-    if args.store:
-        # learn on all events and save the classifier to disk
-        classifier.learn(clf=clf)
-        clf_string = get_class_string(classifier.clf)
+                temp = np.histogram2d(NTels, y_score, bins=(range(1, 10),
+                                                            np.linspace(0, 1, 11)))[0].T
 
-        classifier.save("{}/classifier_{}_{}_{}.pkl".format(args.outdir,
-                        args.mode, args.raw.replace(" ", ""), clf_string))
+                if histos[cl] is None:
+                    histos[cl] = temp
+                else:
+                    histos[cl] += temp
 
-    if args.check:
-        # do cross validation: split the list of events in chunks, train on all chunks
-        # but one and predict that chunk and assert prediction. repeat for all chunks
-        clf = classifier.self_check(min_tel=4, split_size=50, clf=clf)
-        # get the name of the classifier class as a string
-        clf_string = get_class_string(clf)
+        fig = plt.figure()
+        for cl in histos.keys():
+            histo = histos[cl]
 
-        plt.subplots_adjust(left=0.1, right=0.98, top=0.92, bottom=0.08,
-                            hspace=0.85, wspace=0.28)
+            ax = plt.subplot(121 if cl == "g" else 122)
+            histo_normed = histo / histo.max(axis=0)
+            im = ax.imshow(histo_normed, interpolation='none', origin='lower',
+                            aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+            cb = fig.colorbar(im, ax=ax)
+            ax.set_xlabel("NTels")
+            ax.set_ylabel("drifted gammaness")
+            plt.title(" ** ".join([args.mode, "protons" if cl=='p' else "gamma"]))
 
-        if args.write:
-            # save performance plots of classification
-            save_fig('{}/classification_performance_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, args.raw.replace(" ", ""), clf_string))
-            # save the classification result for each channel
-            for cl in ['g', 'p']:
-                classifier.prediction_results[cl].write(
-                    'data/classification_results_{}_{}_{}_{}.fits'
-                    .format(cl, args.mode, args.raw.replace(" ", ""), clf_string),
-                    overwrite=True)
-
-        # plot the performance of the classification on screen
-        if args.plot:
-            plt.suptitle(" ** ".join([args.mode, args.raw, clf_string,
-                                      "NEvents: {}".format(len(classifier.Features["g"]))
-                                      ]))
-            plt.pause(.1)
-
-    # print the CutFlow tables
-    for cl in classifier.class_list:
-        print()
-        print()
-        print("Gamma" if cl == "g" else "Proton")
-        try:
-            e_cf = Eventcutflow[cl]("to classify")
-        except UndefinedCutException as e:
-            print(e)
-            e_cf = Eventcutflow[cl]()
-        print()
-        i_cf = Imagecutflow[cl]()
-
-        # also write them as latex to disk
-        if args.write:
-            e_cf.write("data/event_cutflow_table_{}_{}_{}_{}.tex".format(cl,
-                       args.mode, args.raw.replace(" ", ""), clf_string), overwrite=True)
-            i_cf.write("data/image_cutflow_table_{}_{}_{}_{}.tex".format(cl,
-                       args.mode, args.raw.replace(" ", ""), clf_string), overwrite=True)
-    if args.plot:
         plt.show()
