@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     parser = make_argparser()
     parser.add_argument('-o', '--outdir', type=str,
-                        default='data/classify_pickle')
+                        default='data/classifier_pickle')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
@@ -64,6 +64,10 @@ if __name__ == '__main__':
         E.set_cut("min2Tels trig", lambda x: x < 2)
         E.set_cut("min2Tels reco", lambda x: x < 2)
 
+    for I in Imagecutflow.values():
+        I.set_cut("position nan", lambda x: np.isnan(x).any())
+        I.set_cut("features nan", lambda x: np.isnan(x).any())
+
     # class that wraps tail cuts and wavelet cleaning
     Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
                            skip_edge_events=False)  # args.skip_edge_events)
@@ -72,7 +76,9 @@ if __name__ == '__main__':
     fit = FitGammaHillas()
 
     # wrapper for the scikit learn classifier
-    classifier = EventClassifier(cutflow=Eventcutflow)
+    Features_event_list = {"g": [], "p": []}
+    MC_Energies = {"g": [], "p": []}
+
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -205,7 +211,7 @@ if __name__ == '__main__':
                     print(e)
                     continue
 
-                if np.isnan(pos_fit_cr.value).any():
+                if Imagecutflow[cl].cut("position nan", pos_fit_cr):
                     continue
 
                 pos_fit = pos_fit_cr
@@ -236,15 +242,15 @@ if __name__ == '__main__':
                                 moments.kurtosis,
                                 err_est_pos/u.m
                               ]
-                    if np.isnan(features_tel).any():
+
+                    if Imagecutflow[cl].cut("features nan", features_tel):
                         continue
 
-                    Imagecutflow[cl].count("features nan")
-
                     features_evt[tel_id] = features_tel
+
                 if len(features_evt):
-                    classifier.Features[cl].append(features_evt)
-                    classifier.MCEnergy[cl].append(mc_shower.energy)
+                    Features_event_list[cl].append(features_evt)
+                    MC_Energies[cl].append(mc_shower.energy)
 
                 if signal_handler.stop:
                     break
@@ -266,17 +272,21 @@ if __name__ == '__main__':
 
     print()
 
-
-    # reduce the number of events so that
-    # they are the same in gammas and protons
-    classifier.equalise_nevents()
-
     trainFeatures = []
     trainClasses  = []
 
-    for cl in classifier.class_list:
-        trainFeatures += classifier.Features[cl]
-        trainClasses += [cl]*len(classifier.Features[cl])
+    print("length of features:")
+    for cl, feat in Features_event_list.items():
+        print(cl, len(feat))
+
+    # reduce the number of events by random draw so that they are the same
+    # in gammas and protons; then add them to a single list
+    minEvents = min([len(Features) for Features in Features_event_list.values()])
+    for cl in Features_event_list.keys():
+        trainFeatures = np.append(
+                            trainFeatures,
+                            np.random.choice(Features_event_list[cl], minEvents, False))
+        trainClasses += [cl]*minEvents
 
     clf_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
                   'random_state': 0}
