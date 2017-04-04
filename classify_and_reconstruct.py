@@ -13,7 +13,9 @@ from astropy import units as u
 from ctapipe.io.hessio import hessio_event_source
 from ctapipe.utils import linalg
 from ctapipe.instrument.InstrumentDescription import load_hessio
-from ctapipe.image.hillas import hillas_parameters, HillasParameterizationError
+
+from ctapipe.image.hillas import HillasParameterizationError, \
+    hillas_parameters_4 as hillas_parameters
 
 from helper_functions import *
 from modules.CutFlow import CutFlow
@@ -39,10 +41,14 @@ def main():
     dist_unit   = u.m
 
 
+    agree_threshold = .5
+    min_tel = 3
+
+
 
     parser = make_argparser()
     parser.add_argument('--classifier_dir', type=str,
-                        default='data/classify_pickle')
+                        default='data/classifier_pickle')
     parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
     parser.add_argument('-o', '--out_file', type=str, default="classified_events")
     parser.add_argument('--proton',  action='store_true',
@@ -50,11 +56,14 @@ def main():
     args = parser.parse_args()
 
     if args.infile_list:
-        filenamelist = ["{}/{}".format(args.indir, f) for f in args.infile_list]
+        filenamelist = []
+        for f in args.infile_list:
+            filenamelist += glob("{}/{}".format(args.indir, f))
+        filenamelist.sort()
     elif args.proton:
-        filenamelist = sorted(glob("{}/proton/*gz".format(args.indir)))[100:101]
+        filenamelist = sorted(glob("{}/proton/*gz".format(args.indir)))[100:]
     else:
-        filenamelist = sorted(glob("{}/gamma/*gz".format(args.indir)))[14:15]
+        filenamelist = sorted(glob("{}/gamma/*gz".format(args.indir)))[14:]
 
     if len(filenamelist) == 0:
         print("no files found; check indir: {}".format(args.indir))
@@ -114,17 +123,13 @@ def main():
 
 
 
-    agree_threshold = .75
-    min_tel = 2
-
-
 
     source_orig = None
 
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    for filename in sorted(filenamelist[:args.last]):
+    for filename in filenamelist[:args.last]:
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -275,6 +280,8 @@ def main():
                             moments.kurtosis,
                             err_est_pos/u.m
                             ]
+
+
                 if np.isnan(features_tel).any():
                     continue
 
@@ -286,8 +293,7 @@ def main():
                 continue
 
             predict_proba = classifier.predict_proba([features_evt])
-            print(predict_proba)
-            gammaness = predict_proba[0,1]
+            gammaness = predict_proba[0,0]
 
             fit_dir, crossings = fit.fit_origin_crosses()
 
@@ -330,14 +336,16 @@ def main():
         ax.set_ylabel("drifted gammaness")
         plt.title(" ** ".join([args.mode, "protons" if args.proton else "gamma"]))
 
+        plt.show()
 
     N_selected = len([ x for x in reco_table.where(
         """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
     N_total = len(reco_table)
-    print("fraction selected events:")
+    print("\nfraction selected events:")
     print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
 
-    plt.show()
+    if not args.dry:
+        print("\nlength filenamelist:", len(filenamelist))
 
 if __name__ == '__main__':
     main()
