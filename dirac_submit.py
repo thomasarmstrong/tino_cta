@@ -45,3 +45,17 @@ j.setName('hillas fit test')
 print "submitting job"
 res = dirac.submit(j)
 print 'Submission Result: ', res['Value']
+
+
+exit()
+
+
+
+#### FAQ ####
+
+# specify allowed sites to send the job to
+j.setDestination(['LCG.IN2P3-CC.fr', 'LCG.DESY-ZEUTHEN.de', 'LCG.CNAF.it', 'LCG.GRIF.fr', 'LCG.CYFRONET.pl', 'LCG.PRAGUE-CESNET.cz', 'LCG.Prague.cz', 'LCG.LAPP.fr'])
+
+# to specify input GRID files independent of the site the job is send to
+file1='LFN:/vo.cta.in2p3.fr/user/c/ciro.bigongiari/MiniArray9/Simtel/gamma/run1011.simtel.gz'
+j.setInputSandbox([file1])

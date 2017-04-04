@@ -8,7 +8,7 @@ ls -lhrt
 
 export MINICONDA=/cvmfs/cta.in2p3.fr/software/miniconda
 export PATH=$MINICONDA/bin:$PATH
-source $MINICONDA/bin/activate ctapipe_0.3.4
+source $MINICONDA/bin/activate ctapipe_v0.4
 
 export PATH=./:$PATH
 export LD_LIBRARY_PATH=./:$LD_LIBRARY_PATH
