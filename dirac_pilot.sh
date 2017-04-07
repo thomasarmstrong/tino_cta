@@ -25,4 +25,5 @@ which python
 
 export MPLBACKEND=Agg
 
-python $1
+echo calling: 'python $@'
+python $@
