@@ -61,13 +61,16 @@ def main():
     args = parser.parse_args()
 
     if args.infile_list:
-        filenamelist = ["{}/{}".format(args.indir, f) for f in args.infile_list]
+        filenamelist = []
+        for f in args.infile_list:
+            filenamelist += glob("{}/{}".format(args.indir, f))
     elif args.proton:
         filenamelist = glob("{}/proton/*gz".format(args.indir))
     else:
         filenamelist = glob("{}/gamma/*gz".format(args.indir))
+    filenamelist.sort()
 
-    if len(filenamelist) == 0:
+    if not filenamelist:
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
