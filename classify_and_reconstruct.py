@@ -336,7 +336,6 @@ def main():
         ax.set_ylabel("drifted gammaness")
         plt.title(" ** ".join([args.mode, "protons" if args.proton else "gamma"]))
 
-        plt.show()
 
     N_selected = len([ x for x in reco_table.where(
         """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
@@ -344,8 +343,10 @@ def main():
     print("\nfraction selected events:")
     print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
 
-    if not args.dry:
-        print("\nlength filenamelist:", len(filenamelist))
+    print("\nlength filenamelist:", len(filenamelist[:args.last]))
+
+    plt.show()
+
 
 if __name__ == '__main__':
     main()
