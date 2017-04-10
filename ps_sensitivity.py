@@ -21,11 +21,11 @@ MC energy ranges:
 gammas: 0.1 to 330 TeV
 proton: 0.1 to 600 TeV
 '''
-edges_gammas = np.linspace(2, np.log10(330000), 28)
-edges_proton = np.linspace(2, np.log10(600000), 30)
+edges_gammas = np.logspace(2, np.log10(330000), 28) * u.GeV
+edges_proton = np.logspace(2, np.log10(600000), 30) * u.GeV
 
 angle_unit = u.deg
-energy_unit = u.GeV
+energy_unit = u.TeV
 flux_unit = (u.erg*u.cm**2*u.s)**(-1)
 sensitivity_unit = flux_unit * u.erg**2
 
@@ -43,11 +43,10 @@ def open_pytable_as_pandas(filename, mode='r'):
     return pd.DataFrame(pyt_table[:])
 
 apply_cuts = True
-def selection_mask(event_table, ntels=2, gammaness=.50):
-    return (event_table["NTels_reco"] >= ntels) & \
-           (event_table["gammaness"] > gammaness)
-           #& (event_table["off_angle"] < .3)
-         #& (event_table["gamma_ratio"] > gamma_ratio), gamma_ratio=.75
+def selection_mask(event_table, ntels=3, gammaness=.75):
+    return ((event_table["NTels_reco"] >= ntels) & \
+            (event_table["gammaness"] > gammaness))
+
 
 
 if __name__ == "__main__":
@@ -143,14 +142,14 @@ if __name__ == "__main__":
 
 
 
-    SensCalc_t = Sensitivity_PointSource(
-                    mc_energies={'g': gammas_t['MC_Energy'],
-                                 'p': proton_t['MC_Energy']},
-                    off_angles={'g': gammas_t['off_angle']*angle_unit,
-                                'p': proton_t['off_angle']*angle_unit},
+    SensCalc_t = SensitivityPointSource(
+                    mc_energies={'g': gammas_t['MC_Energy'].values*u.GeV,
+                                 'p': proton_t['MC_Energy'].values*u.GeV},
+                    off_angles={'g': gammas_t['off_angle'].values*angle_unit,
+                                'p': proton_t['off_angle'].values*angle_unit},
                     energy_bin_edges={'g': edges_gammas,
                                       'p': edges_proton}, verbose=True,
-                    energy_unit=energy_unit, flux_unit=flux_unit)
+                    flux_unit=flux_unit)
 
     sensitivities_t = SensCalc_t.calculate_sensitivities(
                             #generator_energy_hists=SensCalc.generator_energy_hists,
@@ -162,7 +161,8 @@ if __name__ == "__main__":
                             observation_time=observation_time,
                             rates={'g': crab_source_rate,
                                    'p': CR_background_rate},
-                            sensitivity_energy_bin_edges=np.linspace(2, 6, 17))
+                            e_min_max={"g": (0.1, 330)*u.TeV,
+                                       "p": (0.1, 600)*u.TeV})
     weights_t = SensCalc_t.event_weights
 
     print()
@@ -182,43 +182,50 @@ if __name__ == "__main__":
         bin_centres_p = (edges_proton[1:]+edges_proton[:-1])/2.
 
         plt.figure()
-        plt.loglog(
-                10**bin_centres_g,
-                SensCalc_t.exp_events_per_energy_bin['g'], label="gamma")
-        plt.loglog(
-                10**bin_centres_p,
-                SensCalc_t.exp_events_per_energy_bin['p'], label="proton")
+        #plt.loglog(
+        plt.bar(
+                bin_centres_p.value,
+                SensCalc_t.exp_events_per_energy_bin['p'], label="proton",
+                align="center", width=np.diff(edges_proton.value), alpha=.75)
+        plt.bar(
+                bin_centres_g.value,
+                SensCalc_t.exp_events_per_energy_bin['g'], label="gamma",
+                align="center", width=np.diff(edges_gammas.value), alpha=.75)
+        plt.gca().set_xscale("log")
+        plt.gca().set_yscale("log")
+
         plt.ylabel("expected events in {}".format(observation_time))
         plt.legend()
 
         # plot effective area
-        plt.figure(figsize=(16,8))
-        plt.suptitle("ASTRI Effective Areas")
-        plt.subplot(121)
-        #plt.loglog(
-            #10 ** bin_centres_g,
-            #SensCalc.effective_areas['g'], label="wavelets")
-        plt.loglog(
-            10 ** bin_centres_g,
-            SensCalc_t.effective_areas['g'], label="tailcuts")
-        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
-        plt.ylabel(r"effective area / $\mathrm{m^2}$")
-        plt.title("gammas")
-        plt.legend()
+        if False:
+            plt.figure(figsize=(16,8))
+            plt.suptitle("ASTRI Effective Areas")
+            plt.subplot(121)
+            #plt.loglog(
+                #10 ** bin_centres_g,
+                #SensCalc.effective_areas['g'], label="wavelets")
+            plt.loglog(
+                10 ** bin_centres_g,
+                SensCalc_t.effective_areas['g'], label="tailcuts")
+            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
+            plt.ylabel(r"effective area / $\mathrm{m^2}$")
+            plt.title("gammas")
+            plt.legend()
 
-        plt.subplot(122)
-        #plt.loglog(
-            #10 ** bin_centres_p,
-            #SensCalc.effective_areas['p'], label="wavelets")
-        plt.loglog(
-            10 ** bin_centres_p,
-            SensCalc_t.effective_areas['p'], label="tailcuts")
-        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
-        plt.ylabel(r"effective area / $\mathrm{m^2}$")
-        plt.title("protons")
-        plt.legend()
+            plt.subplot(122)
+            #plt.loglog(
+                #10 ** bin_centres_p,
+                #SensCalc.effective_areas['p'], label="wavelets")
+            plt.loglog(
+                10 ** bin_centres_p,
+                SensCalc_t.effective_areas['p'], label="tailcuts")
+            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
+            plt.ylabel(r"effective area / $\mathrm{m^2}$")
+            plt.title("protons")
+            plt.legend()
 
-        plt.pause(.1)
+            plt.pause(.1)
 
         # the point-source sensitivity binned in energy
         plt.figure()
@@ -239,14 +246,14 @@ if __name__ == "__main__":
             #label="wavelets (no upscale)")
 
         plt.semilogy(
-            sensitivities_t["MC Energy"].to(u.TeV),
+            sensitivities_t["MC Energy"].to(energy_unit),
             (sensitivities_t["Sensitivity"].to(flux_unit) *
              sensitivities_t["MC Energy"].to(u.erg)**2),
             color="C0",
             marker="s",
             label="tailcuts")
         plt.semilogy(
-            sensitivities_t["MC Energy"].to(u.TeV),
+            sensitivities_t["MC Energy"].to(energy_unit),
             (sensitivities_t["Sensitivity_uncorr"].to(flux_unit) *
              sensitivities_t["MC Energy"].to(u.erg)**2),
             color="darkorange",
@@ -254,7 +261,7 @@ if __name__ == "__main__":
             ls="",
             label="tailcuts (no upscale)")
         plt.legend()
-        plt.xlabel('E / {:latex}'.format(u.TeV))
+        plt.xlabel('E / {:latex}'.format(energy_unit))
         plt.ylabel(r'$E^2 \Phi /$ {:latex}'.format(sensitivity_unit))
         plt.gca().set_xscale("log")
         plt.xlim([1e-2, 2e3])
@@ -300,7 +307,7 @@ if __name__ == "__main__":
         plt.ylabel("expected events in {}".format(observation_time))
         plt.xlim([0, .3])
         plt.title("tailcuts")
-        plt.legend()
+        plt.legend(loc="upper right")
 
 
         #plt.subplot(212)
