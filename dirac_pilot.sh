@@ -27,3 +27,8 @@ export MPLBACKEND=Agg
 
 echo calling: 'python $@'
 python $@
+
+
+echo
+echo "final ls -lhrt"
+ls -lhrt
