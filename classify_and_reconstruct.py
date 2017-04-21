@@ -50,7 +50,7 @@ def main():
     parser.add_argument('--classifier_dir', type=str,
                         default='data/classifier_pickle')
     parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
-    parser.add_argument('-o', '--out_file', type=str, default="classified_events")
+    parser.add_argument('-o', '--out_file', type=str)
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
     args = parser.parse_args()
@@ -112,9 +112,12 @@ def main():
         gammaness = tb.Float32Col(dflt=1, pos=9)
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
+    if args.out_file:
+        out_filename = args.out_file
+    else:
+        out_filename = "classified_events_{}_{}.h5".format(channel, args.mode)
     reco_outfile = tb.open_file(
-            "{}/{}_{}_{}.h5".format(args.events_dir, args.out_file, channel, args.mode),
-            mode="w",
+            "{}/{}".format(args.events_dir, out_filename), mode="w",
             # if we don't want to write the event list to disk, need to add more arguments
             **({} if args.store else {"driver": "H5FD_CORE",
                                       "driver_core_backing_store": False}))
