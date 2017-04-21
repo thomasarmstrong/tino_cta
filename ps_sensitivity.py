@@ -133,6 +133,35 @@ if __name__ == "__main__":
     proton_t = open_pytable_as_pandas(
             "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "proton", "tail"))
 
+
+    if False:
+        fig = plt.figure()
+        tax = plt.subplot(121)
+        histo = np.histogram2d(gammas_t["NTels_reco"], gammas_t["gammaness"],
+                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+        histo_normed = histo / histo.max(axis=0)
+        im = tax.imshow(histo_normed, interpolation='none', origin='lower',
+                        aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+        cb = fig.colorbar(im, ax=tax)
+        tax.set_title("gammas")
+        tax.set_xlabel("NTels")
+        tax.set_ylabel("gammaness")
+
+        tax = plt.subplot(122)
+        histo = np.histogram2d(proton_t["NTels_reco"], proton_t["gammaness"],
+                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+        histo_normed = histo / histo.max(axis=0)
+        im = tax.imshow(histo_normed, interpolation='none', origin='lower',
+                        aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+        cb = fig.colorbar(im, ax=tax)
+        tax.set_title("protons")
+        tax.set_xlabel("NTels")
+        tax.set_ylabel("gammaness")
+
+        plt.show()
+
+
+
     # applying some cuts
     if apply_cuts:
         print("gammas, protons before cuts (tailcuts):", len(gammas_t), len(proton_t))
@@ -152,17 +181,18 @@ if __name__ == "__main__":
                     flux_unit=flux_unit)
 
     sensitivities_t = SensCalc_t.calculate_sensitivities(
-                            #generator_energy_hists=SensCalc.generator_energy_hists,
                             n_simulated_events={'g': NGammas_simulated,
                                                 'p': NProton_simulated},
                             generator_spectra={'g': Eminus2, 'p': Eminus2},
                             generator_areas={'g': np.pi * (1000*u.m)**2,
                                              'p': np.pi * (2000*u.m)**2},
                             observation_time=observation_time,
-                            rates={'g': crab_source_rate,
-                                   'p': CR_background_rate},
+                            spectra={'g': crab_source_rate,
+                                     'p': CR_background_rate},
                             e_min_max={"g": (0.1, 330)*u.TeV,
-                                       "p": (0.1, 600)*u.TeV})
+                                       "p": (0.1, 600)*u.TeV},
+                            generator_gamma={"g": 2, "p": 2},
+                            r_on=0.15*u.deg, r_off=0.15*u.deg)
     weights_t = SensCalc_t.event_weights
 
     print()
@@ -181,8 +211,43 @@ if __name__ == "__main__":
         bin_centres_g = (edges_gammas[1:]+edges_gammas[:-1])/2.
         bin_centres_p = (edges_proton[1:]+edges_proton[:-1])/2.
 
+        bin_widths_g = np.diff(edges_gammas.value)
+        bin_widths_p = np.diff(edges_proton.value)
+
+
+        if True:
+            # plot MC generator spectrum and selected spectrum
+            plt.figure()
+            plt.subplot(121)
+            plt.bar(bin_centres_g.value,
+                    SensCalc_t.generator_energy_hists['g'], label="generated",
+                    align="center", width=bin_widths_g)
+            plt.bar(bin_centres_g.value,
+                    SensCalc_t.selected_events['g'], label="selected",
+                    align="center", width=bin_widths_g)
+            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
+            plt.ylabel("number of events")
+            plt.gca().set_xscale("log")
+            plt.gca().set_yscale("log")
+            plt.title("gammas -- tailcuts")
+            plt.legend()
+
+            plt.subplot(122)
+            plt.bar(bin_centres_p.value,
+                    SensCalc_t.generator_energy_hists['p'], label="generated",
+                    align="center", width=bin_widths_p)
+            plt.bar(bin_centres_p.value,
+                    SensCalc_t.selected_events['p'], label="selected",
+                    align="center", width=bin_widths_p)
+            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
+            plt.ylabel("number of events")
+            plt.gca().set_xscale("log")
+            plt.gca().set_yscale("log")
+            plt.title("protons -- tailcuts")
+            plt.legend()
+
+
         plt.figure()
-        #plt.loglog(
         plt.bar(
                 bin_centres_p.value,
                 SensCalc_t.exp_events_per_energy_bin['p'], label="proton",
@@ -194,21 +259,22 @@ if __name__ == "__main__":
         plt.gca().set_xscale("log")
         plt.gca().set_yscale("log")
 
+        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
         plt.ylabel("expected events in {}".format(observation_time))
         plt.legend()
 
         # plot effective area
-        if False:
+        if True:
             plt.figure(figsize=(16,8))
             plt.suptitle("ASTRI Effective Areas")
             plt.subplot(121)
             #plt.loglog(
-                #10 ** bin_centres_g,
+                #bin_centres_g,
                 #SensCalc.effective_areas['g'], label="wavelets")
             plt.loglog(
-                10 ** bin_centres_g,
+                bin_centres_g,
                 SensCalc_t.effective_areas['g'], label="tailcuts")
-            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
+            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
             plt.ylabel(r"effective area / $\mathrm{m^2}$")
             plt.title("gammas")
             plt.legend()
@@ -218,9 +284,9 @@ if __name__ == "__main__":
                 #10 ** bin_centres_p,
                 #SensCalc.effective_areas['p'], label="wavelets")
             plt.loglog(
-                10 ** bin_centres_p,
+                bin_centres_p,
                 SensCalc_t.effective_areas['p'], label="tailcuts")
-            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
+            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_p.unit)+"}$")
             plt.ylabel(r"effective area / $\mathrm{m^2}$")
             plt.title("protons")
             plt.legend()
@@ -309,6 +375,23 @@ if __name__ == "__main__":
         plt.title("tailcuts")
         plt.legend(loc="upper right")
 
+
+        plt.subplot(212)
+        plt.hist([
+                  1-np.cos(proton_t['off_angle']),
+                  1-np.cos(gammas_t['off_angle'])],
+                  #proton_t['off_angle']**2,
+                  #gammas_t["off_angle"]**2],
+                 weights=[weights_t['p'], weights_t['g']],
+                 rwidth=1, stacked=True,
+                 range=(0, .15), label=("protons", "gammas"),
+                 log=False, bins=bins)
+        plt.xlabel(r"$1-\cos(\vartheta)$")
+        #plt.xlabel(r"$1-\cos(\vartheta)$")
+        plt.ylabel("expected events in {}".format(observation_time))
+        plt.xlim([0, .15])
+        plt.legend(loc="upper right")
+        plt.tight_layout()
 
         #plt.subplot(212)
         #if True:
