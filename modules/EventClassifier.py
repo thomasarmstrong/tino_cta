@@ -1,37 +1,13 @@
 import numpy as np
 
 from astropy import units as u
-from astropy.table import Table
 
-from ctapipe.io import CameraGeometry
-
-from ctapipe.utils.fitshistogram import Histogram
-
-from sklearn.ensemble.forest import ForestClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.base import BaseEstimator
-
-
-def convert_astropy_array(arr, unit=None):
-    if unit is None:
-        unit = arr[0].unit
-        return (np.array([a.to(unit).value for a in arr])*unit).si
-    else:
-        return np.array([a.to(unit).value for a in arr])*unit
 
 
 def proba_drifting(x):
     """ gives more weight to outliers -- i.e. close to 0 and 1 """
     return 10*x**3 - 15*x**4 + 6*x**5
-
-
-def proba_weighting(xs, weights):
-    s = np.sum(weights)
-
-    for x, w in zip(xs, weights):
-        print(x, x/w, s)
-    print()
-    return [x * (w / s) for x, w in zip(xs, weights)]
 
 
 class fancy_EventClassifier:
