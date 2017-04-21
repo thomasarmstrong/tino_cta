@@ -117,11 +117,16 @@ def main():
             DeltaR = tb.Float32Col(dflt=1, pos=4)
             ErrEstPos = tb.Float32Col(dflt=1, pos=5)
 
+        channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
+        if args.out_file:
+            out_filename = args.out_file
+        else:
+            out_filename = "classified_events_{}_{}.h5".format(channel, args.mode)
         reco_outfile = tb.open_file(
-                "{}/{}_{}.h5".format(args.events_dir,args.out_file, args.mode), mode="w",
-                # if we don't want to write the event list to disk, need to add more arguments
-                **({} if args.store else {"driver": "H5FD_CORE",
-                                        "driver_core_backing_store": False}))
+            "{}/{}".format(args.events_dir, out_filename), mode="w",
+            # if we don't want to write the event list to disk, need to add more arguments
+            **({} if args.store else {"driver": "H5FD_CORE",
+                                      "driver_core_backing_store": False}))
         reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
         reco_event = reco_table.row
     except:
@@ -132,7 +137,7 @@ def main():
     allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
-    for filename in sorted(filenamelist)[:5][:args.last]:
+    for filename in sorted(filenamelist)[:args.last]:
 
         print("filename = {}".format(filename))
 
