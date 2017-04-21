@@ -75,7 +75,6 @@ if __name__ == '__main__':
     # simple hillas-based shower reco
     fit = FitGammaHillas()
 
-    # wrapper for the scikit learn classifier
     Features_event_list = {"g": [], "p": []}
     MC_Energies = {"g": [], "p": []}
 
