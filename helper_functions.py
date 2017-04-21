@@ -1,7 +1,6 @@
 import numpy as np
 np.tau = 2*np.pi
 
-from astropy import units as u
 
 from matplotlib import pyplot as plt
 #plt.style.use('seaborn-talk')
@@ -70,9 +69,7 @@ def apply_mc_calibration(adcs, gains, peds):
 def convert_astropy_array(arr, unit=None):
     if unit is None:
         unit = arr[0].unit
-        return (np.array([a.to(unit).value for a in arr])*unit).si
-    else:
-        return np.array([a.to(unit).value for a in arr])*unit
+    return np.array([a.to(unit).value for a in arr])*unit
 
 
 def make_argparser():
@@ -183,8 +180,9 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
         cb.set_label(zlabel)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        plt.xlim(extent[:2])
-        plt.ylim(extent[2:])
+        if extent:
+            plt.xlim(extent[:2])
+            plt.ylim(extent[2:])
 
     ''' prepare and draw the data for the violin plot '''
     if do_violin:
@@ -225,12 +223,13 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
                        showextrema=False, showmedians=True)
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        ''' adding a colour bar to the hexbin plot reduces its width by 1/5
-        adjusting the extent of the violin plot to sync up with the hexbin plot '''
-        if not np.isnan(extent[:2]).any():
+
+        if extent:
+            # adding a colour bar to the hexbin plot reduces its width by 1/5
+            # adjusting the extent of the violin plot to sync up with the hexbin plot
             plt.xlim([extent[0], (5.*extent[1] - extent[0])/4.])
-        ''' for good measure also sync the vertical extent '''
-        if not np.isnan(extent[2:]).any():
+            # for good measure also sync the vertical extent
             plt.ylim(extent[2:])
+
         plt.grid()
 
