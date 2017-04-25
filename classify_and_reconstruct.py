@@ -91,7 +91,7 @@ def main():
     # wrapper for the scikit learn classifier
     classifier = fancy_EventClassifier.load(
         "{}/classifier_{}_{}_{}.pkl".format(args.classifier_dir, args.mode,
-                                            args.raw.replace(' ', ''),
+                                            args.raw.replace(' ', '').replace(',', ''),
                                             "RandomForestClassifier"))
 
     # catch ctr-c signal to exit current loop and still display results

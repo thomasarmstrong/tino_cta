@@ -49,7 +49,13 @@ input_sandbox = ['modules', 'helper_functions.py',
                  # fitsIO library
                  #'/local/home/tmichael/software/fitsio/cfitsio/libcfitsio.so.5.3.39',
                  # sets up the environment + script that is being run
-                 'dirac_pilot.sh', pilot_args.split()[0]]
+                 'dirac_pilot.sh', pilot_args.split()[0],
+
+                 # the pickled model for the event classifier
+                 "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/classifier/ASTRI/"
+                 "classifier_{}_-K-C1-m3-s223-n4_RandomForestClassifier.pkl".format(
+                            "tail" if "tail" in pilot_args else "wave")
+                 ]
 
 output_filename_template = 'rec_events_{}_{}_{}.h5'
 #output_filename_template = 'classified_events_{}_{}_{}.h5'
@@ -74,10 +80,7 @@ for astri_filelist in [astri_filelist_gamma, astri_filelist_proton]:
         print ("\nrunning on {} files:".format(len(run_filelist)))
         print (run_filelist)
 
-        input_data = run_filelist \
-        #+ ['LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/classifier/'
-           #'classifier_{}_-K-C1-m3-s2,2,3-n4_RandomForestClassifier.pkl'.format(
-                                #"tail" if "tail" in pilot_args else "wave")]
+        input_data = run_filelist
         j.setInputData(input_data)
 
 

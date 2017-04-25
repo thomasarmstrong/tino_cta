@@ -296,14 +296,24 @@ if __name__ == '__main__':
                   #'hidden_layer_sizes': (50,50,)}
 
     clf = fancy_EventClassifier(**clf_kwargs)
+    print(clf)
+
     clf.fit(trainFeatures, trainClasses)
 
-    print(clf)
+    dummy_filen_name = "/tmp/dummy_clf.pkl"
+    clf.save(dummy_filen_name)
+
+    clf_2 = fancy_EventClassifier.load(dummy_filen_name)
+    print("save,load,predict test:", clf_2.predict(trainFeatures[:20]))
+
+
 
     # save the classifier to disk
     if args.store:
         clf.save("{}/classifier_{}_{}_{}.pkl".format(args.outdir,
-                        args.mode, args.raw.replace(" ", ""), clf))
+                        args.mode,
+                        args.raw.replace(' ', '').replace(',', ''),
+                        clf))
 
 
     if args.plot:

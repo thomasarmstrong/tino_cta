@@ -5,25 +5,6 @@ from astropy import units as u
 from sklearn.ensemble import RandomForestRegressor
 
 
-def proba_drifting(x):
-    """ gives more weight to outliers -- i.e. close to 0 and 1 """
-    return 10*x**3 - 15*x**4 + 6*x**5
-
-
-def proba_weighting(xs, weights):
-    s = np.sum(weights)
-
-    for x, w in zip(xs, weights):
-        print(x, x/w, s)
-    print()
-    return [x * (w / s) for x, w in zip(xs, weights)]
-
-
-class mimi:
-    # mimicks a dictionary but always returns the same value
-    def __getitem__(self, item):
-        return "mimimi"
-
 cam_id_list = [
         #'GATE',
         #'HESSII',
@@ -40,7 +21,6 @@ class fancy_EnergyRegressor:
     def __init__(self, regressor=RandomForestRegressor,
                  cam_id_list=cam_id_list, **kwargs):
 
-        self.cam_id_list=cam_id_list
         self.reg = regressor(**kwargs)
         self.reg_dict = {}
         for cam_id in cam_id_list:
@@ -56,8 +36,8 @@ class fancy_EnergyRegressor:
 
     def fit(self, X, y):
 
-        trainFeatures = {a: [] for a in cam_id_list}
-        trainTarget   = {a: [] for a in cam_id_list}
+        trainFeatures = {a: [] for a in self.reg_dict.keys()}
+        trainTarget   = {a: [] for a in self.reg_dict.keys()}
 
         for evt, en in zip(X, y):
             for cam_id, tels in evt.items():
@@ -66,46 +46,71 @@ class fancy_EnergyRegressor:
                     trainTarget[cam_id] += [en.to(u.TeV).value]*len(tels)
                 except:
                     trainTarget[cam_id] += [en]*len(tels)
-        for cam_id in cam_id_list:
+        for cam_id in self.reg_dict.keys():
             if trainFeatures[cam_id]:
                 self.reg_dict[cam_id].fit(trainFeatures[cam_id],
                                           trainTarget[cam_id])
-        print()
         return self
 
     def predict(self, X):
         predict = []
+        predict_dict = []
         for evt in X:
             res = []
+            res_dict = {}
             for cam_id, tels in evt.items():
-                res += self.reg_dict[cam_id].predict(tels).tolist()
+                t_res = self.reg_dict[cam_id].predict(tels).tolist()
+                res += t_res
+                res_dict[cam_id] = np.mean(t_res)*u.TeV
             predict.append(np.mean(res))
+            predict_dict.append(res_dict)
 
-        return np.array(predict)*u.TeV
+        return np.array(predict)*u.TeV, predict_dict
 
     def save(self, path):
         from sklearn.externals import joblib
-        joblib.dump(self.reg, path)
+        joblib.dump(self.reg_dict, path)
 
     @classmethod
     def load(cls, path):
+        """
+        Load the pickled dictionary of energy regressor from disk, create a husk
+        `cls` instance and set the regressor dictionary
+        """
         from sklearn.externals import joblib
-        reg = joblib.load(path)
-        self = cls(type(reg))
+        reg_dict = joblib.load(path)
 
-        self.reg = reg
+        # need to get an instance of the initial regressor
+        # `cam_id_list=[]` prevents `.__init__` to initialise `.reg_dict` itself,
+        # since we are going to set it with the pickled one manually
+        self = cls(cam_id_list=[])
+        self.reg_dict = reg_dict
+
+        # We also need some proxy-instance to relay all the function calls to.
+        # So, since `reg_dict` is a dictionary, we loop over its values, set the first one
+        # as `.reg` and break immediately
+        for reg in reg_dict.values():
+            self.reg = reg
+            break
 
         return self
 
     def show_importances(self, feature_labels=None):
         import matplotlib.pyplot as plt
-        importances = self.clf.feature_importances_
-        bins = range(importances.shape[0])
-        plt.figure()
-        plt.title("Feature Importances")
-        if feature_labels:
-            importances, feature_labels = \
-                zip(*sorted(zip(importances, feature_labels), reverse=True))
-            plt.xticks(bins, feature_labels, rotation=17)
-        plt.bar(bins, importances,
-                color='r', align='center')
+        n_tel_types = len(self.reg_dict)
+        n_cols = np.ceil(np.sqrt(n_tel_types)).astype(int)
+        n_rows = np.ceil(n_tel_types / n_cols).astype(int)
+
+        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
+        plt.suptitle("Feature Importances")
+        for i, (cam_id, reg) in enumerate(self.reg_dict.items()):
+            plt.sca(axs.ravel()[i])
+            importances = reg.feature_importances_
+            bins = range(importances.shape[0])
+            plt.title(cam_id)
+            if feature_labels:
+                importances, feature_labels = \
+                    zip(*sorted(zip(importances, feature_labels), reverse=True))
+                plt.xticks(bins, feature_labels, rotation=17)
+            plt.bar(bins, importances,
+                    color='r', align='center')

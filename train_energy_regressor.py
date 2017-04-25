@@ -39,7 +39,7 @@ if __name__ == '__main__':
                         help="run a self check on the classification")
     args = parser.parse_args()
 
-    filenamelist_gamma  = glob("{}/gamma/run*gz".format(args.indir))
+    filenamelist_gamma  = sorted(glob("{}/gamma/run*gz".format(args.indir)))
 
     if len(filenamelist_gamma) == 0:
         print("no gammas found")
@@ -88,142 +88,146 @@ if __name__ == '__main__':
         # event loop
         for event in source:
 
-                Eventcutflow.count("noCuts")
+            Eventcutflow.count("noCuts")
 
-                mc_shower = event.mc
-                mc_shower_core = np.array([mc_shower.core_x.value,
-                                           mc_shower.core_y.value]) * u.m
+            mc_shower = event.mc
+            mc_shower_core = np.array([mc_shower.core_x.value,
+                                       mc_shower.core_y.value]) * u.m
 
-                if Eventcutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
-                    continue
+            if Eventcutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
+                continue
 
-                # telescope loop
-                tot_signal = 0
-                max_signal = 0
-                hillas_dict = {}
-                for tel_id in event.dl0.tels_with_data:
-                    Imagecutflow.count("noCuts")
+            # telescope loop
+            tot_signal = 0
+            max_signal = 0
+            hillas_dict = {}
+            for tel_id in event.dl0.tels_with_data:
+                Imagecutflow.count("noCuts")
 
-                    # guessing camera geometry
-                    if tel_id not in cam_geom:
-                        cam_geom[tel_id] = CameraGeometry.guess(
-                                            event.inst.pixel_pos[tel_id][0],
-                                            event.inst.pixel_pos[tel_id][1],
-                                            event.inst.optical_foclen[tel_id])
-                        tel_phi[tel_id] = 0.*u.deg
-                        tel_theta[tel_id] = 20.*u.deg
+                # guessing camera geometry
+                if tel_id not in cam_geom:
+                    cam_geom[tel_id] = CameraGeometry.guess(
+                                        event.inst.pixel_pos[tel_id][0],
+                                        event.inst.pixel_pos[tel_id][1],
+                                        event.inst.optical_foclen[tel_id])
+                    tel_phi[tel_id] = 0.*u.deg
+                    tel_theta[tel_id] = 20.*u.deg
 
-                    if cam_geom[tel_id].cam_id == "ASTRI":
-                        pmt_signal = apply_mc_calibration_ASTRI(
-                                        event.r0.tel[tel_id].adc_sums,
-                                        event.mc.tel[tel_id].dc_to_pe,
-                                        event.mc.tel[tel_id].pedestal)
-                    else:
-                        pmt_signal = apply_mc_calibration(
-                            event.r0.tel[tel_id].adc_sums[0],
-                            event.mc.tel[tel_id].dc_to_pe[0],
-                            event.mc.tel[tel_id].pedestal[0])
+                if cam_geom[tel_id].cam_id == "ASTRI":
+                    pmt_signal = apply_mc_calibration_ASTRI(
+                                    event.r0.tel[tel_id].adc_sums,
+                                    event.mc.tel[tel_id].dc_to_pe,
+                                    event.mc.tel[tel_id].pedestal)
+                else:
+                    pmt_signal = apply_mc_calibration(
+                        event.r0.tel[tel_id].adc_sums[0],
+                        event.mc.tel[tel_id].dc_to_pe[0],
+                        event.mc.tel[tel_id].pedestal[0])
 
-                    max_signal = np.max(pmt_signal)
+                max_signal = np.max(pmt_signal)
 
-                    # trying to clean the image
-                    try:
-                        pmt_signal, new_geom = \
-                            Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
-                                          event.inst.optical_foclen[tel_id])
-
-                        if np.count_nonzero(pmt_signal) < 3:
-                            continue
-
-                    except FileNotFoundError as e:
-                        print(e)
-                        continue
-                    except EdgeEventException:
-                        continue
-
-                    Imagecutflow.count("cleaning")
-
-                    # trying to do the hillas reconstruction of the images
-                    try:
-                        moments = hillas_parameters(new_geom.pix_x,
-                                                    new_geom.pix_y,
-                                                    pmt_signal)
-
-                        if not (moments.width > 0 and moments.length > 0):
-                            continue
-
-                    except HillasParameterizationError as e:
-                        print(e)
-                        print("ignoring this camera")
-                        pass
-
-                    hillas_dict[tel_id] = moments
-                    tot_signal += moments.size
-
-                    Imagecutflow.count("Hillas")
-
-                if Eventcutflow.cut("min2Tels reco", len(hillas_dict)):
-                    continue
-
+                # trying to clean the image
                 try:
-                    # telescope loop done, now do the core fit
-                    fit.get_great_circles(hillas_dict,
-                                          event.inst,
-                                          tel_phi, tel_theta)
-                    pos_fit_cr, err_est_pos = fit.fit_core_crosses()
-                except Exception as e:
+                    pmt_signal, new_geom = \
+                        Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
+                                      event.inst.optical_foclen[tel_id])
+
+                    if np.count_nonzero(pmt_signal) < 3:
+                        continue
+
+                except FileNotFoundError as e:
                     print(e)
                     continue
-
-                if Imagecutflow.cut("position nan", pos_fit_cr):
+                except EdgeEventException:
                     continue
 
-                pos_fit = pos_fit_cr
+                Imagecutflow.count("cleaning")
 
-                Eventcutflow.count("position fit")
+                # trying to do the hillas reconstruction of the images
+                try:
+                    moments = hillas_parameters(new_geom.pix_x,
+                                                new_geom.pix_y,
+                                                pmt_signal)
 
-                # now prepare the features for the classifier
-                features_evt = {}
-                NTels = len(hillas_dict)
-                for tel_id in hillas_dict.keys():
-                    Imagecutflow.count("pre-features")
-
-                    tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
-
-                    moments = hillas_dict[tel_id]
-
-                    impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
-                    impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                    features_tel = [
-                                impact_dist_rec/u.m,
-                                tot_signal,
-                                max_signal,
-                                moments.size,
-                                NTels,
-                                moments.cen_x/u.m,
-                                moments.cen_y/u.m,
-                                moments.width/u.m,
-                                moments.length/u.m,
-                                moments.skewness,
-                                moments.kurtosis,
-                                err_est_pos/u.m
-                              ]
-
-                    if Imagecutflow.cut("features nan", features_tel):
+                    if not (moments.width > 0 and moments.length > 0):
                         continue
 
-                    cam_id = cam_geom[tel_id].cam_id
-                    if cam_id in features_evt:
-                        features_evt[cam_id] += [features_tel]
-                    else:
-                        features_evt[cam_id] = [features_tel]
+                except HillasParameterizationError as e:
+                    print(e)
+                    print("ignoring this camera")
+                    pass
 
-                if len(features_evt):
-                    Features_event_list.append(features_evt)
-                    MC_Energies.append(mc_shower.energy)
+                hillas_dict[tel_id] = moments
+                tot_signal += moments.size
 
-                if signal_handler.stop:
-                    break
+                Imagecutflow.count("Hillas")
+
+            if Eventcutflow.cut("min2Tels reco", len(hillas_dict)):
+                continue
+
+            try:
+                # telescope loop done, now do the core fit
+                fit.get_great_circles(hillas_dict,
+                                      event.inst,
+                                      tel_phi, tel_theta)
+                pos_fit_cr, err_est_pos = fit.fit_core_crosses()
+            except Exception as e:
+                print(e)
+                continue
+
+            if Imagecutflow.cut("position nan", pos_fit_cr):
+                continue
+
+            pos_fit = pos_fit_cr
+
+            Eventcutflow.count("position fit")
+
+            # now prepare the features for the classifier
+            features_evt = {}
+            NTels = len(hillas_dict)
+            for tel_id in hillas_dict.keys():
+                Imagecutflow.count("pre-features")
+
+                tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
+
+                moments = hillas_dict[tel_id]
+
+                impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
+                impact_dist_rec = linalg.length(tel_pos-pos_fit)
+                features_tel = [
+                            impact_dist_rec/u.m,
+                            tot_signal,
+                            max_signal,
+                            moments.size,
+                            NTels,
+                            moments.cen_x/u.m,
+                            moments.cen_y/u.m,
+                            moments.phi/u.deg,
+                            moments.psi/u.deg,
+                            moments.width/u.m,
+                            moments.length/u.m,
+                            moments.skewness,
+                            moments.kurtosis,
+                            err_est_pos/u.m
+                          ]
+
+                if Imagecutflow.cut("features nan", features_tel):
+                    continue
+
+                cam_id = cam_geom[tel_id].cam_id
+                if cam_id in features_evt:
+                    features_evt[cam_id] += [features_tel]
+                else:
+                    features_evt[cam_id] = [features_tel]
+
+            if len(features_evt):
+                Features_event_list.append(features_evt)
+                MC_Energies.append(mc_shower.energy)
+
+            if signal_handler.stop:
+                break
+        if signal_handler.stop:
+            break
 
     feature_labels = [
                         "impact_dist",
@@ -233,6 +237,8 @@ if __name__ == '__main__':
                         "NTels_rec",
                         "cen_x",
                         "cen_y",
+                        "phi",
+                        "psi",
                         "width",
                         "length",
                         "skewness",
@@ -255,14 +261,23 @@ if __name__ == '__main__':
                   #'hidden_layer_sizes': (50,50,)}
 
     reg = fancy_EnergyRegressor(**reg_kwargs)
+    print(reg)
+
     reg.fit(Features_event_list, MC_Energies)
 
-    print(reg)
+    dummy_filen_name = "/tmp/dummy_reg.pkl"
+    reg.save(dummy_filen_name)
+
+    reg_2 = fancy_EnergyRegressor.load(dummy_filen_name)
+    print("save,load,predict test:", reg_2.predict(Features_event_list[:20])[0])
+
 
     # save the regressor to disk
     if args.store:
         reg.save("{}/regressor_{}_{}_{}.pkl".format(args.outdir,
-                        args.mode, args.raw.replace(" ", ""), reg))
+                        args.mode,
+                        args.raw.replace(' ', '').replace(',', ''),
+                        reg))
 
 
     if args.plot:
@@ -274,16 +289,21 @@ if __name__ == '__main__':
                 reg))
             if args.write:
                 save_fig('{}/regression_importance_{}_{}_{}'.format(args.plots_dir,
-                            args.mode, args.raw.replace(" ", ""), reg))
+                            args.mode,
+                            args.raw.replace(' ', '').replace(',', ''),
+                            reg))
         except AttributeError as e:
             print("{} does not support feature importances".format(reg))
+            print(e)
 
 
-        # plot area under curve for a few cross-validations
+        # plot E_reco / E_MC ratio for a few cross-validations
         from sklearn.model_selection import KFold
         kf = KFold(n_splits=5)
-        bins = np.array([np.linspace(-2, 3, 51), np.linspace(0, 4, 51)])
+        bins = np.tile(np.linspace(-2, 3, 51), (2,1))
         myhist, _, _ = np.histogram2d([], [], bins=bins)
+        myhist_dict = {"ASTRI": np.histogram2d([], [], bins=bins)[0],
+                       "FlashCam": np.histogram2d([], [], bins=bins)[0]}
         X, y = np.array(Features_event_list), convert_astropy_array(MC_Energies)
         for i, (train_index, test_index) in enumerate(kf.split(X)):
             X_train, X_test = X[train_index], X[test_index]
@@ -293,20 +313,40 @@ if __name__ == '__main__':
 
             reg.fit(X_train, y_train)
 
-            y_score = reg.predict(X_test)
+            y_score, y_score_dict = reg.predict(X_test)
 
-            myhist += np.histogram2d(np.log10(y_test/u.TeV), y_score/y_test, bins=bins)[0]
+            for evt, mce in zip(y_score_dict, y_test):
+                for cam_id, pred in evt.items():
+                    myhist_dict[cam_id] += np.histogram2d([np.log10(mce/u.TeV)],
+                                                          [np.log10(pred/u.TeV)],
+                                                          bins=bins)[0]
+
+            myhist += np.histogram2d(np.log10(y_test/u.TeV),
+                                     np.log10(y_score/u.TeV),
+                                     bins=bins)[0]
 
         plt.figure()
         plt.imshow(myhist, interpolation='none', origin='lower',
                    extent=bins[:, [0,-1]].ravel() )
+        plt.plot(*bins[:, [0,-1]])
         plt.xlabel('log10(E_MC / TeV)')
-        plt.ylabel('E_predict / E_MC')
-        #plt.gca().set_xscale("log")
-        plt.suptitle("{} ** {}".format(
-            "wavelets" if args.mode == "wave" else "tailcuts",
-            reg))
+        plt.ylabel('log10(E_predict / TeV)')
+        plt.suptitle(" ** ".join(["wavelets" if args.mode == "wave" else "tailcuts",
+                                  str(reg), "combined"]))
         plt.legend(loc="lower right", title="different cross validations")
+
+
+        for cam_id, myhist in myhist_dict.items():
+            plt.figure()
+            plt.imshow(myhist, interpolation='none', origin='lower',
+                    extent=bins[:, [0,-1]].ravel() )
+            plt.plot(*bins[:, [0,-1]])
+            plt.xlabel('log10(E_MC / TeV)')
+            plt.ylabel('log10(E_predict / TeV)')
+            plt.suptitle(" ** ".join(["wavelets" if args.mode == "wave" else "tailcuts",
+                                      str(reg), cam_id]))
+            plt.legend(loc="lower right", title="different cross validations")
+
 
         if args.write:
             save_fig('{}/classification_area_under_curve_{}_{}_{}'.format(args.plots_dir,

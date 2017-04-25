@@ -9,27 +9,28 @@ from itertools import chain
 
 from helper_functions import *
 
-from ctapipe.analysis.Sensitivity import *
-from ctapipe.analysis.Sensitivity import crab_source_rate, CR_background_rate, Eminus2
+from ctapipe.analysis.Sensitivity import (SensitivityPointSource,
+                                          crab_source_rate, CR_background_rate, Eminus2)
 
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-poster')
 #plt.style.use('t_slides')
 
-'''
-MC energy ranges:
-gammas: 0.1 to 330 TeV
-proton: 0.1 to 600 TeV
-'''
+
+# MC energy ranges:
+# gammas: 0.1 to 330 TeV
+# proton: 0.1 to 600 TeV
 edges_gammas = np.logspace(2, np.log10(330000), 28) * u.GeV
 edges_proton = np.logspace(2, np.log10(600000), 30) * u.GeV
 
+# your favourite units here
 angle_unit = u.deg
 energy_unit = u.TeV
 flux_unit = (u.erg*u.cm**2*u.s)**(-1)
 sensitivity_unit = flux_unit * u.erg**2
 
-observation_time = 3.6*u.h
+# scale MC events to this reference time
+observation_time = 50*u.h
 
 # PyTables
 import tables as tb
@@ -71,60 +72,53 @@ if __name__ == "__main__":
     print()
     print("observation time:", observation_time)
 
-    #gammas = open_pytable_as_pandas(
-            #"{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "gamma", "wave"))
+    gammas = open_pytable_as_pandas(
+            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "gamma", "wave"))
 
-    #proton = open_pytable_as_pandas(
-            #"{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "proton", "wave"))
+    proton = open_pytable_as_pandas(
+            "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "proton", "wave"))
 
-    #applying some cuts
-    #if apply_cuts:
-        #gammas = gammas[selection_mask(gammas)]
-        #proton = proton[selection_mask(proton)]
-    #print("gammas selected (wavelets):", len(gammas))
-    #print("proton selected (wavelets):", len(proton))
+    # applying some cuts
+    if apply_cuts:
+        gammas = gammas[selection_mask(gammas)]
+        proton = proton[selection_mask(proton)]
+    print("gammas selected (wavelets):", len(gammas))
+    print("proton selected (wavelets):", len(proton))
 
-    #SensCalc = Sensitivity_PointSource(
-                        #mc_energies={'g': gammas['MC_Energy'],
-                                     #'p': proton['MC_Energy']},
-                        #off_angles={'g': gammas['off_angle'].values*angle_unit,
-                                    #'p': proton['off_angle'].values*angle_unit},
-                        #energy_bin_edges={'g': edges_gammas,
-                                        #'p': edges_proton},
-                        #energy_unit=energy_unit, flux_unit=flux_unit)
+    SensCalc = SensitivityPointSource(
+                    mc_energies={'g': gammas['MC_Energy'].values*u.GeV,
+                                 'p': proton['MC_Energy'].values*u.GeV},
+                    off_angles={'g': gammas['off_angle'].values*angle_unit,
+                                'p': proton['off_angle'].values*angle_unit},
+                    energy_bin_edges={'g': edges_gammas,
+                                      'p': edges_proton}, verbose=True,
+                    flux_unit=flux_unit)
 
-    #Eff_Areas = SensCalc.get_effective_areas(
-                    #n_simulated_events={'g': NGammas_simulated,
-                                        #'p': NProton_simulated},
-                    #generator_spectra={'g': Eminus2, 'p': Eminus2},
-                    #generator_areas={'g': np.pi * (1000*u.m)**2,
-                                     #'p': np.pi * (2000*u.m)**2})
+    sensitivities = SensCalc.calculate_sensitivities(
+                            n_simulated_events={'g': NGammas_simulated,
+                                                'p': NProton_simulated},
+                            generator_spectra={'g': Eminus2, 'p': Eminus2},
+                            generator_areas={'g': np.pi * (1000*u.m)**2,
+                                             'p': np.pi * (2000*u.m)**2},
+                            observation_time=observation_time,
+                            spectra={'g': crab_source_rate,
+                                     'p': CR_background_rate},
+                            e_min_max={"g": (0.1, 330)*u.TeV,
+                                       "p": (0.1, 600)*u.TeV},
+                            generator_gamma={"g": 2, "p": 2},
+                            r_on=0.15*u.deg, r_off=0.15*u.deg)
+    weights = SensCalc.event_weights
 
-    #exp_events_per_E = SensCalc.get_expected_events(
-        #rates={'g': crab_source_rate, 'p': CR_background_rate},
-        #observation_time=observation_time)
+    print()
+    print("gammas selected (tailcuts):", len(gammas))
+    print("proton selected (tailcuts):", len(proton))
 
-    #NExpGammas = sum(exp_events_per_E['g'])
-    #NExpProton = sum(exp_events_per_E['p'])
+    NExpGammas = sum(SensCalc.exp_events_per_energy_bin['g'])
+    NExpProton = sum(SensCalc.exp_events_per_energy_bin['p'])
 
-    #print()
-    #print("expected gammas (wavelets):", NExpGammas)
-    #print("expected proton (wavelets):", NExpProton)
-
-    #if args.plot and args.verbose:
-        #plt.figure()
-        #plt.semilogy((edges_gammas[1:] + edges_gammas[:-1])/2,
-                     #Eff_Areas['g'], "b", label='Gammas')
-        #plt.semilogy((edges_proton[1:] + edges_proton[:-1])/2,
-                     #Eff_Areas['p'], "r", label='Protons')
-        #plt.title("Effective Area")
-        #plt.xlabel(r"$\log_{10}(E/\mathrm{GeV})$")
-        #plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
-        #plt.pause(.1)
-
-    #weights = SensCalc.scale_events_to_expected_events()
-    #sensitivities = SensCalc.get_sensitivity(
-                                #sensitivity_energy_bin_edges=np.linspace(2, 6, 17))
+    print()
+    print("expected gammas (tailcuts):", NExpGammas)
+    print("expected proton (tailcuts):", NExpProton)
 
     # now for tailcut
     gammas_t = open_pytable_as_pandas(
@@ -268,9 +262,9 @@ if __name__ == "__main__":
             plt.figure(figsize=(16,8))
             plt.suptitle("ASTRI Effective Areas")
             plt.subplot(121)
-            #plt.loglog(
-                #bin_centres_g,
-                #SensCalc.effective_areas['g'], label="wavelets")
+            plt.loglog(
+                bin_centres_g,
+                SensCalc.effective_areas['g'], label="wavelets")
             plt.loglog(
                 bin_centres_g,
                 SensCalc_t.effective_areas['g'], label="tailcuts")
@@ -280,9 +274,9 @@ if __name__ == "__main__":
             plt.legend()
 
             plt.subplot(122)
-            #plt.loglog(
-                #10 ** bin_centres_p,
-                #SensCalc.effective_areas['p'], label="wavelets")
+            plt.loglog(
+                bin_centres_p,
+                SensCalc.effective_areas['p'], label="wavelets")
             plt.loglog(
                 bin_centres_p,
                 SensCalc_t.effective_areas['p'], label="tailcuts")
@@ -295,21 +289,21 @@ if __name__ == "__main__":
 
         # the point-source sensitivity binned in energy
         plt.figure()
-        #plt.semilogy(
-            #sensitivities["MC Energy"],
-            #(sensitivities["Sensitivity"].to(flux_unit) *
-             #sensitivities["MC Energy"].to(u.erg)**2),
-            #color="darkred",
-            #marker="s",
-            #label="wavelets")
-        #plt.semilogy(
-            #sensitivities["MC Energy"].to(u.TeV),
-            #(sensitivities["Sensitivity_uncorr"].to(flux_unit) *
-             #sensitivities["MC Energy"].to(u.erg)**2),
-            #color="darkgreen",
-            #marker="^",
-            #ls="",
-            #label="wavelets (no upscale)")
+        plt.semilogy(
+            sensitivities["MC Energy"],
+            (sensitivities["Sensitivity"].to(flux_unit) *
+             sensitivities["MC Energy"].to(u.erg)**2),
+            color="darkred",
+            marker="s",
+            label="wavelets")
+        plt.semilogy(
+            sensitivities["MC Energy"].to(u.TeV),
+            (sensitivities["Sensitivity_uncorr"].to(flux_unit) *
+             sensitivities["MC Energy"].to(u.erg)**2),
+            color="darkgreen",
+            marker="^",
+            ls="",
+            label="wavelets (no upscale)")
 
         plt.semilogy(
             sensitivities_t["MC Energy"].to(energy_unit),
@@ -326,7 +320,12 @@ if __name__ == "__main__":
             marker="^",
             ls="",
             label="tailcuts (no upscale)")
-        plt.legend()
+        crab_bins=np.logspace(-1, 3, 17)
+        plt.loglog(crab_bins,
+                   (crab_source_rate(crab_bins*u.TeV).to(flux_unit)
+                    * (crab_bins*u.TeV.to(u.erg))**2),
+                   color="red", ls="dashed", label="Crab Nebula")
+        plt.legend(title="Obsetvation Time: {}".format(observation_time))
         plt.xlabel('E / {:latex}'.format(energy_unit))
         plt.ylabel(r'$E^2 \Phi /$ {:latex}'.format(sensitivity_unit))
         plt.gca().set_xscale("log")
@@ -334,7 +333,7 @@ if __name__ == "__main__":
         plt.pause(.1)
 
         # plot a sky image of the events
-        # useless since too few actual background events
+        # useless since too few MC background events left
         if False:
             fig2 = plt.figure()
             plt.hexbin(
@@ -360,9 +359,7 @@ if __name__ == "__main__":
         bins = 60
 
         plt.subplot(211)
-        plt.hist([
-                  #1-np.cos(proton_t['off_angle']*u.deg.to(u.rad)),
-                  proton_t['off_angle']**2,
+        plt.hist([proton_t['off_angle']**2,
                   gammas_t["off_angle"]**2],
                  weights=[weights_t['p'], weights_t['g']],
                  rwidth=1, stacked=True,
@@ -372,25 +369,21 @@ if __name__ == "__main__":
         #plt.xlabel(r"$1-\cos(\vartheta)$")
         plt.ylabel("expected events in {}".format(observation_time))
         plt.xlim([0, .3])
-        plt.title("tailcuts")
-        plt.legend(loc="upper right")
+        plt.legend(loc="upper right", title="tailcuts")
 
 
         plt.subplot(212)
-        plt.hist([
-                  1-np.cos(proton_t['off_angle']),
-                  1-np.cos(gammas_t['off_angle'])],
-                  #proton_t['off_angle']**2,
-                  #gammas_t["off_angle"]**2],
-                 weights=[weights_t['p'], weights_t['g']],
+        plt.hist([proton['off_angle']**2,
+                  gammas["off_angle"]**2],
+                  weights=[weights['p'], weights['g']],
                  rwidth=1, stacked=True,
-                 range=(0, .15), label=("protons", "gammas"),
+                 range=(0, .3), label=("protons", "gammas"),
                  log=False, bins=bins)
-        plt.xlabel(r"$1-\cos(\vartheta)$")
+        plt.xlabel(r"$(\vartheta/^\circ)^2$")
         #plt.xlabel(r"$1-\cos(\vartheta)$")
         plt.ylabel("expected events in {}".format(observation_time))
-        plt.xlim([0, .15])
-        plt.legend(loc="upper right")
+        plt.xlim([0, .3])
+        plt.legend(loc="upper right", title="wavelets")
         plt.tight_layout()
 
         #plt.subplot(212)
