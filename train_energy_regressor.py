@@ -2,17 +2,13 @@
 
 from helper_functions import *
 
-from sys import exit, path
-from os.path import expandvars
+from sys import exit
 from glob import glob
-from itertools import chain
 
 from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
 
 from ctapipe.utils import linalg
-
-from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
@@ -25,21 +21,17 @@ from modules.ImageCleaning import *
 from modules.EnergyRegressor import *
 
 
-def get_class_string(cls):
-    print(cls)
-    return str(cls.__class__).split('.')[-1].split("'")[0]
-
-
 if __name__ == '__main__':
 
     parser = make_argparser()
-    parser.add_argument('-o', '--outdir', type=str,
-                        default='data/classifier_pickle')
+    parser.add_argument('-o', '--outpath', type=str,
+                        default='data/classifier_pickle/regressor'
+                                '_{mode}_{wave_args}_{classifier}_{cam_id}.pkl')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
 
-    filenamelist_gamma  = sorted(glob("{}/gamma/run*gz".format(args.indir)))
+    filenamelist_gamma = sorted(glob("{}/gamma/run*gz".format(args.indir)))
 
     if len(filenamelist_gamma) == 0:
         print("no gammas found")
@@ -70,14 +62,13 @@ if __name__ == '__main__':
     Features_event_list = []
     MC_Energies = []
 
-
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = np.arange(10).tolist() + np.arange(34,41).tolist()
+    allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
     for filename in filenamelist_gamma[:4][:args.last]:
         print("filename = {}".format(filename))
 
@@ -200,9 +191,9 @@ if __name__ == '__main__':
                             max_signal,
                             moments.size,
                             NTels,
-                            moments.cen_x/u.m,
-                            moments.cen_y/u.m,
-                            moments.phi/u.deg,
+                            (moments.cen_x**2 +
+                             moments.cen_y**2) / u.m**2,
+                            # moments.phi/u.deg,
                             moments.psi/u.deg,
                             moments.width/u.m,
                             moments.length/u.m,
@@ -235,9 +226,8 @@ if __name__ == '__main__':
                         "max_signal_cam",
                         "sum_signal_cam",
                         "NTels_rec",
-                        "cen_x",
-                        "cen_y",
-                        "phi",
+                        "cen_r**2",
+                        # "phi",
                         "psi",
                         "width",
                         "length",
@@ -251,34 +241,31 @@ if __name__ == '__main__':
     print("length of features:")
     print(len(Features_event_list))
 
-
     reg_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
                   'random_state': 0}
 
     # try neural network
-    #from sklearn.neural_network import MLPClassifier
-    #clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
-                  #'hidden_layer_sizes': (50,50,)}
+    # from sklearn.neural_network import MLPClassifier
+    # clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
+    #               'hidden_layer_sizes': (50,50,)}
 
     reg = fancy_EnergyRegressor(**reg_kwargs)
     print(reg)
 
-    reg.fit(Features_event_list, MC_Energies)
+    reg.fit(*reg.reshuffle_event_list(Features_event_list, MC_Energies))
 
-    dummy_filen_name = "/tmp/dummy_reg.pkl"
+    dummy_filen_name = "/tmp/dummy_reg_{}.pkl"
     reg.save(dummy_filen_name)
 
     reg_2 = fancy_EnergyRegressor.load(dummy_filen_name)
-    print("save,load,predict test:", reg_2.predict(Features_event_list[:20])[0])
-
+    print("save,load,predict test:", reg_2.predict(Features_event_list[0:1]))
 
     # save the regressor to disk
     if args.store:
-        reg.save("{}/regressor_{}_{}_{}.pkl".format(args.outdir,
-                        args.mode,
-                        args.raw.replace(' ', '').replace(',', ''),
-                        reg))
-
+        reg.save(args.outpath.format(
+                            mode=args.mode,
+                            wave_args=args.raw.replace(' ', '').replace(',', ''),
+                            classifier=reg))
 
     if args.plot:
         # extract and show the importance of the various training features
@@ -289,68 +276,157 @@ if __name__ == '__main__':
                 reg))
             if args.write:
                 save_fig('{}/regression_importance_{}_{}_{}'.format(args.plots_dir,
-                            args.mode,
-                            args.raw.replace(' ', '').replace(',', ''),
-                            reg))
+                         args.mode,
+                         args.raw.replace(' ', '').replace(',', ''),
+                         reg))
         except AttributeError as e:
             print("{} does not support feature importances".format(reg))
             print(e)
 
-
         # plot E_reco / E_MC ratio for a few cross-validations
         from sklearn.model_selection import KFold
         kf = KFold(n_splits=5)
-        bins = np.tile(np.linspace(-2, 3, 51), (2,1))
-        myhist, _, _ = np.histogram2d([], [], bins=bins)
-        myhist_dict = {"ASTRI": np.histogram2d([], [], bins=bins)[0],
-                       "FlashCam": np.histogram2d([], [], bins=bins)[0]}
+        bins = np.tile(np.linspace(-2, 3, 51), (2, 1))
+        Epred_hist, _, _ = np.histogram2d([], [], bins=bins)
+        Epred_hist_dict = {"ASTRI": np.histogram2d([], [], bins=bins)[0],
+                           "FlashCam": np.histogram2d([], [], bins=bins)[0]}
+
+        relE_bins = np.stack((np.linspace(-2, 3, 51), np.linspace(-1, 1, 51)))
+        redErel_hist, _, _ = np.histogram2d([], [], bins=relE_bins)
+        redErel_hist_dict = {"ASTRI": np.histogram2d([], [], bins=relE_bins)[0],
+                             "FlashCam": np.histogram2d([], [], bins=relE_bins)[0]}
+
         X, y = np.array(Features_event_list), convert_astropy_array(MC_Energies)
         for i, (train_index, test_index) in enumerate(kf.split(X)):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
 
             reg = fancy_EnergyRegressor(**reg_kwargs)
+            reg.fit(*reg.reshuffle_event_list(X_train, y_train))
 
-            reg.fit(X_train, y_train)
-
-            y_score, y_score_dict = reg.predict(X_test)
+            y_score = reg.predict(X_test)
+            y_score_dict = reg.predict_dict(X_test)
 
             for evt, mce in zip(y_score_dict, y_test):
                 for cam_id, pred in evt.items():
-                    myhist_dict[cam_id] += np.histogram2d([np.log10(mce/u.TeV)],
-                                                          [np.log10(pred/u.TeV)],
-                                                          bins=bins)[0]
+                    Epred_hist_dict[cam_id] += np.histogram2d([np.log10(mce/u.TeV)],
+                                                              [np.log10(pred/u.TeV)],
+                                                              bins=bins)[0]
+                    redErel_hist_dict[cam_id] += np.histogram2d(
+                            [np.log10(mce/u.TeV)],
+                            [(pred-mce)/mce],
+                            bins=bins)[0]
 
-            myhist += np.histogram2d(np.log10(y_test/u.TeV),
-                                     np.log10(y_score/u.TeV),
-                                     bins=bins)[0]
+            Epred_hist += np.histogram2d(np.log10(y_score/u.TeV),
+                                         np.log10(y_test/u.TeV),
+                                         bins=bins)[0]
+            redErel_hist += np.histogram2d(np.log10(y_score/u.TeV),
+                                           (y_test-y_score)/y_score,
+                                           bins=relE_bins)[0]
 
         plt.figure()
-        plt.imshow(myhist, interpolation='none', origin='lower',
-                   extent=bins[:, [0,-1]].ravel() )
-        plt.plot(*bins[:, [0,-1]])
+        plt.imshow(Epred_hist.T, interpolation='none', origin='lower',
+                   extent=bins[:, [0, -1]].ravel())
+        plt.plot(*bins[:, [0, -1]])
         plt.xlabel('log10(E_MC / TeV)')
         plt.ylabel('log10(E_predict / TeV)')
-        plt.suptitle(" ** ".join(["wavelets" if args.mode == "wave" else "tailcuts",
-                                  str(reg), "combined"]))
+        plt.suptitle(" ** ".join(
+                ['Energy Estimator', "wavelets" if args.mode == "wave" else
+                 "tailcuts", str(reg)]))
+        plt.title("combined")
         plt.legend(loc="lower right", title="different cross validations")
 
+        if args.write:
+            save_fig('{}/energy_migration_combined_{}_{}_{}'.format(args.plots_dir,
+                     args.mode, args.raw.replace(" ", ""), reg))
 
-        for cam_id, myhist in myhist_dict.items():
-            plt.figure()
-            plt.imshow(myhist, interpolation='none', origin='lower',
-                    extent=bins[:, [0,-1]].ravel() )
-            plt.plot(*bins[:, [0,-1]])
+        plt.figure()
+        plt.imshow(redErel_hist.T, interpolation='none', origin='lower',
+                   extent=relE_bins[:, [0, -1]].ravel())
+        plt.plot(relE_bins[0, [0, -1]], (0, 0))
+        plt.xlabel('log10(E_MC / TeV)')
+        plt.ylabel('(E_pred - E_MC) / E_MC')
+        plt.suptitle(" ** ".join(
+                ['relative Energy Error',
+                 "wavelets" if args.mode == "wave" else "tailcuts",
+                 str(reg)]))
+        plt.title("combined")
+
+        #
+        # calculate number of rows and columns to plot camera-type plots in a grid
+        n_tel_types = len(Epred_hist_dict)
+        n_cols = np.ceil(np.sqrt(n_tel_types)).astype(int)
+        n_rows = np.ceil(n_tel_types / n_cols).astype(int)
+
+        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
+        plt.suptitle(" ** ".join(
+                ['"migration matrices"',
+                 "wavelets" if args.mode == "wave" else "tailcuts",
+                 str(reg)]))
+        for i, (cam_id, thishist) in enumerate(Epred_hist_dict.items()):
+            plt.sca(axs.ravel()[i])
+            plt.imshow(thishist.T, interpolation='none', origin='lower',
+                       extent=bins[:, [0, -1]].ravel())
+            plt.plot(*bins[:, [0, -1]])
             plt.xlabel('log10(E_MC / TeV)')
             plt.ylabel('log10(E_predict / TeV)')
-            plt.suptitle(" ** ".join(["wavelets" if args.mode == "wave" else "tailcuts",
-                                      str(reg), cam_id]))
-            plt.legend(loc="lower right", title="different cross validations")
-
+            plt.title(cam_id)
 
         if args.write:
-            save_fig('{}/classification_area_under_curve_{}_{}_{}'.format(args.plots_dir,
-                        args.mode, args.raw.replace(" ", ""), reg))
+            save_fig('{}/energy_migration_tel_by_tel_{}_{}_{}'.format(args.plots_dir,
+                     args.mode, args.raw.replace(" ", ""), reg))
+
+        # 2D histogram E_rel_error vs E_mc
+        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
+        plt.suptitle(" ** ".join(
+                ['relative Energy Error',
+                 "wavelets" if args.mode == "wave" else "tailcuts",
+                 str(reg)]))
+        for i, (cam_id, thishist) in enumerate(redErel_hist_dict.items()):
+            plt.sca(axs.ravel()[i])
+            plt.imshow(thishist.T, interpolation='none', origin='lower',
+                       extent=relE_bins[:, [0, -1]].ravel())
+            plt.plot(relE_bins[0, [0, -1]], (0, 0))
+            plt.xlabel('log10(E_MC / TeV)')
+            plt.ylabel('(E_predict -E_MC)/ E_MC')
+            plt.title(cam_id)
+
+#  ##     ## ######## ########  ####    ###    ##    ##  ######
+#  ###   ### ##       ##     ##  ##    ## ##   ###   ## ##    ##
+#  #### #### ##       ##     ##  ##   ##   ##  ####  ## ##
+#  ## ### ## ######   ##     ##  ##  ##     ## ## ## ##  ######
+#  ##     ## ##       ##     ##  ##  ######### ##  ####       ##
+#  ##     ## ##       ##     ##  ##  ##     ## ##   ### ##    ##
+#  ##     ## ######## ########  #### ##     ## ##    ##  ######
+        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
+        plt.suptitle(" ** ".join(
+                ['relative Energy Error',
+                 "wavelets" if args.mode == "wave" else "tailcuts",
+                 str(reg)]))
+        for i, (cam_id, thishist) in enumerate(redErel_hist_dict.items()):
+            plt.sca(axs.ravel()[i])
+            # get a 2D array of the cumulative sums along the "error axis"
+            # (not the energy axis)
+            cum_sum = np.cumsum(thishist, axis=1)
+            # along the energy axis, get the index for the median, 32 and 68 percentile
+            median_args = np.argmax(cum_sum > cum_sum[:, -1]/2, axis=1)
+            low_er_args = np.argmax(cum_sum > cum_sum[:, -1]*.32, axis=1)
+            hih_er_args = np.argmax(cum_sum > cum_sum[:, -1]*.68, axis=1)
+
+            # plot the median together with the error bars
+            # (but only where the median index is larger than zero)
+            plt.errorbar(((relE_bins[0, 1:]+relE_bins[0, :-1])/2)[median_args > 0],
+                         relE_bins[1, median_args[median_args > 0]],
+                         yerr=[relE_bins[1, median_args[low_er_args > 0]],
+                               relE_bins[1, median_args[hih_er_args > 0]]],
+                         ls="", marker="o")
+
+            # plot a horizontal line at hight zero over the defined energy length
+            plt.plot(relE_bins[0, [0, -1]], (0, 0))
+            plt.xlabel('log10(E_MC / TeV)')
+            plt.ylabel('median (E_predict -E_MC)/ E_MC')
+            plt.title(cam_id)
+
 
 
         plt.show()

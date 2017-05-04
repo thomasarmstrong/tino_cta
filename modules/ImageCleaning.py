@@ -16,11 +16,6 @@ try:
 except:
     print("something missing from ctapipe.image.geometry_converter -- numba?")
 
-
-from sys import path
-from os.path import expandvars
-
-
 try:
     from datapipe.denoising.wavelets_mrfilter import WaveletTransform
 except:
@@ -119,6 +114,7 @@ class ImageCleaner:
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
                  skip_edge_events=True, cutflow=CutFlow("ImageCleaner"),
                  wavelet_options="-K -C1 -m3 -s3 -n4",
+                 mrfilter_directory=None,
                  tail_thresh_up=10, tail_thresh_low=5):
         self.mode = mode
         self.skip_edge_events = skip_edge_events
@@ -128,8 +124,11 @@ class ImageCleaner:
             self.clean = self.clean_none
         elif mode == "wave":
             self.clean = self.clean_wave
-            self.wavelet_transform = WaveletTransform()
-            self.wavelet_options = wavelet_options
+            self.wavelet_cleaning = \
+                lambda img: WaveletTransform().clean_image(
+                                img, raw_option_string=wavelet_options,
+                                tmp_files_directory="/tmp/",
+                                mrfilter_directory=mrfilter_directory)
             self.island_threshold = 4.5
         elif mode == "tail":
             self.clean = self.clean_tail
@@ -159,13 +158,11 @@ class ImageCleaner:
 
     def clean_wave_astri(self, img, cam_geom):
         cropped_img = crop_astri_image(img)
-        cleaned_img = self.wavelet_transform.clean_image(
-                        cropped_img, raw_option_string=self.wavelet_options,
-                        tmp_files_directory="/tmp/")
+        cleaned_img = self.wavelet_cleaning(cropped_img)
 
         self.cutflow.count("wavelet cleaning")
 
-        ''' wavelet_transform still leaves some isolated pixels; remove them '''
+        # wavelet_transform still leaves some isolated pixels; remove them
         cleaned_img = self.island_cleaning(cleaned_img)
 
         if self.skip_edge_events:
@@ -194,9 +191,7 @@ class ImageCleaner:
         rot_img[~square_mask] = np.random.normal(0.13, 5.77,
                                                  np.count_nonzero(~square_mask))
 
-        cleaned_img = self.wavelet_transform(
-                rot_img,
-                raw_option_string=self.wavelet_options)
+        cleaned_img = self.wavelet_cleaning(rot_img)
 
         self.cutflow.count("wavelet cleaning")
 

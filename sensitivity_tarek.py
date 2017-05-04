@@ -1,9 +1,9 @@
+from matplotlib import pyplot as plt
+
 import numpy as np
 
 from astropy.table import Table
 from astropy import units as u
-
-from itertools import chain
 
 from helper_functions import *
 
@@ -21,7 +21,8 @@ from ctapipe.analysis.Sensitivity import (crab_source_rate, Eminus2, CR_backgrou
 
 if __name__ == "__main__":
 
-    edges_energy = np.linspace(0, 6, 28)
+    edges_gammas = np.logspace(0, np.log10(330000), 38) * u.GeV
+    edges_proton = np.logspace(0, np.log10(600000), 40) * u.GeV
 
     gammas = Table.read("/local/home/tmichael/Data/cta/Tarek/"
                         "CTA_MARS_gamma_3_3HB1-ND.fits")
@@ -48,9 +49,9 @@ if __name__ == "__main__":
     mask_proton = (proton['MARS_ALT'] != -1) & (proton['MARS_AZ'] != -1)
     mask_electr = (electr['MARS_ALT'] != -1) & (electr['MARS_AZ'] != -1)
 
-    gammas_m = gammas[mask_gammas]
-    proton_m = proton[mask_proton]
-    electr_m = electr[mask_electr]
+    gammas_m = gammas[mask_gammas].to_pandas()
+    proton_m = proton[mask_proton].to_pandas()
+    electr_m = electr[mask_electr].to_pandas()
 
     off_angles_gammas = np.sqrt((gammas_m['MARS_AZ']*np.cos(gammas_m['MARS_ALT']))**2 +
                                 gammas_m['MARS_ALT']**2)
@@ -60,13 +61,15 @@ if __name__ == "__main__":
                                 electr_m['MARS_ALT']**2)
 
     print("setting up 'Sensitivity_PointSource' object")
-    Sens = Sensitivity_PointSource(
-        mc_energies={'g': gammas_m['MC_ENERGY'], 'p': proton_m['MC_ENERGY'],
-                     'e': electr_m['MC_ENERGY']},
-        off_angles={'g': off_angles_gammas, 'p': off_angles_proton,
+    Sens = SensitivityPointSource(
+        mc_energies={'g': gammas_m['MC_ENERGY'].values*u.GeV,
+                     'p': proton_m['MC_ENERGY'].values*u.GeV,
+                     'e': electr_m['MC_ENERGY'].values*u.GeV},
+        off_angles={'g': off_angles_gammas,
+                    'p': off_angles_proton,
                     'e': off_angles_electr},
-        energy_bin_edges={'g': edges_energy, "p": edges_energy, 'e': edges_energy},
-        energy_unit=u.GeV, flux_unit=u.erg/(u.m**2*u.s))
+        energy_bin_edges={'g': edges_gammas, "p": edges_proton, 'e': edges_gammas},
+        energy_unit=u.GeV, flux_unit=(u.erg*u.cm**2*u.s)**(-1))
     print("... done")
 
     print("calling 'calculate_sensitivities'")
@@ -79,17 +82,25 @@ if __name__ == "__main__":
                                        'p': gen_spectrum,
                                        'e': gen_spectrum},
 
-                    rates={'g': Eminus2, 'p': CR_background_rate, 'e': Eminus2},
+
+                    spectra={'g': crab_source_rate,
+                             'p': CR_background_rate,
+                             'e': Eminus2},
                     generator_areas={'g': gen_area_g,
                                      'p': gen_area_p,
-                                     'e': gen_area_g})
+                                     'e': gen_area_g},
+                    e_min_max={'g': (3, 330000)*u.GeV,
+                               'p': (4, 600000)*u.GeV,
+                               'e': (4, 330000)*u.GeV},
+                    generator_gamma={"g": 2, "p": 2, 'e': 2}
+                    )
     print("... done")
 
-
-
+    #
+    # do some plotting
     plt.figure()
     plt.loglog(
-        10 ** edges_energy[:-1],
+        edges_gammas[:-1],
         Sens.effective_areas['g'])
     plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
     plt.ylabel("effective area")
@@ -97,7 +108,7 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.loglog(
-        sensitivities["Energy MC"],
+        sensitivities["MC Energy"],
         sensitivities["Sensitivity"])
     plt.xlabel(r"$E_\mathrm{MC} / \mathrm{GeV}$")
     plt.ylabel("sensitivity")

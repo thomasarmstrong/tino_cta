@@ -1,7 +1,4 @@
-from sys import exit, path
-from os.path import expandvars
-
-from itertools import chain
+from sys import exit
 
 from glob import glob
 
@@ -10,9 +7,10 @@ import matplotlib.pyplot as plt
 
 from astropy import units as u
 
+from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
+
 from ctapipe.utils import linalg
-from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.image.hillas import HillasParameterizationError, \
     hillas_parameters_4 as hillas_parameters
@@ -23,14 +21,15 @@ from modules.EventClassifier import *
 from modules.ImageCleaning import ImageCleaner, \
                                   EdgeEventException, UnknownModeException
 
-
-
 from ctapipe.reco.FitGammaHillas import \
     FitGammaHillas, TooFewTelescopesException
 
 
 # PyTables
-import tables as tb
+try:
+    import tables as tb
+except:
+    print("no pytables installed")
 
 
 def main():
@@ -40,19 +39,22 @@ def main():
     energy_unit = u.GeV
     dist_unit   = u.m
 
-
     agree_threshold = .5
     min_tel = 3
 
-
-
     parser = make_argparser()
-    parser.add_argument('--classifier_dir', type=str,
-                        default='data/classifier_pickle')
-    parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
-    parser.add_argument('-o', '--out_file', type=str)
+    parser.add_argument('--classifier', type=str,
+                        default='data/classifier_pickle/classifier_{}_{}_{}.pkl')
+    parser.add_argument('-o', '--out_file', type=str,
+                        default="data/reconstructed_events/classified_events_{}_{}.h5",
+                        help="location to write the classified events to. placeholders "
+                             "are meant as {particle type} and {cleaning mode}")
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
+    parser.add_argument('--wave_dir',  type=str, default=None,
+                        help="directory where to find mr_filter. "
+                             "if not set look in $PATH")
+
     args = parser.parse_args()
 
     if args.infile_list:
@@ -83,6 +85,7 @@ def main():
 
     # class that wraps tail cuts and wavelet cleaning
     Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
+                           mrfilter_directory=args.wave_dir,
                            skip_edge_events=False)  # args.skip_edge_events)
 
     # simple hillas-based shower reco
@@ -90,9 +93,9 @@ def main():
 
     # wrapper for the scikit learn classifier
     classifier = fancy_EventClassifier.load(
-        "{}/classifier_{}_{}_{}.pkl".format(args.classifier_dir, args.mode,
-                                            args.raw.replace(' ', '').replace(',', ''),
-                                            "RandomForestClassifier"))
+                    args.classifier.format(args.mode,
+                                           args.raw.replace(' ', '').replace(',', ''),
+                                           "RandomForestClassifier"))
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -112,12 +115,11 @@ def main():
         gammaness = tb.Float32Col(dflt=1, pos=9)
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
-    if args.out_file:
-        out_filename = args.out_file
-    else:
-        out_filename = "classified_events_{}_{}.h5".format(channel, args.mode)
     reco_outfile = tb.open_file(
-            "{}/{}".format(args.events_dir, out_filename), mode="w",
+            # trying to put particle type and cleaning mode into the filename
+            # `format` puts in each argument as long as there is a free "{}" token
+            # if `out_file` was set without any "{}", nothing will be replaced
+            args.out_file.format(channel, args.mode), mode="w",
             # if we don't want to write the event list to disk, need to add more arguments
             **({} if args.store else {"driver": "H5FD_CORE",
                                       "driver_core_backing_store": False}))
@@ -211,17 +213,17 @@ def main():
 
                         ax1 = fig.add_subplot(121)
                         disp1 = CameraDisplay(cam_geom[tel_id],
-                                                image=np.sqrt(event.mc.tel[tel_id]
+                                              image=np.sqrt(event.mc.tel[tel_id]
                                                             .photo_electron_image),
-                                                ax=ax1)
+                                              ax=ax1)
                         disp1.cmap = plt.cm.inferno
                         disp1.add_colorbar()
                         plt.title("sqrt photo-electron image")
 
                         ax3 = fig.add_subplot(122)
                         disp3 = CameraDisplay(new_geom,
-                                                image=np.sqrt(pmt_signal),
-                                                ax=ax3)
+                                              image=np.sqrt(pmt_signal),
+                                              ax=ax3)
                         disp3.overlay_moments(moments, color='seagreen', linewidth=3)
                         disp3.cmap = plt.cm.inferno
                         disp3.add_colorbar()
@@ -245,8 +247,8 @@ def main():
             try:
                 # telescope loop done, now do the core fit
                 fit.get_great_circles(hillas_dict,
-                                        event.inst,
-                                        tel_phi, tel_theta)
+                                      event.inst,
+                                      *tel_orientation)
                 pos_fit_cr, err_est_pos = fit.fit_core_crosses()
             except Exception as e:
                 print(e)
@@ -339,8 +341,7 @@ def main():
         ax.set_ylabel("drifted gammaness")
         plt.title(" ** ".join([args.mode, "protons" if args.proton else "gamma"]))
 
-
-    N_selected = len([ x for x in reco_table.where(
+    N_selected = len([x for x in reco_table.where(
         """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
     N_total = len(reco_table)
     print("\nfraction selected events:")

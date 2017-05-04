@@ -1,11 +1,8 @@
 from sys import exit, path
 from os.path import expandvars
-import math
 import numpy as np
 
 from glob import glob
-
-from bisect import insort
 
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -648,4 +645,3 @@ if __name__ == '__main__':
         plt.pause(.1)
 
     plt.show()
-

@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from sys import exit, path
-from os.path import expandvars
-import math
+from sys import exit
 import numpy as np
 
 from glob import glob
-
-from bisect import insort
 
 import matplotlib.pyplot as plt
 
@@ -21,8 +17,6 @@ except:
 
 from ctapipe.io.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
-
-from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.utils import linalg
 
@@ -137,6 +131,7 @@ def main():
     allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
     for filename in sorted(filenamelist)[:args.last]:
 
         print("filename = {}".format(filename))
@@ -255,9 +250,9 @@ def main():
 
                 print()
                 print("xi res (68-percentile) = {:4.3f} {}"
-                    .format(np.percentile(reco_table.cols.xi, 68), angle_unit))
+                      .format(np.percentile(reco_table.cols.xi, 68), angle_unit))
                 print("core res (68-percentile) = {:4.3f} {}"
-                    .format(np.percentile(reco_table.cols.DeltaR, 68), dist_unit))
+                      .format(np.percentile(reco_table.cols.DeltaR, 68), dist_unit))
                 print()
             except:
                 pass
@@ -360,7 +355,7 @@ def main():
 
     # convert the diffs-list into a dict with the number of used telescopes as keys
     diff_vs_tel = {}
-    for diff, ntel in zip(reco_table.cols.DeltaR, reco_table.cols.NTels):
+    for diff, ntel in zip(reco_table.cols.DeltaR, reco_table.cols.NTels_clean):
         if ntel not in diff_vs_tel:
             diff_vs_tel[ntel] = [diff]
         else:
@@ -381,7 +376,7 @@ def main():
 
     # plotting the core position error as violin plots with binning in
     # number of telescopes an shower energy
-    figure = plt.figure()
+    plt.figure()
     plt.subplot(211)
     plt.violinplot([np.log10(a) for a in diff_vs_tel.values()],
                    [a for a in diff_vs_tel.keys()],
