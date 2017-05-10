@@ -10,7 +10,6 @@ from DIRAC.Interfaces.API.Job import Job
 from DIRAC.Interfaces.API.Dirac import Dirac
 
 
-
 def sliding_window(my_list, window_size, step_size=None):
     if step_size is None:
         step_size = window_size
@@ -40,7 +39,7 @@ pilot_args = ' '.join((
                        'classify_and_reconstruct.py',
                        '--classifier ./{classifier}',
                        '-m 50',
-                       '--tail' if do_tailcuts else '--wave_dir ./',
+                       '--tail' if do_tailcuts else ''  # '--wave_temp_dir ./',
                        '--out_file {out_file}',
                        '--store',
                        '--indir ./ --infile_list run*.gz'))
@@ -66,23 +65,22 @@ classifier_LFN = "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/classifier/"\
 # the placeholder braces are going to get set during the file-loop
 output_filename_template = './classified_events_{}_{}_{}.h5'
 
-# sets all the local files that are going to be uploaded with the job
-# plus the pickled classifier (if the file name starts with `LFN:`, it's will be copied
-# from the GRID itself)
+# sets all the local files that are going to be uploaded with the job plus the pickled
+# classifier (if the file name starts with `LFN:`, it will be copied from the GRID itself)
 input_sandbox = ['modules', 'helper_functions.py',
 
                  # python wrapper for the mr_filter wavelet cleaning
                  '/local/home/tmichael/software/jeremie_cta/'
                  'sap-cta-data-pipeline/datapipe/',
 
-                 # executable for the wavelet cleaning
-                 '/local/home/tmichael/software/ISAP/ISAP/cxx/sparse2d/bin/mr_filter',
-
                  # sets up the environment + script that is being run
                  'dirac_pilot.sh', pilot_args.split()[0],
 
                  # the pickled model for the event classifier
                  classifier_LFN,
+
+                 # the executable for the wavelet cleaning
+                 'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter',
 
                  'LFN:/vo.cta.in2p3.fr/user/c/ciro.bigongiari/MiniArray9/Simtel/'
                  'gamma/run1011.simtel.gz'
@@ -124,10 +122,10 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
                     '-'.join([re.split('/|\.', run_filelist[+0])[-3],
                               re.split('/|\.', run_filelist[-1])[-3]]))
         print("\nOutputSandbox: {}".format(output_filename))
-        j.setOutputSandbox([output_filename, "mr_filter"])
+        j.setOutputSandbox([output_filename])
 
         # the `dirac_pilot.sh` is the executable. it sets up the environment and then
-        # starts the script will all parameters given by `pilot_args`
+        # starts the script with all parameters given by `pilot_args`
         j.setExecutable('dirac_pilot.sh',
                         pilot_args.format(out_file=output_filename,
                                           classifier=classifier_LFN.split('/')[-1]))
@@ -137,8 +135,8 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
             print("\nrunning dry -- not submitting")
             break
 
-        # this sends the job to the GRID and uploads all the files in the input sandbox in
-        # the process
+        # this sends the job to the GRID and uploads all the files into the input sandbox
+        # in the process
         print("\nsubmitting job")
         res = dirac.submit(j)
         print('Submission Result: {}'.format(res['Value']))

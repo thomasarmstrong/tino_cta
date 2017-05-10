@@ -26,13 +26,18 @@ echo $PYTHONPATH
 echo 'which python'
 which python
 
+# if the mr_filter executable is copied from the GRID storage, it is not marked as
+# "executable" -- fix this here
+chmod +x mr_filter
+
 # prevent matplotlib to complain about missing backends
 export MPLBACKEND=Agg
 
 MYHOME=$PWD
 
 # getting and compiling cfitsio on site
-{
+if [ $COMPILE_CFITSIO ]  # this won't run unless we define the variable
+then
     if [ ! -e cfitsio_latest.tar.gz ]
     then
         echo getting cfitsio
@@ -51,10 +56,11 @@ MYHOME=$PWD
     export LD_LIBRARY_PATH=$CFITSIO:$LD_LIBRARY_PATH
 
     cd $MYHOME
-} &> /dev/null
+fi
 
 # get and compile mr_filter
-{
+if [ $COMPILE_SPARSE ]  # this won't run unless we define the variable
+then
     if [ ! -e ISAP*tgz ]
     then
         echo getting ISAP
@@ -86,9 +92,9 @@ MYHOME=$PWD
     make
 
     cd $MYHOME
-}
+    cp $ISAP/cxx/sparse2d/bin/mr_filter $MYHOME
+fi
 
-cp $ISAP/cxx/sparse2d/bin/mr_filter $MYHOME
 
 # executing the script that we intend to run
 echo calling: 'python $@'
