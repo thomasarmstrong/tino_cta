@@ -40,7 +40,7 @@ class MissingImplementationException(Exception):
     pass
 
 
-def kill_isolpix(array, neighbours=None, threshold=.2, plot=False):
+def kill_isolpix(array, neighbours=None, threshold=.2):
     """
     Return array with isolated islands removed.
     Only keeping the biggest islands (largest surface).
@@ -73,21 +73,6 @@ def kill_isolpix(array, neighbours=None, threshold=.2, plot=False):
 
     filtered_array[remove_pixel] = 0
 
-    if plot:
-        fig, ax = plt.subplots(ncols=3, nrows=1, figsize=(10, 5))
-
-        ax[0].imshow(np.sqrt(array), interpolation='none')
-        ax[0].set_title('input image')
-
-        ax[1].imshow(label_im, interpolation='none')
-        ax[1].set_title('connected regions labels')
-
-        ax[2].imshow(np.sqrt(filtered_array), interpolation='none')
-        ax[2].set_title('cleaned output')
-
-        for i, a in enumerate(ax): a.set_axis_off()
-        plt.show()
-
     return filtered_array
 
 
@@ -114,7 +99,7 @@ class ImageCleaner:
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
                  skip_edge_events=True, cutflow=CutFlow("ImageCleaner"),
                  wavelet_options="-K -C1 -m3 -s3 -n4",
-                 mrfilter_directory=None,
+                 tmp_files_directory='/tmp/', mrfilter_directory=None,
                  tail_thresh_up=10, tail_thresh_low=5):
         self.mode = mode
         self.skip_edge_events = skip_edge_events
@@ -127,7 +112,7 @@ class ImageCleaner:
             self.wavelet_cleaning = \
                 lambda img: WaveletTransform().clean_image(
                                 img, raw_option_string=wavelet_options,
-                                tmp_files_directory="/tmp/",
+                                tmp_files_directory=tmp_files_directory,
                                 mrfilter_directory=mrfilter_directory)
             self.island_threshold = 4.5
         elif mode == "tail":
@@ -167,10 +152,10 @@ class ImageCleaner:
 
         if self.skip_edge_events:
             edge_thresh = np.max(cleaned_img)/5.
-            if (cleaned_img[0,:]  > edge_thresh).any() or  \
-                (cleaned_img[-1,:] > edge_thresh).any() or  \
-                (cleaned_img[:,0]  > edge_thresh).any() or  \
-                (cleaned_img[:,-1] > edge_thresh).any():
+            if (cleaned_img[0, :]  > edge_thresh).any() or \
+               (cleaned_img[-1, :] > edge_thresh).any() or \
+               (cleaned_img[:, 0]  > edge_thresh).any() or \
+               (cleaned_img[:, -1] > edge_thresh).any():
                     raise EdgeEventException
             self.cutflow.count("wavelet edge")
 
@@ -225,10 +210,10 @@ class ImageCleaner:
 
             if self.skip_edge_events:
                 edge_thresh = np.max(new_img)/5.
-                if (new_img[0,:]  > edge_thresh).any() or  \
-                   (new_img[-1,:] > edge_thresh).any() or  \
-                   (new_img[:,0]  > edge_thresh).any() or  \
-                   (new_img[:,-1] > edge_thresh).any():
+                if (new_img[0, :]  > edge_thresh).any() or  \
+                   (new_img[-1, :] > edge_thresh).any() or  \
+                   (new_img[:, 0]  > edge_thresh).any() or  \
+                   (new_img[:, -1] > edge_thresh).any():
                         raise EdgeEventException
                 self.cutflow.count("tailcut edge")
 
