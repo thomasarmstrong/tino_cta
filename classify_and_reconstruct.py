@@ -54,6 +54,9 @@ def main():
     parser.add_argument('--wave_dir',  type=str, default=None,
                         help="directory where to find mr_filter. "
                              "if not set look in $PATH")
+    parser.add_argument('--wave_temp_dir',  type=str, default='/tmp/',
+                        help="directory where mr_filter to store the temporary fits files"
+                        )
 
     args = parser.parse_args()
 
@@ -85,6 +88,7 @@ def main():
 
     # class that wraps tail cuts and wavelet cleaning
     Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
+                           tmp_files_directory=args.wave_temp_dir,
                            mrfilter_directory=args.wave_dir,
                            skip_edge_events=False)  # args.skip_edge_events)
 
@@ -100,8 +104,6 @@ def main():
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
-
-
 
     # this class defines the reconstruction parameters to keep track of
     class RecoEvent(tb.IsDescription):
@@ -126,11 +128,7 @@ def main():
     reco_table = reco_outfile.create_table("/", "reco_events", RecoEvent)
     reco_event = reco_table.row
 
-
-
-
     source_orig = None
-
 
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
@@ -148,7 +146,7 @@ def main():
 
             mc_shower = event.mc
             mc_shower_core = np.array([mc_shower.core_x.value,
-                                        mc_shower.core_y.value]) * u.m
+                                       mc_shower.core_y.value]) * u.m
 
             if Eventcutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
                 continue
@@ -185,7 +183,7 @@ def main():
                 try:
                     pmt_signal, new_geom = \
                         Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
-                                        event.inst.optical_foclen[tel_id])
+                                      event.inst.optical_foclen[tel_id])
 
                     if np.count_nonzero(pmt_signal) < 3:
                         continue
@@ -286,7 +284,6 @@ def main():
                             err_est_pos/u.m
                             ]
 
-
                 if np.isnan(features_tel).any():
                     continue
 
@@ -298,7 +295,7 @@ def main():
                 continue
 
             predict_proba = classifier.predict_proba([features_evt])
-            gammaness = predict_proba[0,0]
+            gammaness = predict_proba[0, 0]
 
             fit_dir, crossings = fit.fit_origin_crosses()
 
@@ -332,10 +329,10 @@ def main():
         fig = plt.figure()
         ax = plt.subplot(111)
         histo = np.histogram2d(NTels_rec, gammaness,
-                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         im = ax.imshow(histo_normed, interpolation='none', origin='lower',
-                        aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+                       aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
         cb = fig.colorbar(im, ax=ax)
         ax.set_xlabel("NTels")
         ax.set_ylabel("drifted gammaness")
