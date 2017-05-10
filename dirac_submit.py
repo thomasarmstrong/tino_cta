@@ -124,7 +124,7 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
                     '-'.join([re.split('/|\.', run_filelist[+0])[-3],
                               re.split('/|\.', run_filelist[-1])[-3]]))
         print("\nOutputSandbox: {}".format(output_filename))
-        j.setOutputSandbox([output_filename])
+        j.setOutputSandbox([output_filename, "mr_filter"])
 
         # the `dirac_pilot.sh` is the executable. it sets up the environment and then
         # starts the script will all parameters given by `pilot_args`
@@ -136,10 +136,6 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
         if "dry" in sys.argv:
             print("\nrunning dry -- not submitting")
             break
-
-        j.setDestination(['LCG.IN2P3-CC.fr', 'LCG.DESY-ZEUTHEN.de', 'LCG.CNAF.it',
-                          'LCG.GRIF.fr', 'LCG.CYFRONET.pl', 'LCG.PRAGUE-CESNET.cz',
-                          'LCG.Prague.cz', 'LCG.LAPP.fr'])
 
         # this sends the job to the GRID and uploads all the files in the input sandbox in
         # the process
