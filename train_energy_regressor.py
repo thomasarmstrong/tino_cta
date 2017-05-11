@@ -193,8 +193,8 @@ if __name__ == '__main__':
                             NTels,
                             (moments.cen_x**2 +
                              moments.cen_y**2) / u.m**2,
-                            # moments.phi/u.deg,
-                            moments.psi/u.deg,
+                            (moments.phi -
+                             moments.psi)/u.deg,
                             moments.width/u.m,
                             moments.length/u.m,
                             moments.skewness,
@@ -227,7 +227,7 @@ if __name__ == '__main__':
                         "sum_signal_cam",
                         "NTels_rec",
                         "cen_r**2",
-                        # "phi",
+                        "phi - "
                         "psi",
                         "width",
                         "length",
@@ -286,15 +286,16 @@ if __name__ == '__main__':
         # plot E_reco / E_MC ratio for a few cross-validations
         from sklearn.model_selection import KFold
         kf = KFold(n_splits=5)
-        bins = np.tile(np.linspace(-2, 3, 51), (2, 1))
+        NBins = 30
+        bins = np.tile(np.linspace(-2, 3, NBins), (2, 1))
         Epred_hist, _, _ = np.histogram2d([], [], bins=bins)
         Epred_hist_dict = {"ASTRI": np.histogram2d([], [], bins=bins)[0],
                            "FlashCam": np.histogram2d([], [], bins=bins)[0]}
 
-        relE_bins = np.stack((np.linspace(-2, 3, 51), np.linspace(-1, 1, 51)))
-        redErel_hist, _, _ = np.histogram2d([], [], bins=relE_bins)
-        redErel_hist_dict = {"ASTRI": np.histogram2d([], [], bins=relE_bins)[0],
-                             "FlashCam": np.histogram2d([], [], bins=relE_bins)[0]}
+        relE_bins = np.stack((np.linspace(-2, 3, NBins), np.linspace(-1, 1, NBins)))
+        relE_Err_hist, _, _ = np.histogram2d([], [], bins=relE_bins)
+        relE_Err_hist_dict = {"ASTRI": np.histogram2d([], [], bins=relE_bins)[0],
+                              "FlashCam": np.histogram2d([], [], bins=relE_bins)[0]}
 
         X, y = np.array(Features_event_list), convert_astropy_array(MC_Energies)
         for i, (train_index, test_index) in enumerate(kf.split(X)):
@@ -312,58 +313,42 @@ if __name__ == '__main__':
                     Epred_hist_dict[cam_id] += np.histogram2d([np.log10(mce/u.TeV)],
                                                               [np.log10(pred/u.TeV)],
                                                               bins=bins)[0]
-                    redErel_hist_dict[cam_id] += np.histogram2d(
+                    relE_Err_hist_dict[cam_id] += np.histogram2d(
                             [np.log10(mce/u.TeV)],
                             [(pred-mce)/mce],
-                            bins=bins)[0]
+                            bins=relE_bins)[0]
 
             Epred_hist += np.histogram2d(np.log10(y_score/u.TeV),
                                          np.log10(y_test/u.TeV),
                                          bins=bins)[0]
-            redErel_hist += np.histogram2d(np.log10(y_score/u.TeV),
-                                           (y_test-y_score)/y_score,
-                                           bins=relE_bins)[0]
+            relE_Err_hist += np.histogram2d(np.log10(y_score/u.TeV),
+                                            (y_test-y_score)/y_score,
+                                            bins=relE_bins)[0]
 
-        plt.figure()
-        plt.imshow(Epred_hist.T, interpolation='none', origin='lower',
-                   extent=bins[:, [0, -1]].ravel())
-        plt.plot(*bins[:, [0, -1]])
-        plt.xlabel('log10(E_MC / TeV)')
-        plt.ylabel('log10(E_predict / TeV)')
-        plt.suptitle(" ** ".join(
-                ['Energy Estimator', "wavelets" if args.mode == "wave" else
-                 "tailcuts", str(reg)]))
-        plt.title("combined")
-        plt.legend(loc="lower right", title="different cross validations")
-
-        if args.write:
-            save_fig('{}/energy_migration_combined_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, args.raw.replace(" ", ""), reg))
-
-        plt.figure()
-        plt.imshow(redErel_hist.T, interpolation='none', origin='lower',
-                   extent=relE_bins[:, [0, -1]].ravel())
-        plt.plot(relE_bins[0, [0, -1]], (0, 0))
-        plt.xlabel('log10(E_MC / TeV)')
-        plt.ylabel('(E_pred - E_MC) / E_MC')
-        plt.suptitle(" ** ".join(
-                ['relative Energy Error',
-                 "wavelets" if args.mode == "wave" else "tailcuts",
-                 str(reg)]))
-        plt.title("combined")
-
-        #
         # calculate number of rows and columns to plot camera-type plots in a grid
-        n_tel_types = len(Epred_hist_dict)
+        n_tel_types = len(Epred_hist_dict) + 1  # +1 is for the combined fit
         n_cols = np.ceil(np.sqrt(n_tel_types)).astype(int)
         n_rows = np.ceil(n_tel_types / n_cols).astype(int)
 
+        # predicted energy vs. Monte Carlo energy
         fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
         plt.suptitle(" ** ".join(
                 ['"migration matrices"',
                  "wavelets" if args.mode == "wave" else "tailcuts",
                  str(reg)]))
-        for i, (cam_id, thishist) in enumerate(Epred_hist_dict.items()):
+
+        # combining all telescopes
+        plt.sca(axs[0, 0])
+        plt.imshow(Epred_hist.T, interpolation='none', origin='lower',
+                   extent=bins[:, [0, -1]].ravel())
+        plt.plot(*bins[:, [0, -1]])
+        plt.xlabel('log10(E_MC / TeV)')
+        plt.ylabel('log10(E_predict / TeV)')
+        plt.title("combined")
+
+        # and for the various telescope types separately
+        # at [0, 0] is the combined plot, so add +1
+        for i, (cam_id, thishist) in enumerate(Epred_hist_dict.items(), start=1):
             plt.sca(axs.ravel()[i])
             plt.imshow(thishist.T, interpolation='none', origin='lower',
                        extent=bins[:, [0, -1]].ravel())
@@ -371,25 +356,48 @@ if __name__ == '__main__':
             plt.xlabel('log10(E_MC / TeV)')
             plt.ylabel('log10(E_predict / TeV)')
             plt.title(cam_id)
+        # switch off superfluous axes
+        for j in range(i+1, n_rows*n_cols):
+            axs.ravel()[j].axis('off')
 
         if args.write:
-            save_fig('{}/energy_migration_tel_by_tel_{}_{}_{}'.format(args.plots_dir,
+            save_fig('{}/energy_migration_{}_{}_{}'.format(args.plots_dir,
                      args.mode, args.raw.replace(" ", ""), reg))
 
+        #
         # 2D histogram E_rel_error vs E_mc
         fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
         plt.suptitle(" ** ".join(
                 ['relative Energy Error',
                  "wavelets" if args.mode == "wave" else "tailcuts",
                  str(reg)]))
-        for i, (cam_id, thishist) in enumerate(redErel_hist_dict.items()):
+
+        # combining all telescopes
+        plt.sca(axs[0, 0])
+        plt.imshow(relE_Err_hist.T, interpolation='none', origin='lower',
+                   extent=relE_bins[:, [0, -1]].ravel(), aspect="auto")
+        plt.plot(relE_bins[0, [0, -1]], (0, 0))
+        plt.xlabel('log10(E_MC / TeV)')
+        plt.ylabel('(E_pred - E_MC) / E_MC')
+        plt.title("combined")
+
+        # and for the various telescope types separately
+        # at axs[0, 0] is the combined plot, so start enumeration at 1
+        for i, (cam_id, thishist) in enumerate(relE_Err_hist_dict.items(), start=1):
             plt.sca(axs.ravel()[i])
             plt.imshow(thishist.T, interpolation='none', origin='lower',
-                       extent=relE_bins[:, [0, -1]].ravel())
+                       extent=relE_bins[:, [0, -1]].ravel(), aspect="auto")
             plt.plot(relE_bins[0, [0, -1]], (0, 0))
             plt.xlabel('log10(E_MC / TeV)')
             plt.ylabel('(E_predict -E_MC)/ E_MC')
             plt.title(cam_id)
+        # switch off superfluous axes
+        for j in range(i+1, n_rows*n_cols):
+            axs.ravel()[j].axis('off')
+
+        if args.write:
+            save_fig('{}/energy_relative_error_{}_{}_{}'.format(args.plots_dir,
+                     args.mode, args.raw.replace(" ", ""), reg))
 
 #  ##     ## ######## ########  ####    ###    ##    ##  ######
 #  ###   ### ##       ##     ##  ##    ## ##   ###   ## ##    ##
@@ -398,27 +406,44 @@ if __name__ == '__main__':
 #  ##     ## ##       ##     ##  ##  ######### ##  ####       ##
 #  ##     ## ##       ##     ##  ##  ##     ## ##   ### ##    ##
 #  ##     ## ######## ########  #### ##     ## ##    ##  ######
-        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
-        plt.suptitle(" ** ".join(
-                ['relative Energy Error',
-                 "wavelets" if args.mode == "wave" else "tailcuts",
-                 str(reg)]))
-        for i, (cam_id, thishist) in enumerate(redErel_hist_dict.items()):
+
+        plt.sca(axs[0, 0])
+        # get a 2D array of the cumulative sums along the "error axis"
+        # (not the energy axis)
+        cum_sum = np.cumsum(relE_Err_hist, axis=1)
+        # along the energy axis, get the index for the median, 32 and 68 percentile
+        median_args = np.argmax(cum_sum.T > cum_sum[:, -1]*.50, axis=0)
+        low_er_args = np.argmax(cum_sum.T > cum_sum[:, -1]*.32, axis=0)
+        hih_er_args = np.argmax(cum_sum.T > cum_sum[:, -1]*.68, axis=0)
+
+        # plot the median together with the error bars
+        # (but only where the median index is larger than zero)
+        plt.errorbar(((relE_bins[0, 1:]+relE_bins[0, :-1])/2)[median_args > 0],
+                     relE_bins[1, median_args[median_args > 0]],
+                     yerr=[relE_bins[1, median_args[median_args > 0]]
+                           - relE_bins[1, low_er_args[median_args > 0]],
+                           relE_bins[1, hih_er_args[median_args > 0]]
+                           - relE_bins[1, median_args[median_args > 0]]],
+                     ls="", marker="o")
+
+        for i, (cam_id, thishist) in enumerate(relE_Err_hist_dict.items(), start=1):
             plt.sca(axs.ravel()[i])
             # get a 2D array of the cumulative sums along the "error axis"
             # (not the energy axis)
             cum_sum = np.cumsum(thishist, axis=1)
             # along the energy axis, get the index for the median, 32 and 68 percentile
-            median_args = np.argmax(cum_sum > cum_sum[:, -1]/2, axis=1)
-            low_er_args = np.argmax(cum_sum > cum_sum[:, -1]*.32, axis=1)
-            hih_er_args = np.argmax(cum_sum > cum_sum[:, -1]*.68, axis=1)
+            median_args = np.argmax(cum_sum.T > cum_sum[:, -1]*.50, axis=0)
+            low_er_args = np.argmax(cum_sum.T > cum_sum[:, -1]*.32, axis=0)
+            hih_er_args = np.argmax(cum_sum.T > cum_sum[:, -1]*.68, axis=0)
 
             # plot the median together with the error bars
             # (but only where the median index is larger than zero)
             plt.errorbar(((relE_bins[0, 1:]+relE_bins[0, :-1])/2)[median_args > 0],
                          relE_bins[1, median_args[median_args > 0]],
-                         yerr=[relE_bins[1, median_args[low_er_args > 0]],
-                               relE_bins[1, median_args[hih_er_args > 0]]],
+                         yerr=[relE_bins[1, median_args[median_args > 0]]
+                               - relE_bins[1, low_er_args[median_args > 0]],
+                               relE_bins[1, hih_er_args[median_args > 0]]
+                               - relE_bins[1, median_args[median_args > 0]]],
                          ls="", marker="o")
 
             # plot a horizontal line at hight zero over the defined energy length
@@ -426,7 +451,5 @@ if __name__ == '__main__':
             plt.xlabel('log10(E_MC / TeV)')
             plt.ylabel('median (E_predict -E_MC)/ E_MC')
             plt.title(cam_id)
-
-
 
         plt.show()
