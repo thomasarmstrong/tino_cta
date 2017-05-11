@@ -3,8 +3,8 @@
 echo "pwd:"
 pwd
 
-echo "ls -lhrt"
-ls -lhrt
+echo "ls -lh"
+ls -lh
 
 # setting some paths
 export PATH=./:$PATH
@@ -95,12 +95,19 @@ then
     cp $ISAP/cxx/sparse2d/bin/mr_filter $MYHOME
 fi
 
+echo
+date
+echo
 
 # executing the script that we intend to run
 echo calling: 'python $@'
 python $@
 
+echo
+date
+echo
+
 
 echo
-echo "final ls -lhrt"
-ls -lhrt
+echo "final ls -lh"
+ls -lh

@@ -32,17 +32,16 @@ dirac = Dirac()
 #        ##    ##    ##       ##       ##   ##    ##  ##  #### ##    ##
 #  ##    ##    ##    ##       ##       ##    ##   ##  ##   ### ##    ##
 #   ######     ##    ######## ######## ##     ## #### ##    ##  ######
-do_tailcuts = False
 wavelet_args = "-K -C1 -m3 -s2,2,3 -n4"
 
 pilot_args = ' '.join((
-                       'classify_and_reconstruct.py',
-                       '--classifier ./{classifier}',
-                       '-m 50',
-                       '--tail' if do_tailcuts else ''  # '--wave_temp_dir ./',
-                       '--out_file {out_file}',
-                       '--store',
-                       '--indir ./ --infile_list run*.gz'))
+        'classify_and_reconstruct.py',
+        '--classifier ./{classifier}',
+        '--out_file {out_file}',
+        '--store',
+        '--indir ./ --infile_list run*.gz'
+        # '--tail',  # comment out to do wavelet cleaning
+        ))
 
 
 # files containing lists of the ASTRI files on the GRID
@@ -50,20 +49,22 @@ astri_filelist_gamma = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.f
                             "-user-c-ciro.bigongiari-MiniArray9-Simtel-gamma.lfns")
 astri_filelist_proton = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.fr"
                              "-user-c-ciro.bigongiari-MiniArray9-Simtel-proton.lfns")
-
+# proton files are smaller, can afford more files per run - at a ratio 11:3
+window_sizes = [3*4, 11*4]
+mode = "tail" if "tail" in pilot_args else "wave"
 
 # the pickled classifier on the GRID
 classifier_LFN = "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/classifier/"\
                  "{}/classifier_{}_{}_{}.pkl".format(
-                         "ASTRI",
-                         "tail" if do_tailcuts else "wave",
-                         wavelet_args.replace(' ', '').replace(',', ''),
+                         "ASTRI", mode,
+                         re.sub('[ ,]', '', wavelet_args),
                          "RandomForestClassifier")
 
 
 # define a template name for the file that's going to be written out.
 # the placeholder braces are going to get set during the file-loop
-output_filename_template = './classified_events_{}_{}_{}.h5'
+output_filename_template = 'classified_events_{}_{}_{}.h5'
+output_path = "cta/astri_mini/"
 
 # sets all the local files that are going to be uploaded with the job plus the pickled
 # classifier (if the file name starts with `LFN:`, it will be copied from the GRID itself)
@@ -81,9 +82,6 @@ input_sandbox = ['modules', 'helper_functions.py',
 
                  # the executable for the wavelet cleaning
                  'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter',
-
-                 'LFN:/vo.cta.in2p3.fr/user/c/ciro.bigongiari/MiniArray9/Simtel/'
-                 'gamma/run1011.simtel.gz'
                  ]
 
 
@@ -91,38 +89,52 @@ print("\nrunning as:")
 print(pilot_args)
 print("\nwith input_sandbox:")
 print(input_sandbox)
-print("\nwith output_sandbox file:")
+print("\nwith output file:")
 print(output_filename_template.format(
         '{particle-type}', '{cleaning-mode}', '{run-token}'))
 
-for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]):
-    # proton files are smaller, can afford more files per run
-    window_size = [100, 500][i]
-    for run_filelist in sliding_window([l.strip() for l in astri_filelist], 1):
 
-        j = Job()
-        j.setCPUTime(500)
-        j.setName('hillas fit test')
-        j.setInputSandbox(input_sandbox)
+for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]):
+    window_size = window_sizes[i]
+    for run_filelist in sliding_window([l.strip() for l in astri_filelist],
+                                       window_size):
+
+        channel = "gamma" if "gamma" in " ".join(run_filelist) else "proton"
 
         print("\nrunning on {} file{}:".format(len(run_filelist),
                                                "" if len(run_filelist) == 1 else "s"))
         print(run_filelist)
 
+        # this selects the `runxxx` part of the first and last file in the run
+        # list and joins them with a dash so that we get a nice identifier in
+        # the outpult file name. if there is only one file in the list, use only that one
+        run_token = re.split('/|\.', run_filelist[+0])[-3]
+        if len(run_filelist) > 1:
+            run_token = '-'.join([run_token, re.split('/|\.', run_filelist[-1])[-3]])
+
+        j = Job()
+        j.setCPUTime(30000)  # 1 h in seconds times 8 (CPU normalisation factor)
+        j.setName('classifier {}.{}'.format(channel, run_token))
+
+        # bad sites -- here miniconda cannot be found (due to bad vo configuration?)
+        j.setBannedSites(['LCG.CIEMAT.es', 'LCG.PIC.es'])
+
+        j.setInputSandbox(input_sandbox +
+                          # adding the data files into the input sandbox instead of input
+                          # data to not be bound to the very busy frascati site
+                          [f.replace('/vo', 'LFN:/vo') for f in run_filelist])
+
         # setting input
         # j.setInputData(run_filelist)
 
         # setting output
-        output_filename = output_filename_template.format(
-                    "gamma" if "gamma" in " ".join(run_filelist) else "proton",
-                    "tail" if "tail" in pilot_args else "wave",
-                    # this selects the `runxxx` part of the first and last file in the run
-                    # list and joins them with a dash so that we get a nice identifier in
-                    # the outpult file name
-                    '-'.join([re.split('/|\.', run_filelist[+0])[-3],
-                              re.split('/|\.', run_filelist[-1])[-3]]))
-        print("\nOutputSandbox: {}".format(output_filename))
-        j.setOutputSandbox([output_filename])
+        output_filename = output_filename_template.format(channel, mode, run_token)
+
+        # print("\nOutputSandbox: {}".format(output_filename))
+        # j.setOutputSandbox([output_filename])
+
+        print("\nOutputData: {}{}".format(output_path, output_filename))
+        j.setOutputData([output_filename], outputSE=None, outputPath=output_path)
 
         # the `dirac_pilot.sh` is the executable. it sets up the environment and then
         # starts the script with all parameters given by `pilot_args`
