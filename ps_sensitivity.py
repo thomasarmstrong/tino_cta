@@ -2,6 +2,11 @@
 
 import numpy as np
 
+# PyTables
+import tables as tb
+# pandas data frames
+import pandas as pd
+
 from astropy.table import Table
 from astropy import units as u
 
@@ -9,12 +14,12 @@ from itertools import chain
 
 from helper_functions import *
 
-from ctapipe.analysis.Sensitivity import (SensitivityPointSource,
+from ctapipe.analysis.sensitivity import (SensitivityPointSource,
                                           crab_source_rate, CR_background_rate, Eminus2)
 
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-poster')
-#plt.style.use('t_slides')
+# plt.style.use('t_slides')
 
 
 # MC energy ranges:
@@ -32,10 +37,6 @@ sensitivity_unit = flux_unit * u.erg**2
 # scale MC events to this reference time
 observation_time = 50*u.h
 
-# PyTables
-import tables as tb
-# pandas data frames
-import pandas as pd
 
 def open_pytable_as_pandas(filename, mode='r'):
     pyt_infile = tb.open_file(filename, mode=mode)
@@ -43,11 +44,11 @@ def open_pytable_as_pandas(filename, mode='r'):
 
     return pd.DataFrame(pyt_table[:])
 
-apply_cuts = True
-def selection_mask(event_table, ntels=3, gammaness=.75):
-    return ((event_table["NTels_reco"] >= ntels) & \
-            (event_table["gammaness"] > gammaness))
 
+def selection_mask(event_table, ntels=3, gammaness=.75, r_max=0.15*u.deg):
+    return ((event_table["NTels_reco"] >= ntels) &
+            (event_table["gammaness"] > gammaness) &
+            (event_table["off_angle"] < r_max))
 
 
 if __name__ == "__main__":
@@ -56,6 +57,8 @@ if __name__ == "__main__":
     parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
     parser.add_argument('--in_file', type=str, default="classified_events")
     args = parser.parse_args()
+
+    apply_cuts = True
 
     NReuse_Gammas = 10
     NReuse_Proton = 20
@@ -106,7 +109,7 @@ if __name__ == "__main__":
                             e_min_max={"g": (0.1, 330)*u.TeV,
                                        "p": (0.1, 600)*u.TeV},
                             generator_gamma={"g": 2, "p": 2},
-                            r_on=0.15*u.deg, r_off=0.15*u.deg)
+                            alpha=1)
     weights = SensCalc.event_weights
 
     print()
@@ -127,12 +130,11 @@ if __name__ == "__main__":
     proton_t = open_pytable_as_pandas(
             "{}/{}_{}_{}.h5".format(args.events_dir, args.in_file, "proton", "tail"))
 
-
     if False:
         fig = plt.figure()
         tax = plt.subplot(121)
         histo = np.histogram2d(gammas_t["NTels_reco"], gammas_t["gammaness"],
-                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         im = tax.imshow(histo_normed, interpolation='none', origin='lower',
                         aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
@@ -143,7 +145,7 @@ if __name__ == "__main__":
 
         tax = plt.subplot(122)
         histo = np.histogram2d(proton_t["NTels_reco"], proton_t["gammaness"],
-                                bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         im = tax.imshow(histo_normed, interpolation='none', origin='lower',
                         aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
@@ -154,16 +156,12 @@ if __name__ == "__main__":
 
         plt.show()
 
-
-
     # applying some cuts
     if apply_cuts:
         print("gammas, protons before cuts (tailcuts):", len(gammas_t), len(proton_t))
         gammas_t = gammas_t[selection_mask(gammas_t)]
         proton_t = proton_t[selection_mask(proton_t)]
         print("gammas, protons after cuts (tailcuts):", len(gammas_t), len(proton_t))
-
-
 
     SensCalc_t = SensitivityPointSource(
                     mc_energies={'g': gammas_t['MC_Energy'].values*u.GeV,
@@ -186,8 +184,14 @@ if __name__ == "__main__":
                             e_min_max={"g": (0.1, 330)*u.TeV,
                                        "p": (0.1, 600)*u.TeV},
                             generator_gamma={"g": 2, "p": 2},
-                            r_on=0.15*u.deg, r_off=0.15*u.deg)
+                            alpha=1)
     weights_t = SensCalc_t.event_weights
+
+    gammas_t["weights"] = weights_t['g']
+    proton_t["weights"] = weights_t['p']
+
+    # gammas_t.to_hdf("gamma.h5", "table")
+    # proton_t.to_hdf("proton.h5", "table")
 
     print()
     print("gammas selected (tailcuts):", len(gammas_t))
@@ -207,7 +211,6 @@ if __name__ == "__main__":
 
         bin_widths_g = np.diff(edges_gammas.value)
         bin_widths_p = np.diff(edges_proton.value)
-
 
         if True:
             # plot MC generator spectrum and selected spectrum
@@ -240,7 +243,7 @@ if __name__ == "__main__":
             plt.title("protons -- tailcuts")
             plt.legend()
 
-
+        # plot the number of expected events in each energy bin
         plt.figure()
         plt.bar(
                 bin_centres_p.value,
@@ -259,7 +262,7 @@ if __name__ == "__main__":
 
         # plot effective area
         if True:
-            plt.figure(figsize=(16,8))
+            plt.figure(figsize=(16, 8))
             plt.suptitle("ASTRI Effective Areas")
             plt.subplot(121)
             plt.loglog(
@@ -320,7 +323,8 @@ if __name__ == "__main__":
             marker="^",
             ls="",
             label="tailcuts (no upscale)")
-        crab_bins=np.logspace(-1, 3, 17)
+        # draw the crab flux over the sensitivity curves
+        crab_bins = np.logspace(-1, 3, 17)
         plt.loglog(crab_bins,
                    (crab_source_rate(crab_bins*u.TeV).to(flux_unit)
                     * (crab_bins*u.TeV.to(u.erg))**2),
@@ -330,7 +334,6 @@ if __name__ == "__main__":
         plt.ylabel(r'$E^2 \Phi /$ {:latex}'.format(sensitivity_unit))
         plt.gca().set_xscale("log")
         plt.xlim([1e-2, 2e3])
-        plt.pause(.1)
 
         # plot a sky image of the events
         # useless since too few MC background events left
@@ -366,90 +369,31 @@ if __name__ == "__main__":
                  range=(0, .3), label=("protons", "gammas"),
                  log=False, bins=bins)
         plt.xlabel(r"$(\vartheta/^\circ)^2$")
-        #plt.xlabel(r"$1-\cos(\vartheta)$")
         plt.ylabel("expected events in {}".format(observation_time))
         plt.xlim([0, .3])
         plt.legend(loc="upper right", title="tailcuts")
 
-
         plt.subplot(212)
         plt.hist([proton['off_angle']**2,
                   gammas["off_angle"]**2],
-                  weights=[weights['p'], weights['g']],
+                 weights=[weights['p'], weights['g']],
                  rwidth=1, stacked=True,
                  range=(0, .3), label=("protons", "gammas"),
                  log=False, bins=bins)
         plt.xlabel(r"$(\vartheta/^\circ)^2$")
-        #plt.xlabel(r"$1-\cos(\vartheta)$")
         plt.ylabel("expected events in {}".format(observation_time))
         plt.xlim([0, .3])
         plt.legend(loc="upper right", title="wavelets")
         plt.tight_layout()
 
-        #plt.subplot(212)
-        #if True:
-            #NProtons = np.sum(proton['off_angle'][(proton['off_angle'].values**2) < 10])
-            #proton_weight_flat = np.ones(bins) * NProtons/bins
-            #proton_angle_flat = np.linspace(0, 10, bins, False)
-            #proton_angle = proton_angle_flat
-            #proton_weight = proton_weight_flat
-        #else:
-            #proton_angle = proton['off_angle']**2
-            #proton_weight = weights['p']
-
-        #plt.hist([proton_angle,
-                  #gammas['off_angle'].values**2],
-                 #weights=[proton_weight, weights['g']], rwidth=1, stacked=True,
-                 #range=(0, 10), label=("protons", "gammas"),
-                 #log=True, bins=bins)
-        #plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
-        #plt.ylabel("expected events in {}".format(SensCalc.observation_time))
-        #plt.ylim([1e-1, 1e6])
-        #plt.title("wavelets")
-        #plt.legend()
-
         if args.write:
             save_fig("plots/theta_square")
 
-        plt.pause(.1)
-        #plt.subplot(313)
-        #plt.hist([1-np.clip(np.cos(proton['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6),
-                  #1-np.clip(np.cos(gammas['off_angles']*u.degree.to(u.rad)), -1, 1-1e-6)],
-                 #weights=[weight_p, weight_g], rwidth=1, stacked=True,
-                 #range=(0, 5e-3),
-                 #bins=30)
-        #plt.xlabel(r"$1-\cos(\vartheta)$")
-        #plt.ylabel("expected events in {}".format(SensCalc.observation_time))
-        #plt.xlim([0, 5e-3])
-
-        #plt.tight_layout()
-
-        #figure = plt.figure()
-        #if True:
-            #NProtons_t = np.sum(proton_t['off_angles'][(proton_t['off_angles']**2) < 10])
-            #proton_weight_flat = np.ones(50) * NProtons_t/50
-            #proton_angle_flat = np.linspace(0,10,50,False)
-            #proton_angle_t = proton_angle_flat
-            #proton_weight_t = proton_weight_flat
-        #else:
-            #proton_angle_t = proton_t['off_angles']**2
-            #proton_weight_t = weights_t['p']
-
-        #plt.hist([proton_angle_t,
-                  #gammas_t['off_angles']**2],
-                 #weights=[proton_weight_t, weights_t['g']], rwidth=1, stacked=True,
-                 #range=(0, 10), label=("protons", "gammas"),
-                 #log=True, bins=50)
-        #plt.xlabel(r"$\vartheta^2 / \mathrm{"+str(angle_unit)+"}^2$")
-        #plt.ylabel("expected events in {}".format(SensCalc.observation_time))
-        #plt.ylim([1e-1, 1e5])
-        #plt.legend()
-        #plt.suptitle("tail cuts (10 PE / 5 PE)")
-
+        # this demonstrates how to flatten the proton distribution in the theta plot:
+        #     NProtons = np.sum(proton['off_angle'][(proton['off_angle'].values**2) < 10])
+        #     proton_weight_flat = np.ones(bins) * NProtons/bins
+        #     proton_angle_flat = np.linspace(0, 10, bins, False)
+        #     proton_angle = proton_angle_flat
+        #     proton_weight = proton_weight_flat
 
         plt.show()
-
-
-
-
-
