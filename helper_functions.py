@@ -1,10 +1,8 @@
+import matplotlib.pyplot as plt
 import numpy as np
-np.tau = 2*np.pi
 
-
-from matplotlib import pyplot as plt
-#plt.style.use('seaborn-talk')
-#plt.style.use('t_slides')
+# plt.style.use('seaborn-talk')
+# plt.style.use('t_slides')
 
 import signal
 class SignalHandler():
@@ -75,14 +73,14 @@ def convert_astropy_array(arr, unit=None):
 def make_argparser():
     from os.path import expandvars
     import argparse
-    parser = argparse.ArgumentParser(description='show single telescope')
+    parser = argparse.ArgumentParser(description='')
     parser.add_argument('-m', '--max_events', type=int, default=None,
                         help="maximum number of events considered per file")
     parser.add_argument('-c', '--min_charge', type=int, default=0,
                         help="minimum charge per telescope after cleaning")
     parser.add_argument('-i', '--indir',   type=str,
                         default=expandvars("$HOME/Data/cta/ASTRI9/"))
-                        #default="/media/tmichael/Transcend/Data/cta/ASTRI9/")
+                        # default="/media/tmichael/Transcend/Data/cta/ASTRI9/")
     parser.add_argument('-f', '--infile_list',   type=str, default="", nargs='*',
                         help="give a specific list of files to run on")
     parser.add_argument('--plots_dir', type=str, default="plots",
@@ -112,15 +110,16 @@ def make_argparser():
 
 try:
     from matplotlib2tikz import save as tikzsave
+
+    def tikz_save(arg, **kwargs):
+        tikzsave(arg, **kwargs,
+                 figureheight='\\figureheight',
+                 figurewidth='\\figurewidth')
 except:
     print("matplotlib2tikz is not installed")
     print("install with: \n$ pip install matplotlib2tikz")
 
-def tikz_save(arg, **kwargs):
-    try:
-        tikzsave(arg, figureheight = '\\figureheight',
-                      figurewidth  = '\\figurewidth', **kwargs)
-    except:
+    def tikz_save(arg, **kwargs):
         print("matplotlib2tikz is not installed")
         print("no .tex is saved")
 
@@ -163,10 +162,10 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
 
     plt.figure()
 
-    ''' make a normal 2D hexplot from the given data '''
+    # make a normal 2D hexplot from the given data
     if do_hex:
 
-        ''' if we do both plot types, open a subplot '''
+        # if we do both plot types, open a subplot
         if do_violin:
             plt.subplot(211)
 
@@ -184,25 +183,24 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
             plt.xlim(extent[:2])
             plt.ylim(extent[2:])
 
-    ''' prepare and draw the data for the violin plot '''
+    # prepare and draw the data for the violin plot
     if do_violin:
 
-        ''' if we do both plot types, open a subplot '''
+        # if we do both plot types, open a subplot
         if do_hex:
             plt.subplot(212)
 
-        '''
-        to plot the violins, sort the ordinate values into a dictionary
-        the keys are the central values of the bins given by @bin_edges '''
+        # to plot the violins, sort the ordinate values into a dictionary
+        # the keys are the central values of the bins given by `bin_edges`
         val_vs_dep = {}
         bin_centres = (bin_edges[1:]+bin_edges[:-1])/2.
         for dep, val in zip(abscissa, ordinate):
-            ''' get the bin number this event belongs into '''
-            ibin = np.clip(
-                        np.digitize(dep, bin_edges)-1,
-                        0, len(bin_centres)-1)
+            # get the bin number this event belongs into
+            # outliers are put into the first and last bin accordingly
+            ibin = np.clip(np.digitize(dep, bin_edges)-1,
+                           0, len(bin_centres)-1)
 
-            ''' the central value of the bin is the key for the dictionary '''
+            # the central value of the bin is the key for the dictionary
             if bin_centres[ibin] not in val_vs_dep:
                 val_vs_dep[bin_centres[ibin]]  = [val]
             else:
@@ -211,8 +209,7 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
         vals = [a for a in val_vs_dep.values()]
         keys = [a for a in val_vs_dep.keys()]
 
-        '''
-        calculate the widths of the violins as 90 % of the corresponding bin width '''
+        # calculate the widths of the violins as 90 % of the corresponding bin width
         widths = []
         for cen, wid in zip(bin_centres, (bin_edges[1:]-bin_edges[:-1])):
             if cen in keys:
@@ -232,4 +229,3 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
             plt.ylim(extent[2:])
 
         plt.grid()
-
