@@ -10,10 +10,10 @@ from DIRAC.Interfaces.API.Job import Job
 from DIRAC.Interfaces.API.Dirac import Dirac
 
 
-def sliding_window(my_list, window_size, step_size=None):
+def sliding_window(my_list, window_size, step_size=None, start=0):
     if step_size is None:
         step_size = window_size
-    start = 0
+    start = start
     while start+window_size < len(my_list):
         yield my_list[start:start+window_size]
         start += step_size
@@ -49,8 +49,11 @@ astri_filelist_gamma = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.f
                             "-user-c-ciro.bigongiari-MiniArray9-Simtel-gamma.lfns")
 astri_filelist_proton = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.fr"
                              "-user-c-ciro.bigongiari-MiniArray9-Simtel-proton.lfns")
-# proton files are smaller, can afford more files per run - at a ratio 11:3
+# proton files are smaller, can afford more files per run -- at a ratio 11:3
 window_sizes = [3*4, 11*4]
+# I used the first few files to train the classifier -- skip these
+start_runs = [14, 100]
+
 mode = "tail" if "tail" in pilot_args else "wave"
 
 # the pickled classifier on the GRID
@@ -96,8 +99,9 @@ print(output_filename_template.format(
 
 for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]):
     window_size = window_sizes[i]
+    start_run = start_runs[i]
     for run_filelist in sliding_window([l.strip() for l in astri_filelist],
-                                       window_size):
+                                       window_size, start=start_run):
 
         channel = "gamma" if "gamma" in " ".join(run_filelist) else "proton"
 
@@ -158,7 +162,7 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
             break
 
     # since there are two nested loops, need to break again
-    if "test" in sys.argv or "dry" in sys.argv:
+    if "dry" in sys.argv:
         break
 
 
