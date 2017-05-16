@@ -17,13 +17,6 @@ cam_id_list = [
         ]
 
 
-def dd(obj):
-    """
-    wraps a dummy dict around `obj`
-    """
-    return {"d": obj}
-
-
 class fancy_EnergyRegressor:
     def __init__(self, regressor=RandomForestRegressor,
                  cam_id_list=cam_id_list, energy_unit=u.TeV, **kwargs):
@@ -42,12 +35,16 @@ class fancy_EnergyRegressor:
         return str(self.reg).split("(")[0]
 
     def reshuffle_event_list(self, X, y):
-        trainFeatures = {a: [] for a in self.reg_dict.keys()}
-        trainTarget = {a: [] for a in self.reg_dict.keys()}
+        trainFeatures = {a: [] for a in self.reg_dict}
+        trainTarget = {a: [] for a in self.reg_dict}
 
         for evt, en in zip(X, y):
             for cam_id, tels in evt.items():
-                trainFeatures[cam_id] += tels
+                try:
+                    trainFeatures[cam_id] += tels
+                except KeyError:
+                    raise KeyError("cam_id '{}' in X but not mentioned before: {}"
+                                   .format(cam_id, [k for k in self.reg_dict]))
                 try:
                     trainTarget[cam_id] += [en.to(self.energy_unit).value]*len(tels)
                 except:
@@ -55,12 +52,15 @@ class fancy_EnergyRegressor:
         return trainFeatures, trainTarget
 
     def fit(self, X, y):
-
-        for cam_id in self.reg_dict.keys():
+        for cam_id in X:
+            if cam_id not in y:
+                raise KeyError("cam_id '{}' in X but not in y: {}"
+                               .format([k for k in y]))
             try:
                 self.reg_dict[cam_id].fit(X[cam_id], y[cam_id])
-            except Exception as e:
-                print(e)
+            except KeyError:
+                raise KeyError("cam_id '{}' in X but not mentioned before: {}"
+                               .format(cam_id, [k for k in self.reg_dict]))
         return self
 
     def predict(self, X):
@@ -68,8 +68,15 @@ class fancy_EnergyRegressor:
         for evt in X:
             res = []
             for cam_id, tels in evt.items():
-                t_res = self.reg_dict[cam_id].predict(tels).tolist()
-                res += t_res
+                try:
+                    t_res = self.reg_dict[cam_id].predict(tels).tolist()
+                    res += t_res
+                except KeyError:
+                    # QUESTION if there is no trained classifier for `cam_id`, raise an
+                    # error or just pass this camera type?
+                    raise KeyError("cam_id '{}' in X but no regressor defined: {}"
+                                   .format(cam_id, [k for k in self.reg_dict]))
+
             predict_list.append(np.mean(res))
 
         return np.array(predict_list)*self.energy_unit
