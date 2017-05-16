@@ -91,10 +91,8 @@ if __name__ == "__main__":
     SensCalc = SensitivityPointSource(
                     mc_energies={'g': gammas['MC_Energy'].values*u.GeV,
                                  'p': proton['MC_Energy'].values*u.GeV},
-                    off_angles={'g': gammas['off_angle'].values*angle_unit,
-                                'p': proton['off_angle'].values*angle_unit},
                     energy_bin_edges={'g': edges_gammas,
-                                      'p': edges_proton}, verbose=True,
+                                      'p': edges_proton},
                     flux_unit=flux_unit)
 
     sensitivities = SensCalc.calculate_sensitivities(
@@ -166,10 +164,8 @@ if __name__ == "__main__":
     SensCalc_t = SensitivityPointSource(
                     mc_energies={'g': gammas_t['MC_Energy'].values*u.GeV,
                                  'p': proton_t['MC_Energy'].values*u.GeV},
-                    off_angles={'g': gammas_t['off_angle'].values*angle_unit,
-                                'p': proton_t['off_angle'].values*angle_unit},
                     energy_bin_edges={'g': edges_gammas,
-                                      'p': edges_proton}, verbose=True,
+                                      'p': edges_proton},
                     flux_unit=flux_unit)
 
     sensitivities_t = SensCalc_t.calculate_sensitivities(
