@@ -24,7 +24,6 @@ def sliding_window(my_list, window_size, step_size=None, start=0):
 # this thing submits all the jobs
 dirac = Dirac()
 
-
 #   ######  ######## ######## ######## ########  #### ##    ##  ######
 #  ##    ##    ##    ##       ##       ##     ##  ##  ###   ## ##    ##
 #  ##          ##    ##       ##       ##     ##  ##  ####  ## ##
@@ -39,8 +38,8 @@ pilot_args = ' '.join((
         '--classifier ./{classifier}',
         '--out_file {out_file}',
         '--store',
-        '--indir ./ --infile_list run*.gz'
-        # '--tail',  # comment out to do wavelet cleaning
+        '--indir ./ --infile_list run*.gz',
+        '--tail',  # comment out to do wavelet cleaning
         ))
 
 
@@ -49,6 +48,11 @@ astri_filelist_gamma = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.f
                             "-user-c-ciro.bigongiari-MiniArray9-Simtel-gamma.lfns")
 astri_filelist_proton = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.fr"
                              "-user-c-ciro.bigongiari-MiniArray9-Simtel-proton.lfns")
+
+# set here the `run_token` of files you want to resubmit
+# submits everything if empty
+redo = []
+
 # proton files are smaller, can afford more files per run -- at a ratio 11:3
 window_sizes = [3*4, 11*4]
 # I used the first few files to train the classifier -- skip these
@@ -105,10 +109,6 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
 
         channel = "gamma" if "gamma" in " ".join(run_filelist) else "proton"
 
-        print("\nrunning on {} file{}:".format(len(run_filelist),
-                                               "" if len(run_filelist) == 1 else "s"))
-        print(run_filelist)
-
         # this selects the `runxxx` part of the first and last file in the run
         # list and joins them with a dash so that we get a nice identifier in
         # the outpult file name. if there is only one file in the list, use only that one
@@ -116,12 +116,20 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
         if len(run_filelist) > 1:
             run_token = '-'.join([run_token, re.split('/|\.', run_filelist[-1])[-3]])
 
+        # if some jobs failed and you want to resubmit, add their token to `redo`
+        if redo and run_token not in redo:
+            continue
+
+        print("\nrunning on {} file{}:".format(len(run_filelist),
+                                               "" if len(run_filelist) == 1 else "s"))
+        print(run_filelist)
+
         j = Job()
         j.setCPUTime(30000)  # 1 h in seconds times 8 (CPU normalisation factor)
-        j.setName('classifier {}.{}'.format(channel, run_token))
+        j.setName('classifier {}.{}.{}'.format(channel, mode, run_token))
 
         # bad sites -- here miniconda cannot be found (due to bad vo configuration?)
-        j.setBannedSites(['LCG.CIEMAT.es', 'LCG.PIC.es'])
+        j.setBannedSites(['LCG.PIC.es'])
 
         j.setInputSandbox(input_sandbox +
                           # adding the data files into the input sandbox instead of input
@@ -180,7 +188,7 @@ exit()
 # specify allowed sites to send the job to
 j.setDestination(['LCG.IN2P3-CC.fr', 'LCG.DESY-ZEUTHEN.de', 'LCG.CNAF.it',
                   'LCG.GRIF.fr', 'LCG.CYFRONET.pl', 'LCG.PRAGUE-CESNET.cz',
-                  'LCG.Prague.cz', 'LCG.LAPP.fr'])
+                  'LCG.Prague.cz', 'LCG.LAPP.fr', 'LCG.CIEMAT.es'])
 
 # to specify input GRID files independent of the site the job is send to
 file1 = 'LFN:/vo.cta.in2p3.fr/user/c/ciro.bigongiari/MiniArray9/Simtel/'\
