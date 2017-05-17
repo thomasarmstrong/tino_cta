@@ -17,45 +17,174 @@ cam_id_list = [
         ]
 
 
+def pick_any(my_dict):
+    """
+    I want an arbitrary element of the dictionary but cannot access it with
+    `next(my_dict)` or `my_dict.values()[0]`... So, loop over the keys and immediately
+    return the value of the first key...
+    """
+    for key in my_dict:
+        return my_dict[key]
+
+
 class fancy_EnergyRegressor:
+    """
+    This class collects one regressor for every camera type -- given by `cam_id_list` to
+    get an estimate for the energy of an air-shower.
+    The class interfaces with `scikit-learn` in that it relays all function call not
+    exeplicitly defined here through `.__getattr__` to any regressor in its collection.
+    This gives us the full power and convenience of scikit-learn and we only have to
+    bother about the high-level interface.
+
+    The fitting approach is to train on single images; then separately predict in image's
+    energy and combine the different predictions for each event in one single energy
+    estimate.
+
+    Parameters
+    ----------
+    regressor : scikit-learn regressor, optional (default: RandomForestRegressor)
+        the regressor you want to use to estimate the shower energies
+    cam_id_list : list of strings
+        list of identifiers to differentiate the various sources of the images; could be
+        the camera IDs or even telescope IDs. We will train one regressor for each of the
+        identifiers.
+    energy_unit : astropy quantity, optional (default: u.TeV)
+        scikit-learn regressors don't work with astropy unit. so, tell in advance in which
+        unit we want to deal here.
+    kwargs
+        arguments to be passed on to the constructor of the regressors
+    """
     def __init__(self, regressor=RandomForestRegressor,
                  cam_id_list=cam_id_list, energy_unit=u.TeV, **kwargs):
 
-        self.reg = regressor(**kwargs)
         self.reg_dict = {}
         self.energy_unit = energy_unit
         for cam_id in cam_id_list:
             self.reg_dict[cam_id] = regressor(**kwargs)
 
     def __getattr__(self, attr):
-        return getattr(self.reg, attr)
+        """
+        We interface this class with the "first" regressor in `.reg_dict` and relay all
+        function calls over to it. This gives us access to all the fancy implementations
+        in the scikit-learn classes right from this class and we only have to overwrite
+        the high-level interface functions.
+        """
+        return getattr(pick_any(self.reg_dict), attr)
 
     def __str__(self):
-        # return the class name of the used regressor
-        return str(self.reg).split("(")[0]
+        """ return the class name of the used regressor """
+        return str(pick_any(self.reg_dict)).split("(")[0]
 
     def reshuffle_event_list(self, X, y):
+        """
+        I collect the data event-wise as dictionaries of the different camera identifiers
+        but for the training it is more convenient to have a dictionary containing flat
+        arrays of the images. This function flattens the `X` and `y` arrays accordingly.
+
+        This is only for convenience during the training and testing phase, later on, we
+        won't collect data first event- and then telescope-wise. That's why this is a
+        separate function and not implemented in `.fit`.
+
+        Parameters
+        ----------
+        X : list of dictionaries of lists
+            collection of training features see Notes section for a sketch of
+            the container's expected shape
+        y : list of astropy quantities
+            list of the training targets (i.e. shower energies) for all events
+
+        Returns
+        -------
+        trainFeatures, trainTarget : dictionaries of lists
+            flattened containers to be handed over to `.fit`
+
+        Raises
+        ------
+        KeyError
+            in case `X` contains keys that were not provided before with `cam_id_list`.
+
+        Notes
+        -----
+        `X` and `y` are expected to be lists of events:
+        `X = [event_1, event_2, ..., event_n]`
+        `y = [energy_1, energy_2, ..., energy_n]`
+
+        with `event_i` being a dictionary:
+        `event_i = {tel_type_1: list_of_tels_1, ...}`
+        and `energy_i` is the energy of `event_i`
+
+        `list_of_tels_i` being the list of all telescope of type `tel_type_1` containing
+        the features to fit and predict the shower energy:
+        `list_of_tels_i = [[tel_1_feature_1, tel_1_feature_2, ...],
+                           [tel_2_feature_1, tel_2_feature_2, ...], ...]
+
+        after reshuffling, the resulting lists will look like this
+        `trainFeatures = {tel_type_1: [features_event_1_tel_1,
+                                       features_event_1_tel_2,
+                                       features_event_2_tel_1, ...],
+                          tel_type_2: [features_event_1_tel_3,
+                                       features_event_2_tel_3,
+                                       features_event_2_tel_4, ...],
+                          ...}`
+        `trainTarget` will be a dictionary with the same keys and a lists of energies
+        corresponding to the features in the `trainFeatures` lists.
+        """
+
         trainFeatures = {a: [] for a in self.reg_dict}
         trainTarget = {a: [] for a in self.reg_dict}
 
         for evt, en in zip(X, y):
             for cam_id, tels in evt.items():
                 try:
+                    # append the features-lists of the current event and telescope type to
+                    # the flat list of features-lists for this telescope type
                     trainFeatures[cam_id] += tels
                 except KeyError:
                     raise KeyError("cam_id '{}' in X but not mentioned before: {}"
                                    .format(cam_id, [k for k in self.reg_dict]))
+
                 try:
+                    # add an energy-entry for every feature-list
                     trainTarget[cam_id] += [en.to(self.energy_unit).value]*len(tels)
-                except:
+                except AttributeError:
+                    # in case the energy is not given as an astropy quantity
+                    # let's hope that the user keeps proper track of the unit themself
                     trainTarget[cam_id] += [en]*len(tels)
         return trainFeatures, trainTarget
 
     def fit(self, X, y):
+        """
+        This function fits a model against the collected features; separately for every
+        telescope identifier.
+
+        Parameters
+        ----------
+        X : dictionary of lists of lists
+            Dictionary that maps the telescope identifiers to lists of feature-lists.
+            The values of the dictionary are the lists `scikit-learn` regressors train on
+            and are supposed to comply to their format requirements
+            e.g. each featuer-list has to contain the same features at the same position
+        y : dictionary of lists
+            the energies corresponding to all the feature-lists of `X`
+
+        Returns
+        -------
+        self
+
+        Raises
+        ------
+        KeyError
+            in case `X` contains keys that are either not in `y` were not provided before
+            with `cam_id_list`.
+
+        """
         for cam_id in X:
+            # do this test separately, so we know where the key is missing in case
             if cam_id not in y:
                 raise KeyError("cam_id '{}' in X but not in y: {}"
                                .format([k for k in y]))
+
+            # for every `cam_id` train one regressor
             try:
                 self.reg_dict[cam_id].fit(X[cam_id], y[cam_id])
             except KeyError:
@@ -63,7 +192,62 @@ class fancy_EnergyRegressor:
                                .format(cam_id, [k for k in self.reg_dict]))
         return self
 
-    def predict(self, X):
+    def predict(self, X, cam_id=None):
+        """
+        In the tradition of scikit-learn, `.predict` takes a "list of feature-lists" and
+        returns an estimate for targeted quantity for every  set of features.
+
+        Parameters
+        ----------
+        X : list of lists of floats
+            the list of feature-lists
+        cam_id : any (e.g. string, int), optional
+            identifier of the singular camera type to consider here
+            if not set, `.reg_dict` is assumed to have a single key which is used in place
+
+        Returns
+        -------
+        predict : list of floats
+            predictions for the target quantity for every set of features given in `X`
+
+        Raises
+        ------
+        ValueError
+            if `cam_id is None` and the number of registered regressors is not 1
+        """
+
+        if cam_id is None:
+            if len(self.reg_dict) == 1:
+                cam_id = next(iter(self.reg_dict.keys()))
+            else:
+                raise ValueError("you need to provide a cam_id")
+
+        return self.reg_dict[cam_id].predict(X)
+
+    def predict_dict(self, X):
+        """
+        expects a list of events where every "event" is a dictionary mapping telescope
+        identifiers to the list of feature-lists by the telescopes of that type in this
+        event. Refer to the Note section in `.reshuffle_event_list` for an description how
+        `X` is supposed to look like.
+        The singular estimate for the event is simply the mean of the various estimators
+        of the event.
+
+        X : list of "events"
+            cf. `.reshuffle_event_list` under Notes
+
+        Returns
+        -------
+        predict : quantified numpy array of shape 1
+            predictions for the target quantity for every "event" given in `X`
+
+        Raises
+        ------
+        KeyError
+            if there is a telescope identifier in `X` that is not a key in the regressor
+            dictionary
+        """
+
         predict_list = []
         for evt in X:
             res = []
@@ -81,7 +265,17 @@ class fancy_EnergyRegressor:
 
         return np.array(predict_list)*self.energy_unit
 
-    def predict_dict(self, X):
+    def predict_dict_dict(self, X):
+        """
+        same as `predict_dict` only that it returns a list of dictionaries with an
+        estimate for the target quantity for every telescope type separately.
+
+        more for testing- and performance-measuring-purpouses -- to see how the different
+        telescope types behave throughout the energy ranges and if a better
+        (energy-dependant) combination of the separate telescope-wise estimators (compared
+        to the mean) can be achieved.
+        """
+
         predict_list_dict = []
         for evt in X:
             res_dict = {}
@@ -93,6 +287,18 @@ class fancy_EnergyRegressor:
         return predict_list_dict
 
     def save(self, path):
+        """
+        saves the regressors in `.reg_dict` each in a separate pickle to disk
+
+        Parameters
+        ----------
+        path : string
+            Path to store the different regressor models as.
+            Expects to contain `{cam_id}` or at least an empty `{}` to replace it with the
+            keys in `.reg_dict`.
+
+        """
+
         from sklearn.externals import joblib
         for cam_id, reg in self.reg_dict.items():
             try:
@@ -100,14 +306,35 @@ class fancy_EnergyRegressor:
                 joblib.dump(reg, path.format(cam_id=cam_id))
             except IndexError:
                 # if not, assume there is a naked `{}` somewhere left
-                # if not, format won't do anything, so it doesn't matter
+                # if not, format won't do anything, so it doesn't break but will overwrite
+                # every pickle with the following one
                 joblib.dump(reg, path.format(cam_id))
 
     @classmethod
     def load(cls, path, cam_id_list=cam_id_list, energy_unit=u.TeV):
         """
         Load the pickled dictionary of energy regressor from disk, create a husk
-        `cls` instance and set the regressor dictionary
+        `cls` instance, set the regressor dictionary and the relay `.reg` member that
+        handles all the regressor function calls that are not defined in this class.
+
+        Parameters
+        ----------
+        path : string
+            the path where the pre-trained, pickled regressors are stored
+            `path` is assumed to contain a `{cam_id}` keyword to be replaced by each
+            camera identifier in `cam_id_list` (or at least a naked `{}`).
+        cam_id_list : list
+            list of camera identifiers like telescope ID or camera ID and the assumed
+            distinguishing feature in the filenames of the various pickled regressors.
+        energy_unit : astropy quantity, optional (default: u.TeV)
+            scikit-learn regressor do not work with units. so append this one to the
+            predictions. assuming that the models where trained with consistent units.
+
+        Returns
+        -------
+        self : fancy_EnergyRegressor
+            a ready-to-use instance of this class to predict any quantity you have trained
+            for
         """
         from sklearn.externals import joblib
 
@@ -124,16 +351,25 @@ class fancy_EnergyRegressor:
                 # if not, format won't do anything, so it doesn't matter
                 self.reg_dict[key] = joblib.load(path.format(key))
 
-        # We also need some proxy-instance to relay all the function calls to.
-        # So, since `reg_dict` is a dictionary, we loop over its values, set the first one
-        # as `.reg` and break immediately
-        for reg in self.reg_dict.values():
-            self.reg = reg
-            break
-
         return self
 
     def show_importances(self, feature_labels=None):
+        """
+        Creates a matplotlib figure that shows the importances of the different features
+        for the various trained regressors in a grid of barplots.
+        The features are sorted by descending importance.
+
+        Parameters
+        ----------
+        feature_labels : list of strings, optional
+            a list of the feature names in proper ordr
+            to be used as x-axis tick-labels
+
+        Returns
+        -------
+        fig : matplotlib figure
+            the figure holding the different bar plots
+        """
         import matplotlib.pyplot as plt
         n_tel_types = len(self.reg_dict)
         n_cols = np.ceil(np.sqrt(n_tel_types)).astype(int)
@@ -152,3 +388,4 @@ class fancy_EnergyRegressor:
                 plt.xticks(bins, s_feature_labels, rotation=17)
             plt.bar(bins, importances,
                     color='r', align='center')
+        return fig
