@@ -69,7 +69,7 @@ if __name__ == '__main__':
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    for filename in filenamelist_gamma[:4][:args.last]:
+    for filename in filenamelist_gamma[:14][:args.last]:
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -254,11 +254,11 @@ if __name__ == '__main__':
 
     reg.fit(*reg.reshuffle_event_list(Features_event_list, MC_Energies))
 
-    dummy_filen_name = "/tmp/dummy_reg_{}.pkl"
-    reg.save(dummy_filen_name)
-
-    reg_2 = fancy_EnergyRegressor.load(dummy_filen_name)
-    print("save,load,predict test:", reg_2.predict(Features_event_list[0:1]))
+    # dummy_filen_name = "/run/user/1001/dummy_reg_{}.pkl"
+    # reg.save(dummy_filen_name)
+    #
+    # reg_2 = fancy_EnergyRegressor.load(dummy_filen_name)
+    # print("save,load,predict test:", reg_2.predict(Features_event_list[0:1]))
 
     # save the regressor to disk
     if args.store:
@@ -305,8 +305,8 @@ if __name__ == '__main__':
             reg = fancy_EnergyRegressor(**reg_kwargs)
             reg.fit(*reg.reshuffle_event_list(X_train, y_train))
 
-            y_score = reg.predict(X_test)
-            y_score_dict = reg.predict_dict(X_test)
+            y_score = reg.predict_dict(X_test)
+            y_score_dict = reg.predict_dict_dict(X_test)
 
             for evt, mce in zip(y_score_dict, y_test):
                 for cam_id, pred in evt.items():
@@ -354,11 +354,15 @@ if __name__ == '__main__':
         plt.bar(bins[1, :-1], np.sum(Epred_hist["combined"], axis=0),
                 width=np.diff(bins[1]))
         plt.xlim(bins[1, [0, -1]])
+        plt.text(.99, .95, "x-projection", ha="right", va="top",
+                 transform=plt.gca().transAxes)
+
         plt.subplot(428)
         plt.bar(bins[0, :-1], np.sum(Epred_hist["combined"], axis=1),
                 width=np.diff(bins[0]))
         plt.xlim(bins[0, [0, -1]])
-
+        plt.text(.99, .95, "y-projection", ha="right", va="top",
+                 transform=plt.gca().transAxes)
 
         if args.write:
             save_fig('{}/energy_migration_{}_{}_{}'.format(args.plots_dir,
@@ -391,10 +395,14 @@ if __name__ == '__main__':
         plt.bar(relE_bins[1, :-1], np.sum(relE_Err_hist["combined"], axis=0),
                 width=np.diff(relE_bins[1]))
         plt.xlim(relE_bins[1, [0, -1]])
+        plt.text(.99, .95, "x-projection", ha="right", va="top",
+                 transform=plt.gca().transAxes)
         plt.subplot(428)
         plt.bar(relE_bins[0, :-1], np.sum(relE_Err_hist["combined"], axis=1),
                 width=np.diff(relE_bins[0]))
         plt.xlim(relE_bins[0, [0, -1]])
+        plt.text(.99, .95, "y-projection", ha="right", va="top",
+                 transform=plt.gca().transAxes)
 
         if args.write:
             save_fig('{}/energy_relative_error_{}_{}_{}'.format(args.plots_dir,
@@ -430,9 +438,5 @@ if __name__ == '__main__':
                          yerr=[low_ers[mask],
                                hih_ers[mask]],
                          ls="", marker="o")
-
-            plt.xlabel('log10(E_MC / TeV)')
-            plt.ylabel('median (E_predict -E_MC)/ E_MC')
-            plt.title(cam_id)
 
         plt.show()
