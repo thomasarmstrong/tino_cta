@@ -29,8 +29,8 @@ def pick_any(my_dict):
 
 class fancy_EnergyRegressor:
     """
-    This class collects one regressor for every camera type -- given by `cam_id_list` to
-    get an estimate for the energy of an air-shower.
+    This class collects one regressor for every camera type -- given by `cam_id_list` --
+    to get an estimate for the energy of an air-shower.
     The class interfaces with `scikit-learn` in that it relays all function call not
     exeplicitly defined here through `.__getattr__` to any regressor in its collection.
     This gives us the full power and convenience of scikit-learn and we only have to
@@ -39,6 +39,9 @@ class fancy_EnergyRegressor:
     The fitting approach is to train on single images; then separately predict in image's
     energy and combine the different predictions for each event in one single energy
     estimate.
+
+    TODO: come up with a better merging approach to combine the estimators of the various
+          camera types
 
     Parameters
     ----------
@@ -179,17 +182,17 @@ class fancy_EnergyRegressor:
 
         """
         for cam_id in X:
-            # do this test separately, so we know where the key is missing in case
             if cam_id not in y:
                 raise KeyError("cam_id '{}' in X but not in y: {}"
                                .format([k for k in y]))
 
-            # for every `cam_id` train one regressor
-            try:
-                self.reg_dict[cam_id].fit(X[cam_id], y[cam_id])
-            except KeyError:
+            if cam_id not in self.reg_dict:
                 raise KeyError("cam_id '{}' in X but not mentioned before: {}"
                                .format(cam_id, [k for k in self.reg_dict]))
+
+            # for every `cam_id` train one regressor
+            self.reg_dict[cam_id].fit(X[cam_id], y[cam_id])
+
         return self
 
     def predict(self, X, cam_id=None):
@@ -314,8 +317,7 @@ class fancy_EnergyRegressor:
     def load(cls, path, cam_id_list=cam_id_list, energy_unit=u.TeV):
         """
         Load the pickled dictionary of energy regressor from disk, create a husk
-        `cls` instance, set the regressor dictionary and the relay `.reg` member that
-        handles all the regressor function calls that are not defined in this class.
+        `cls` instance and fill the regressor dictionary.
 
         Parameters
         ----------
@@ -338,7 +340,7 @@ class fancy_EnergyRegressor:
         """
         from sklearn.externals import joblib
 
-        # need to get an instance of the initial regressor
+        # need to get an instance of this class
         # `cam_id_list=[]` prevents `.__init__` to initialise `.reg_dict` itself,
         # since we are going to set it with the pickled models manually
         self = cls(cam_id_list=[], energy_unit=energy_unit)
@@ -349,6 +351,7 @@ class fancy_EnergyRegressor:
             except IndexError:
                 # if not, assume there is a naked `{}` somewhere left
                 # if not, format won't do anything, so it doesn't matter
+                # though this will load the same model for every `key`
                 self.reg_dict[key] = joblib.load(path.format(key))
 
         return self
