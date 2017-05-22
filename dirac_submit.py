@@ -129,7 +129,7 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
         j.setName('classifier {}.{}.{}'.format(channel, mode, run_token))
 
         # bad sites -- here miniconda cannot be found (due to bad vo configuration?)
-        j.setBannedSites(['LCG.PIC.es'])
+        j.setBannedSites(['LCG.PIC.es', 'LCG.CAMK.pl'])
 
         j.setInputSandbox(input_sandbox +
                           # adding the data files into the input sandbox instead of input
