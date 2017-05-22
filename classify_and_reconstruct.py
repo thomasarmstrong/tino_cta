@@ -18,6 +18,7 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 from helper_functions import *
 from modules.CutFlow import CutFlow
 from modules.EventClassifier import *
+from modules.EnergyRegressor import *
 from modules.ImageCleaning import ImageCleaner, \
                                   EdgeEventException, UnknownModeException
 
@@ -36,7 +37,7 @@ def main():
 
     # your favourite units here
     angle_unit  = u.deg
-    energy_unit = u.GeV
+    energy_unit = u.TeV
     dist_unit   = u.m
 
     agree_threshold = .5
@@ -45,6 +46,9 @@ def main():
     parser = make_argparser()
     parser.add_argument('--classifier', type=str,
                         default='data/classifier_pickle/classifier_{}_{}_{}.pkl')
+    parser.add_argument('--regressor', type=str,
+                        default='data/classifier_pickle/regressor'
+                                '_{mode}_{wave_args}_{classifier}_{cam_id}.pkl')
     parser.add_argument('-o', '--out_file', type=str,
                         default="data/reconstructed_events/classified_events_{}_{}.h5",
                         help="location to write the classified events to. placeholders "
@@ -95,11 +99,17 @@ def main():
     # simple hillas-based shower reco
     fit = FitGammaHillas()
 
-    # wrapper for the scikit learn classifier
+    # wrapper for the scikit-learn classifier
     classifier = fancy_EventClassifier.load(
                     args.classifier.format(args.mode,
                                            args.raw.replace(' ', '').replace(',', ''),
                                            "RandomForestClassifier"))
+
+    # wrapper for the scikit-learn regressor
+    regressor = fancy_EnergyRegressor.load(args.regressor.format(**{
+                        "mode": args.mode,
+                        "wave_args": args.raw.replace(' ', '').replace(',', ''),
+                        "classifier": "RandomForestRegressor", "cam_id": "{cam_id}"}))
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -110,6 +120,7 @@ def main():
         NTels_trig = tb.Int16Col(dflt=1, pos=0)
         NTels_reco = tb.Int16Col(dflt=1, pos=1)
         MC_Energy = tb.Float32Col(dflt=1, pos=2)
+        reco_Energy = tb.Float32Col(dflt=1, pos=2)
         phi = tb.Float32Col(dflt=1, pos=3)
         theta = tb.Float32Col(dflt=1, pos=4)
         off_angle = tb.Float32Col(dflt=1, pos=5)
@@ -136,8 +147,8 @@ def main():
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
-                                        allowed_tels=allowed_tels,
-                                        max_events=args.max_events)
+                                     allowed_tels=allowed_tels,
+                                     max_events=args.max_events)
 
         # event loop
         for event in source:
@@ -260,7 +271,8 @@ def main():
             Eventcutflow.count("position fit")
 
             # now prepare the features for the classifier
-            features_evt = {}
+            cls_features_evt = {}
+            reg_features_evt = {}
             NTels = len(hillas_dict)
             for tel_id in hillas_dict.keys():
                 Imagecutflow.count("pre-features")
@@ -271,7 +283,7 @@ def main():
 
                 impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                 impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                features_tel = [
+                cls_features_tel = [
                             impact_dist_rec/u.m,
                             tot_signal,
                             max_signal,
@@ -284,17 +296,41 @@ def main():
                             err_est_pos/u.m
                             ]
 
-                if np.isnan(features_tel).any():
+                reg_features_tel = [
+                            impact_dist_rec/u.m,
+                            tot_signal,
+                            max_signal,
+                            moments.size,
+                            NTels,
+                            (moments.cen_x**2 +
+                             moments.cen_y**2) / u.m**2,
+                            (moments.phi -
+                             moments.psi)/u.deg,
+                            moments.width/u.m,
+                            moments.length/u.m,
+                            moments.skewness,
+                            moments.kurtosis,
+                            err_est_pos/u.m
+                          ]
+
+                if np.isnan(cls_features_tel).any() or np.isnan(reg_features_tel).any():
                     continue
 
                 Imagecutflow.count("features nan")
 
-                features_evt[tel_id] = features_tel
+                cls_features_evt[tel_id] = cls_features_tel
 
-            if not features_evt:
+                cam_id = cam_geom[tel_id].cam_id
+                if cam_id not in reg_features_evt:
+                    reg_features_evt[cam_id] = [reg_features_tel]
+                else:
+                    reg_features_evt[cam_id] += [reg_features_tel]
+
+            if not cls_features_evt or not reg_features_evt:
                 continue
 
-            predict_proba = classifier.predict_proba([features_evt])
+            predict_energ = regressor.predict_dict([reg_features_evt])[0]
+            predict_proba = classifier.predict_proba([cls_features_evt])
             gammaness = predict_proba[0, 0]
 
             fit_dir, crossings = fit.fit_origin_crosses()
@@ -305,7 +341,8 @@ def main():
 
             reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
             reco_event["NTels_reco"] = NTels
-            reco_event["MC_Energy"] = event.mc.energy / energy_unit
+            reco_event["MC_Energy"] = event.mc.energy.to(energy_unit).value
+            reco_event["reco_Energy"] = predict_energ.to(energy_unit).value
             reco_event["phi"] = phi / angle_unit
             reco_event["theta"] = theta / angle_unit
             reco_event["off_angle"] = off_angle / angle_unit
@@ -326,6 +363,9 @@ def main():
         gammaness = [x['gammaness'] for x in reco_table]
         NTels_rec = [x['NTels_reco'] for x in reco_table]
 
+        reco_energy = np.array([x['reco_Energy'] for x in reco_table])
+        mc_energy = np.array([x['MC_Energy'] for x in reco_table])
+
         fig = plt.figure()
         ax = plt.subplot(111)
         histo = np.histogram2d(NTels_rec, gammaness,
@@ -337,6 +377,12 @@ def main():
         ax.set_xlabel("NTels")
         ax.set_ylabel("drifted gammaness")
         plt.title(" ** ".join([args.mode, "protons" if args.proton else "gamma"]))
+
+
+
+        plt.figure()
+        plt.hist2d(np.log10(reco_energy), np.log10(mc_energy), bins=20)
+
 
     N_selected = len([x for x in reco_table.where(
         """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
