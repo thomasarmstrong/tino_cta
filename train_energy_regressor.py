@@ -244,11 +244,6 @@ if __name__ == '__main__':
     reg_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
                   'random_state': 0}
 
-    # try neural network
-    # from sklearn.neural_network import MLPClassifier
-    # clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
-    #               'hidden_layer_sizes': (50,50,)}
-
     reg = fancy_EnergyRegressor(**reg_kwargs)
     print(reg)
 
@@ -262,15 +257,16 @@ if __name__ == '__main__':
 
     # save the regressor to disk
     if args.store:
-        reg.save(args.outpath.format(
-                            mode=args.mode,
-                            wave_args=args.raw.replace(' ', '').replace(',', ''),
-                            classifier=reg))
+        reg.save(args.outpath.format(**{
+                            "mode": args.mode,
+                            "wave_args": args.raw.replace(' ', '').replace(',', ''),
+                            "classifier": reg, "cam_id": "{cam_id}"}))
 
     if args.plot:
         # extract and show the importance of the various training features
         try:
             reg.show_importances(feature_labels)
+            plt.tight_layout()
             plt.suptitle("{} ** {}".format(
                 "wavelets" if args.mode == "wave" else "tailcuts",
                 reg))
@@ -330,14 +326,13 @@ if __name__ == '__main__':
         n_rows = np.ceil(n_tel_types / n_cols).astype(int)
 
         # predicted energy vs. Monte Carlo energy
-        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
+        fig, axs = plt.subplots(figsize=(8, 6), nrows=n_rows, ncols=n_cols)
         plt.suptitle(" ** ".join(
                 ['"migration matrices"',
                  "wavelets" if args.mode == "wave" else "tailcuts",
                  str(reg)]))
 
         # and for the various telescope types separately
-        # at [0, 0] is the combined plot, so add +1
         for i, (cam_id, thishist) in enumerate(Epred_hist.items()):
             plt.sca(axs.ravel()[i])
             plt.imshow(thishist, interpolation='none', origin='lower',
@@ -346,6 +341,7 @@ if __name__ == '__main__':
             plt.xlabel('log10(E_MC / TeV)')
             plt.ylabel('log10(E_predict / TeV)')
             plt.title(cam_id)
+            plt.colorbar()
         # switch off superfluous axes
         for j in range(i+1, n_rows*n_cols):
             axs.ravel()[j].axis('off')
@@ -364,20 +360,21 @@ if __name__ == '__main__':
         plt.text(.99, .95, "y-projection", ha="right", va="top",
                  transform=plt.gca().transAxes)
 
+        plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
+
         if args.write:
             save_fig('{}/energy_migration_{}_{}_{}'.format(args.plots_dir,
                      args.mode, args.raw.replace(" ", ""), reg))
 
         #
         # 2D histogram E_rel_error vs E_mc
-        fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols)
+        fig, axs = plt.subplots(figsize=(8, 6), nrows=n_rows, ncols=n_cols)
         plt.suptitle(" ** ".join(
                 ['relative Energy Error',
                  "wavelets" if args.mode == "wave" else "tailcuts",
                  str(reg)]))
 
         # and for the various telescope types separately
-        # at axs[0, 0] is the combined plot, so start enumeration at 1
         for i, (cam_id, thishist) in enumerate(relE_Err_hist.items()):
             plt.sca(axs.ravel()[i])
             plt.imshow(thishist, interpolation='none', origin='lower',
@@ -387,6 +384,7 @@ if __name__ == '__main__':
             plt.xlabel('log10(E_MC / TeV)')
             plt.ylabel('(E_predict -E_MC)/ E_MC')
             plt.title(cam_id)
+            plt.colorbar()
         # switch off superfluous axes
         for j in range(i+1, n_rows*n_cols):
             axs.ravel()[j].axis('off')
@@ -403,10 +401,6 @@ if __name__ == '__main__':
         plt.xlim(relE_bins[0, [0, -1]])
         plt.text(.99, .95, "y-projection", ha="right", va="top",
                  transform=plt.gca().transAxes)
-
-        if args.write:
-            save_fig('{}/energy_relative_error_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, args.raw.replace(" ", ""), reg))
 
 #  ##     ## ######## ########  ####    ###    ##    ##  ######
 #  ###   ### ##       ##     ##  ##    ## ##   ###   ## ##    ##
@@ -437,6 +431,11 @@ if __name__ == '__main__':
             plt.errorbar(bin_centres_x[mask], medians[mask],
                          yerr=[low_ers[mask],
                                hih_ers[mask]],
-                         ls="", marker="o")
+                         ls="", marker="o", ms=3, c="darkgreen")
+
+        plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
+        if args.write:
+            save_fig('{}/energy_relative_error_{}_{}_{}'.format(args.plots_dir,
+                     args.mode, args.raw.replace(" ", ""), reg))
 
         plt.show()
