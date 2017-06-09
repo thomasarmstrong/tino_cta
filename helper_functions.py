@@ -229,3 +229,8 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
             plt.ylim(extent[2:])
 
         plt.grid()
+
+
+def ipython_shell():
+    from IPython import embed
+    embed()

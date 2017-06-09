@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 from astropy import units as u
 
-from ctapipe.io.camera import CameraGeometry
+from ctapipe.calib import CameraCalibrator
+from ctapipe.plotting.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.utils import linalg
@@ -18,12 +19,21 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 from helper_functions import *
 from modules.CutFlow import CutFlow
 from modules.EventClassifier import *
-from modules.EnergyRegressor import *
-from modules.ImageCleaning import ImageCleaner, \
-                                  EdgeEventException, UnknownModeException
+from modules.ImageCleaning import ImageCleaner, EdgeEventException
 
-from ctapipe.reco.FitGammaHillas import \
-    FitGammaHillas, TooFewTelescopesException
+try:
+    from ctapipe.reco.energy_regressor import *
+    print("using ctapipe energy_regressor")
+except:
+    from modules.energy_regressor import *
+    print("using tino_cta energy_regressor")
+
+try:
+    from ctapipe.reco.FitGammaHillas import \
+        FitGammaHillas as HillasReconstructor, TooFewTelescopesException
+except:
+    from ctapipe.reco.HillasReconstructor import \
+        HillasReconstructor, TooFewTelescopesException
 
 
 # PyTables
@@ -33,12 +43,24 @@ except:
     print("no pytables installed")
 
 
+cam_id_list = [
+        # 'GATE',
+        # 'HESSII',
+        # 'NectarCam',
+        # 'LSTCam',
+        # 'SST-1m',
+        'FlashCam',
+        'ASTRICam',
+        # 'SCTCam',
+        ]
+
+
 def main():
 
     # your favourite units here
-    angle_unit  = u.deg
     energy_unit = u.TeV
-    dist_unit   = u.m
+    angle_unit = u.deg
+    dist_unit = u.m
 
     agree_threshold = .5
     min_tel = 3
@@ -90,6 +112,12 @@ def main():
     Eventcutflow.set_cut("min2Tels trig", lambda x: x < 2)
     Eventcutflow.set_cut("min2Tels reco", lambda x: x < 2)
 
+    # pass in config and self if part of a Tool
+    calib = CameraCalibrator(None, None)
+
+    # use this in the selection of the gain channels
+    np_true_false = np.array([[True], [False]])
+
     # class that wraps tail cuts and wavelet cleaning
     Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
                            tmp_files_directory=args.wave_temp_dir,
@@ -97,7 +125,7 @@ def main():
                            skip_edge_events=False)  # args.skip_edge_events)
 
     # simple hillas-based shower reco
-    fit = FitGammaHillas()
+    fit = HillasReconstructor()
 
     # wrapper for the scikit-learn classifier
     classifier = fancy_EventClassifier.load(
@@ -106,10 +134,12 @@ def main():
                                            "RandomForestClassifier"))
 
     # wrapper for the scikit-learn regressor
-    regressor = fancy_EnergyRegressor.load(args.regressor.format(**{
-                        "mode": args.mode,
-                        "wave_args": args.raw.replace(' ', '').replace(',', ''),
-                        "classifier": "RandomForestRegressor", "cam_id": "{cam_id}"}))
+    regressor = EnergyRegressor.load(
+                    args.regressor.format(**{
+                            "mode": args.mode,
+                            "wave_args": args.raw.replace(' ', '').replace(',', ''),
+                            "classifier": "RandomForestRegressor", "cam_id": "{cam_id}"}),
+                    cam_id_list=cam_id_list)
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -141,8 +171,10 @@ def main():
 
     source_orig = None
 
+    allowed_tels = None  # all telescopes
     allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
+    # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
     for filename in filenamelist[:args.last]:
         print("filename = {}".format(filename))
 
@@ -162,6 +194,9 @@ def main():
             if Eventcutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
                 continue
 
+            # calibrate the event
+            calib.calibrate(event)
+
             # telescope loop
             tot_signal = 0
             max_signal = 0
@@ -174,10 +209,18 @@ def main():
                         event.mc.tel[tel_id].azimuth_raw * u.rad,
                         (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad)
 
-                pmt_signal = apply_mc_calibration_ASTRI(
-                                event.r0.tel[tel_id].adc_sums,
-                                event.mc.tel[tel_id].dc_to_pe,
-                                event.mc.tel[tel_id].pedestal)
+                # pmt_signal = apply_mc_calibration_ASTRI(
+                #                 event.r0.tel[tel_id].adc_sums,
+                #                 event.mc.tel[tel_id].dc_to_pe,
+                #                 event.mc.tel[tel_id].pedestal)
+
+                # calibrate the image and pick the proper gain channel if necessary
+                pmt_signal = event.dl1.tel[tel_id].image
+                if pmt_signal.shape[0] > 1:
+                    pick = (pmt_signal > 14).any(axis=0) != np_true_false
+                    pmt_signal = pmt_signal.T[pick.T]
+                else:
+                    pmt_signal = pmt_signal.ravel()
 
                 max_signal = np.max(pmt_signal)
 
@@ -329,7 +372,7 @@ def main():
             if not cls_features_evt or not reg_features_evt:
                 continue
 
-            predict_energ = regressor.predict_dict([reg_features_evt])[0]
+            predict_energ = regressor.predict_by_event([reg_features_evt])["mean"][0]
             predict_proba = classifier.predict_proba([cls_features_evt])
             gammaness = predict_proba[0, 0]
 
@@ -369,7 +412,8 @@ def main():
         fig = plt.figure()
         ax = plt.subplot(111)
         histo = np.histogram2d(NTels_rec, gammaness,
-                               bins=(range(1, 10), np.linspace(0, 1, 11)))[0].T
+                               bins=(range(2, np.max(NTels_rec)+1),
+                                     np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         im = ax.imshow(histo_normed, interpolation='none', origin='lower',
                        aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
@@ -378,12 +422,12 @@ def main():
         ax.set_ylabel("drifted gammaness")
         plt.title(" ** ".join([args.mode, "protons" if args.proton else "gamma"]))
 
-
-
         plt.figure()
-        plt.hist2d(np.log10(reco_energy), np.log10(mc_energy), bins=20)
+        plt.hist2d(np.log10(reco_energy), np.log10(mc_energy), bins=20,
+                   cmap=plt.cm.inferno)
+        plt.colorbar()
 
-
+    # do some simple event selection and print the corresponding selection efficiency
     N_selected = len([x for x in reco_table.where(
         """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
     N_total = len(reco_table)

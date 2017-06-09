@@ -131,7 +131,7 @@ class ImageCleaner:
             self.island_cleaning = lambda x, *args, **kw: x
 
     def clean_wave(self, img, cam_geom, foclen):
-        if cam_geom.cam_id == "ASTRI":
+        if "ASTRI" in cam_geom.cam_id:
             return self.clean_wave_astri(img, cam_geom)
 
         elif cam_geom.pix_type.startswith("hex"):

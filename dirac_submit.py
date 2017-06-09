@@ -129,7 +129,7 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
         j.setName('classifier {}.{}.{}'.format(channel, mode, run_token))
 
         # bad sites -- here miniconda cannot be found (due to bad vo configuration?)
-        j.setBannedSites(['LCG.PIC.es', 'LCG.CAMK.pl'])
+        j.setBannedSites(['LCG.CAMK.pl'])
 
         j.setInputSandbox(input_sandbox +
                           # adding the data files into the input sandbox instead of input
@@ -188,7 +188,7 @@ exit()
 # specify allowed sites to send the job to
 j.setDestination(['LCG.IN2P3-CC.fr', 'LCG.DESY-ZEUTHEN.de', 'LCG.CNAF.it',
                   'LCG.GRIF.fr', 'LCG.CYFRONET.pl', 'LCG.PRAGUE-CESNET.cz',
-                  'LCG.Prague.cz', 'LCG.LAPP.fr', 'LCG.CIEMAT.es'])
+                  'LCG.Prague.cz', 'LCG.LAPP.fr', 'LCG.CIEMAT.es', 'LCG.PIC.es'])
 
 # to specify input GRID files independent of the site the job is send to
 file1 = 'LFN:/vo.cta.in2p3.fr/user/c/ciro.bigongiari/MiniArray9/Simtel/'\

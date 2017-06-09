@@ -5,12 +5,12 @@ from helper_functions import *
 from sys import exit
 from glob import glob
 
-from ctapipe.reco.FitGammaHillas import \
-    FitGammaHillas, TooFewTelescopesException
+from ctapipe.reco.HillasReconstructor import \
+    HillasReconstructor, TooFewTelescopesException
 
 from ctapipe.utils import linalg
 
-from ctapipe.io.camera import CameraGeometry
+from ctapipe.instrument import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.image.hillas import HillasParameterizationError, \
@@ -18,15 +18,37 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 
 from modules.CutFlow import *
 from modules.ImageCleaning import *
-from modules.EnergyRegressor import *
 
+try:
+    from ctapipe.reco.energy_regressor import *
+    print("using ctapipe energy_regressor")
+except ImportError:
+    from modules.energy_regressor import *
+    print("using tino_cta energy_regressor")
+
+from ctapipe.calib import CameraCalibrator
+
+
+pckl_load = False
+pckl_write = True
+
+cam_id_list = [
+        # 'GATE',
+        # 'HESSII',
+        # 'NectarCam',
+        # 'LSTCam',
+        # 'SST-1m',
+        # 'FlashCam',
+        'ASTRICam',
+        # 'SCTCam',
+        ]
 
 if __name__ == '__main__':
 
     parser = make_argparser()
     parser.add_argument('-o', '--outpath', type=str,
                         default='data/classifier_pickle/regressor'
-                                '_{mode}_{wave_args}_{classifier}_{cam_id}.pkl')
+                                '_{mode}_{wave_args}_{class}_{cam_id}.pkl')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
@@ -43,21 +65,27 @@ if __name__ == '__main__':
     tel_orientation = (tel_phi, tel_theta)
 
     # counting events and where they might have gone missing
-    Eventcutflow = CutFlow("EventCutFlow Protons")
+    Eventcutflow = CutFlow("EventCutFlow")
     Eventcutflow.set_cut("noCuts", None)
     Eventcutflow.set_cut("min2Tels trig", lambda x: x < 2)
     Eventcutflow.set_cut("min2Tels reco", lambda x: x < 2)
+    Eventcutflow.set_cut("position nan", lambda x: np.isnan(x).any())
 
-    Imagecutflow = CutFlow("ImageCutFlow Protons")
-    Imagecutflow.set_cut("position nan", lambda x: np.isnan(x).any())
+    Imagecutflow = CutFlow("ImageCutFlow")
     Imagecutflow.set_cut("features nan", lambda x: np.isnan(x).any())
+
+    # pass in config and self if part of a Tool
+    calib = CameraCalibrator(None, None)
+
+    # use this in the selection of the gain channels
+    np_true_false = np.array([[True], [False]])
 
     # class that wraps tail cuts and wavelet cleaning
     Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
                            skip_edge_events=False)  # args.skip_edge_events)
 
     # simple hillas-based shower reco
-    fit = FitGammaHillas()
+    fit = HillasReconstructor()
 
     Features_event_list = []
     MC_Energies = []
@@ -66,10 +94,15 @@ if __name__ == '__main__':
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    allowed_tels = range(10)  # smallest ASTRI array
-    # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
+    allowed_tels = None  # all telescopes
+    # allowed_tels = range(10)  # smallest ASTRI array
+    allowed_tels = range(34)  # all ASTRI telescopes
+    # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
     for filename in filenamelist_gamma[:14][:args.last]:
+
+        if pckl_load:
+            break
+
         print("filename = {}".format(filename))
 
         source = hessio_event_source(filename,
@@ -88,6 +121,9 @@ if __name__ == '__main__':
             if Eventcutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
                 continue
 
+            # calibrate the event
+            calib.calibrate(event)
+
             # telescope loop
             tot_signal = 0
             max_signal = 0
@@ -104,17 +140,12 @@ if __name__ == '__main__':
                     tel_phi[tel_id] = 0.*u.deg
                     tel_theta[tel_id] = 20.*u.deg
 
-                if cam_geom[tel_id].cam_id == "ASTRI":
-                    pmt_signal = apply_mc_calibration_ASTRI(
-                                    event.r0.tel[tel_id].adc_sums,
-                                    event.mc.tel[tel_id].dc_to_pe,
-                                    event.mc.tel[tel_id].pedestal)
+                pmt_signal = event.dl1.tel[tel_id].image
+                if pmt_signal.shape[0] > 1:
+                    pick = (pmt_signal > 14).any(axis=0) != np_true_false
+                    pmt_signal = pmt_signal.T[pick.T]
                 else:
-                    pmt_signal = apply_mc_calibration(
-                        event.r0.tel[tel_id].adc_sums[0],
-                        event.mc.tel[tel_id].dc_to_pe[0],
-                        event.mc.tel[tel_id].pedestal[0])
-
+                    pmt_signal = pmt_signal.ravel()
                 max_signal = np.max(pmt_signal)
 
                 # trying to clean the image
@@ -166,7 +197,7 @@ if __name__ == '__main__':
                 print(e)
                 continue
 
-            if Imagecutflow.cut("position nan", pos_fit_cr):
+            if Eventcutflow.cut("position nan", pos_fit_cr):
                 continue
 
             pos_fit = pos_fit_cr
@@ -191,8 +222,11 @@ if __name__ == '__main__':
                             max_signal,
                             moments.size,
                             NTels,
+                            # the distance of the shower core from the centre
+                            # since the camera might lose efficiency towards the edge
                             (moments.cen_x**2 +
                              moments.cen_y**2) / u.m**2,
+                            # orientation of the hillas ellipsis wrt. the camera centre
                             (moments.phi -
                              moments.psi)/u.deg,
                             moments.width/u.m,
@@ -238,21 +272,60 @@ if __name__ == '__main__':
 
     print()
 
+    if pckl_load:
+        print("reading pickle")
+        from sklearn.externals import joblib
+        Features_event_list = joblib.load("./data/regression_features.pkl")
+        MC_Energies = joblib.load("./data/regression_energy.pkl")
+    elif pckl_write:
+        print("writing pickle")
+        from sklearn.externals import joblib
+        joblib.dump(Features_event_list, "./data/regression_features.pkl")
+        joblib.dump(MC_Energies, "./data/regression_energy.pkl")
+
     print("length of features:")
     print(len(Features_event_list))
 
     reg_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
                   'random_state': 0}
 
-    reg = fancy_EnergyRegressor(**reg_kwargs)
+    # try neural network
+    from sklearn.neural_network import MLPRegressor
+    reg_kwargs = {'regressor': MLPRegressor, 'random_state': 1, 'alpha': 1e-5,
+                  'hidden_layer_sizes': (50, 50)}
+
+    reg_kwargs['cam_id_list'] = cam_id_list
+
+    reg = EnergyRegressor(**reg_kwargs)
     print(reg)
 
-    reg.fit(*reg.reshuffle_event_list(Features_event_list, MC_Energies))
+    train_features, train_targets = reg.reshuffle_event_list(Features_event_list,
+                                                             MC_Energies)
+    for cam_id, feats in train_features.items():
+        feats = np.array(feats)
+        print()
+        print(cam_id)
+        print("shape:", feats.shape)
+        min_features = np.min(feats, axis=0)
+        max_features = np.max(feats, axis=0)
+        print(min_features)
+        print(max_features)
+
+        feats /= max_features[None, :]
+        # feats = (feats-min_features) / (max_features-min_features)
+        #
+        # min_features = np.min(feats, axis=0)
+        # max_features = np.max(feats, axis=0)
+        # print(cam_id, min_features, max_features)
+        #
+        # train_features[cam_id] = feats
+
+    reg.fit(train_features, train_targets)
 
     # dummy_filen_name = "/run/user/1001/dummy_reg_{}.pkl"
     # reg.save(dummy_filen_name)
     #
-    # reg_2 = fancy_EnergyRegressor.load(dummy_filen_name)
+    # reg_2 = EnergyRegressor.load(dummy_filen_name)
     # print("save,load,predict test:", reg_2.predict(Features_event_list[0:1]))
 
     # save the regressor to disk
@@ -260,7 +333,7 @@ if __name__ == '__main__':
         reg.save(args.outpath.format(**{
                             "mode": args.mode,
                             "wave_args": args.raw.replace(' ', '').replace(',', ''),
-                            "classifier": reg, "cam_id": "{cam_id}"}))
+                            "class": reg, "cam_id": "{cam_id}"}))
 
     if args.plot:
         # extract and show the importance of the various training features
@@ -288,7 +361,7 @@ if __name__ == '__main__':
 
         Epred_hist = {}
         relE_Err_hist = {}
-        for cam_id in ["combined"] + [k for k in reg.reg_dict]:
+        for cam_id in ["combined"] + [k for k in reg.model_dict]:
             Epred_hist[cam_id] = np.histogram2d([], [], bins=bins)[0]
             relE_Err_hist[cam_id] = np.histogram2d([], [], bins=relE_bins)[0]
 
@@ -298,11 +371,11 @@ if __name__ == '__main__':
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
 
-            reg = fancy_EnergyRegressor(**reg_kwargs)
+            reg = EnergyRegressor(**reg_kwargs)
             reg.fit(*reg.reshuffle_event_list(X_train, y_train))
 
-            y_score = reg.predict_dict(X_test)
-            y_score_dict = reg.predict_dict_dict(X_test)
+            y_score = reg.predict_by_event(X_test)
+            y_score_dict = reg.predict_by_telescope_type(X_test)
 
             for evt, mce in zip(y_score_dict, y_test):
                 for cam_id, pred in evt.items():
@@ -313,10 +386,10 @@ if __name__ == '__main__':
                                                             [np.log10(mce/u.TeV)],
                                                             bins=relE_bins)[0]
 
-            Epred_hist["combined"] += np.histogram2d(np.log10(y_score/u.TeV),
+            Epred_hist["combined"] += np.histogram2d(np.log10(y_score["median"]/u.TeV),
                                                      np.log10(y_test/u.TeV),
                                                      bins=bins)[0]
-            relE_Err_hist["combined"] += np.histogram2d((y_score-y_test)/y_test,
+            relE_Err_hist["combined"] += np.histogram2d((y_score["median"]-y_test)/y_test,
                                                         np.log10(y_test/u.TeV),
                                                         bins=relE_bins)[0]
 
@@ -342,25 +415,12 @@ if __name__ == '__main__':
             plt.ylabel('log10(E_predict / TeV)')
             plt.title(cam_id)
             plt.colorbar()
+
+        plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
+
         # switch off superfluous axes
         for j in range(i+1, n_rows*n_cols):
             axs.ravel()[j].axis('off')
-
-        plt.subplot(426)
-        plt.bar(bins[1, :-1], np.sum(Epred_hist["combined"], axis=0),
-                width=np.diff(bins[1]))
-        plt.xlim(bins[1, [0, -1]])
-        plt.text(.99, .95, "x-projection", ha="right", va="top",
-                 transform=plt.gca().transAxes)
-
-        plt.subplot(428)
-        plt.bar(bins[0, :-1], np.sum(Epred_hist["combined"], axis=1),
-                width=np.diff(bins[0]))
-        plt.xlim(bins[0, [0, -1]])
-        plt.text(.99, .95, "y-projection", ha="right", va="top",
-                 transform=plt.gca().transAxes)
-
-        plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
 
         if args.write:
             save_fig('{}/energy_migration_{}_{}_{}'.format(args.plots_dir,
@@ -385,32 +445,7 @@ if __name__ == '__main__':
             plt.ylabel('(E_predict -E_MC)/ E_MC')
             plt.title(cam_id)
             plt.colorbar()
-        # switch off superfluous axes
-        for j in range(i+1, n_rows*n_cols):
-            axs.ravel()[j].axis('off')
 
-        plt.subplot(426)
-        plt.bar(relE_bins[1, :-1], np.sum(relE_Err_hist["combined"], axis=0),
-                width=np.diff(relE_bins[1]))
-        plt.xlim(relE_bins[1, [0, -1]])
-        plt.text(.99, .95, "x-projection", ha="right", va="top",
-                 transform=plt.gca().transAxes)
-        plt.subplot(428)
-        plt.bar(relE_bins[0, :-1], np.sum(relE_Err_hist["combined"], axis=1),
-                width=np.diff(relE_bins[0]))
-        plt.xlim(relE_bins[0, [0, -1]])
-        plt.text(.99, .95, "y-projection", ha="right", va="top",
-                 transform=plt.gca().transAxes)
-
-#  ##     ## ######## ########  ####    ###    ##    ##  ######
-#  ###   ### ##       ##     ##  ##    ## ##   ###   ## ##    ##
-#  #### #### ##       ##     ##  ##   ##   ##  ####  ## ##
-#  ## ### ## ######   ##     ##  ##  ##     ## ## ## ##  ######
-#  ##     ## ##       ##     ##  ##  ######### ##  ####       ##
-#  ##     ## ##       ##     ##  ##  ##     ## ##   ### ##    ##
-#  ##     ## ######## ########  #### ##     ## ##    ##  ######
-        for i, (cam_id, thishist) in enumerate(relE_Err_hist.items()):
-            plt.sca(axs.ravel()[i])
             # get a 2D array of the cumulative sums along the "error axis"
             # (not the energy axis)
             cum_sum = np.cumsum(thishist, axis=0)
@@ -434,6 +469,11 @@ if __name__ == '__main__':
                          ls="", marker="o", ms=3, c="darkgreen")
 
         plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
+
+        # switch off superfluous axes
+        for j in range(i+1, n_rows*n_cols):
+            axs.ravel()[j].axis('off')
+
         if args.write:
             save_fig('{}/energy_relative_error_{}_{}_{}'.format(args.plots_dir,
                      args.mode, args.raw.replace(" ", ""), reg))
