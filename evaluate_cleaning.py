@@ -11,6 +11,36 @@ from ctapipe.utils import linalg
 
 from ctapipe.visualization import CameraDisplay
 
+import seaborn as sns
+
+from ctapipe.instrument import CameraGeometry
+from ctapipe.io.hessio import hessio_event_source
+
+from ctapipe.instrument.InstrumentDescription import load_hessio
+
+from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
+
+from ctapipe.image.hillas import HillasParameterizationError, \
+                                 hillas_parameters_4 as hillas_parameters
+
+try:
+    from ctapipe.reco.FitGammaHillas import \
+        FitGammaHillas as HillasReconstructor, TooFewTelescopesException
+except ImportError:
+    from ctapipe.reco.HillasReconstructor import \
+        HillasReconstructor, TooFewTelescopesException
+
+from modules.ImageCleaning import ImageCleaner, EdgeEventException
+from modules.CutFlow import CutFlow
+
+from modules.reSampling import resample_hex_to_rect, \
+                               make_qr_to_pix_id_map, \
+                               qr_to_pix_id_map_tel_map
+
+from ctapipe.calib import CameraCalibrator
+
+from helper_functions import *
+
 from astropy import units as u
 from astropy.table import Table, vstack, hstack
 performance_table = Table(names=("Eps_w", "Eps_t",
@@ -20,43 +50,11 @@ performance_table = Table(names=("Eps_w", "Eps_t",
                                  "sig_w", "sig_t", "sig_p",
                                  "Event_id", "Tel_id", "N_Tels"))
 
-import seaborn as sns
-
-from ctapipe.io.camera import CameraGeometry
-from ctapipe.io.hessio import hessio_event_source
-
-from ctapipe.instrument.InstrumentDescription import load_hessio
-
-from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
-
-from ctapipe.image.hillas import HillasParameterizationError, \
-                                 hillas_parameters_2 as hillas_parameters
-
-from ctapipe.reco.FitGammaHillas import \
-    FitGammaHillas, TooFewTelescopesException
-
-
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/sap-cta-data-pipeline"))
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/snippets/ctapipe"))
-
-from extract_and_crop_simtel_images import crop_astri_image
-
-from modules.ImageCleaning import ImageCleaner, EdgeEventException, kill_isolpix
-from modules.CutFlow import CutFlow
-
-from modules.reSampling import resample_hex_to_rect, \
-                               make_qr_to_pix_id_map, \
-                               qr_to_pix_id_map_tel_map
-
-from helper_functions import *
-
 
 # your favourite units here
-angle_unit  = u.deg
 energy_unit = u.GeV
-dist_unit   = u.m
+angle_unit = u.deg
+dist_unit = u.m
 
 
 if __name__ == '__main__':
@@ -89,9 +87,14 @@ if __name__ == '__main__':
     Eventcutflow = CutFlow("EventCutFlow")
     Imagecutflow = CutFlow("ImageCutFlow")
 
+    # pass in config and self if part of a Tool
+    calib = CameraCalibrator(None, None)
+
+    # use this in the selection of the gain channels
+    np_true_false = np.array([[True], [False]])
 
     island_cleaning = True
-    skip_edge_events = False # args.skip_edge_events
+    skip_edge_events = False  # args.skip_edge_events
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
                                  island_cleaning=island_cleaning,
@@ -101,7 +104,8 @@ if __name__ == '__main__':
                                  island_cleaning=island_cleaning)
                }
 
-    fit = FitGammaHillas()
+    # simple hillas-based shower reco
+    fit = HillasReconstructor()
 
     signal_handler = SignalHandler()
     if args.plot_c:
@@ -120,7 +124,7 @@ if __name__ == '__main__':
                     labels=["log10(signal)", "Delta P"])
 
     allowed_tels = None
-    #allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
+    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
@@ -141,14 +145,16 @@ if __name__ == '__main__':
             shower = event.mc
             shower_org = linalg.set_phi_theta(shower.az, 90.*u.deg-shower.alt)
 
+            # calibrate the event
+            calib.calibrate(event)
+
             for tel_id in event.dl0.tels_with_data:
 
                 Imagecutflow.count("noCuts")
 
                 pmt_signal_p = event.mc.tel[tel_id].photo_electron_image
 
-                '''
-                guessing camera geometry '''
+                # guessing camera geometry
                 if tel_id not in cam_geom:
                     cam_geom[tel_id] = CameraGeometry.guess(
                                         event.inst.pixel_pos[tel_id][0],
@@ -157,20 +163,12 @@ if __name__ == '__main__':
                     tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
                     tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
 
-
-                '''
-                applying ASTRI or general pixel calibration '''
-                if cam_geom[tel_id] == "ASTRI":
-                    cal_signal = apply_mc_calibration_ASTRI(
-                                    event.r0.tel[tel_id].adc_sums,
-                                    event.mc.tel[tel_id].dc_to_pe,
-                                    event.mc.tel[tel_id].pedestal)
+                pmt_signal = event.dl1.tel[tel_id].image
+                if pmt_signal.shape[0] > 1:
+                    pick = (pmt_signal > 14).any(axis=0) != np_true_false
+                    pmt_signal = pmt_signal.T[pick.T]
                 else:
-                    cal_signal = apply_mc_calibration(
-                        event.r0.tel[tel_id].adc_sums[0],
-                        event.mc.tel[tel_id].dc_to_pe[0],
-                        event.mc.tel[tel_id].pedestal[0])
-
+                    pmt_signal = pmt_signal.ravel()
 
                 #
                 # resampling of the hex grid into sqare grid
@@ -186,7 +184,7 @@ if __name__ == '__main__':
                     #qr_to_pix_id_map_tel_map[cam_geom[tel_id].cam_id] = qr_to_pix_id_map
 
                 #resample_x, resample_y, resample_img = \
-                    #resample_hex_to_rect(cal_signal, geom=cam_geom[tel_id],
+                    #resample_hex_to_rect(pmt_signal, geom=cam_geom[tel_id],
                                          #nx=nx, ny=ny)
 
 
@@ -242,7 +240,7 @@ if __name__ == '__main__':
 
                 #ax2 = fig.add_subplot(222)
                 #disp2 = CameraDisplay(cam_geom[tel_id],
-                                    #image=cal_signal,
+                                    #image=pmt_signal,
                                     #ax=ax2)
                 #disp2.cmap = plt.cm.hot
                 #disp2.add_colorbar()
@@ -274,12 +272,12 @@ if __name__ == '__main__':
                 # now cleaning the image with wavelet and tail cuts
                 try:
                     pmt_signal_w, new_geom_w = \
-                        Cleaner['w'].clean(cal_signal+5
-                                           if args.add_offset else cal_signal,
+                        Cleaner['w'].clean(pmt_signal+5
+                                           if args.add_offset else pmt_signal,
                                            cam_geom[tel_id],
                                            event.inst.optical_foclen[tel_id])
                     pmt_signal_t, new_geom_t = \
-                        Cleaner['t'].clean(cal_signal.copy(), cam_geom[tel_id],
+                        Cleaner['t'].clean(pmt_signal.copy(), cam_geom[tel_id],
                                            event.inst.optical_foclen[tel_id])
                     geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id]}
                 except (FileNotFoundError, EdgeEventException) as e:
@@ -371,7 +369,7 @@ if __name__ == '__main__':
 
                     ax2 = fig.add_subplot(222)
                     disp2 = CameraDisplay(cam_geom[tel_id],
-                                          image=cal_signal,
+                                          image=pmt_signal,
                                           ax=ax2)
                     disp2.cmap = plt.cm.hot
                     disp2.add_colorbar()

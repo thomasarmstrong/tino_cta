@@ -15,7 +15,7 @@ try:
 except:
     print("no pytables installed")
 
-from ctapipe.io.camera import CameraGeometry
+from ctapipe.instrument.camera import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.utils import linalg
@@ -23,8 +23,8 @@ from ctapipe.utils import linalg
 from ctapipe.image.hillas import HillasParameterizationError, \
                                  hillas_parameters_4 as hillas_parameters
 
-from ctapipe.reco.FitGammaHillas import \
-    FitGammaHillas, TooFewTelescopesException
+from ctapipe.reco.HillasReconstructor import \
+    HillasReconstructor, TooFewTelescopesException
 
 
 from modules.ImageCleaning import ImageCleaner, EdgeEventException
@@ -95,7 +95,7 @@ def main():
                            skip_edge_events=False, island_cleaning=True)
 
     # the class that does the shower reconstruction
-    fit = FitGammaHillas()
+    fit = HillasReconstructor()
 
     # a signal handler to abort the event loop but still do the post-processing
     signal_handler = SignalHandler()
@@ -292,7 +292,7 @@ def main():
     plt.hist(reco_table.cols.xi, bins=xi_edges, log=True)
     plt.xlabel(r"$\xi$ / deg")
     if args.write:
-        save_fig('{}/reco_xi_{}'.format(args.plots_dir, args.mode), draw_rectangles=True)
+        save_fig('{}/reco_xi_{}'.format(args.plots_dir, args.mode))
     plt.pause(.1)
 
     # convert the xi-list into a dict with the number of used telescopes as keys
@@ -349,7 +349,7 @@ def main():
 
     plt.tight_layout()
     if args.write:
-        save_fig('{}/reco_xi_vs_E_NTel_{}'.format(args.outdir, args.mode))
+        save_fig('{}/reco_xi_vs_E_NTel_{}'.format(args.plots_dir, args.mode))
 
     plt.pause(.1)
 
@@ -396,7 +396,7 @@ def main():
 
     plt.tight_layout()
     if args.write:
-        save_fig('{}/reco_dist_vs_E_NTel_{}'.format(args.outdir, args.mode))
+        save_fig('{}/reco_dist_vs_E_NTel_{}'.format(args.plots_dir, args.mode))
     plt.show()
 
 

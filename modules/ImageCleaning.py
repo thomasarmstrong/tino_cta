@@ -114,12 +114,12 @@ class ImageCleaner:
                                 img, raw_option_string=wavelet_options,
                                 tmp_files_directory=tmp_files_directory,
                                 mrfilter_directory=mrfilter_directory)
-            self.island_threshold = 4.5
+            self.island_threshold = 1.5
         elif mode == "tail":
             self.clean = self.clean_tail
             self.tail_thresh_up = tail_thresh_up
             self.tail_thresh_low = tail_thresh_low
-            self.island_threshold = 4.5
+            self.island_threshold = 1.5
             self.dilate = dilate
         else:
             raise UnknownModeException(
@@ -184,8 +184,8 @@ class ImageCleaner:
                                            neighbours=self.hex_neighbours_1ring,
                                            threshold=self.island_threshold)
 
-        unrot_geom, unrot_img = convert_geometry_back(
-                                rot_geom, cleaned_img, cam_geom.cam_id, foclen)
+        unrot_geom, unrot_img = convert_geometry_back(rot_geom, cleaned_img,
+                                                      cam_geom.cam_id)
 
         new_img = unrot_img
         new_geom = unrot_geom
@@ -193,7 +193,7 @@ class ImageCleaner:
         return new_img, new_geom
 
     def clean_tail(self, img, cam_geom, foclen):
-        mask = tailcuts_clean(cam_geom, img, 1,
+        mask = tailcuts_clean(cam_geom, img,
                               picture_thresh=self.tail_thresh_up,
                               boundary_thresh=self.tail_thresh_low)
         if self.dilate:
@@ -228,8 +228,8 @@ class ImageCleaner:
 
             cleaned_img = self.island_cleaning(rot_img, self.hex_neighbours_1ring)
 
-            unrot_geom, unrot_img = convert_geometry_back(
-                                    rot_geom, cleaned_img, cam_geom.cam_id, foclen)
+            unrot_geom, unrot_img = convert_geometry_back(rot_geom, cleaned_img,
+                                                          cam_geom.cam_id)
             new_img = unrot_img
             new_geom = unrot_geom
 

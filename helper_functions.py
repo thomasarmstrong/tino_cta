@@ -232,5 +232,6 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
 
 
 def ipython_shell():
+    # doesn't actually work, needs to be put inline, here only as a reminder
     from IPython import embed
     embed()
