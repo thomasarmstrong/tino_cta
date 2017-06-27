@@ -61,8 +61,9 @@ if __name__ == "__main__":
     apply_cuts = True
     gammaness_wave = .75
     gammaness_tail = .75
+    r_max_gamm_wave = 0.04*u.deg
+    r_max_gamm_tail = 0.04*u.deg
     r_max_prot = 2*u.deg
-    r_max_gamm = 0.05*u.deg
 
     NReuse_Gammas = 10
     NReuse_Proton = 20
@@ -94,7 +95,7 @@ if __name__ == "__main__":
     # applying some cuts
     if apply_cuts:
         gammas = gammas[selection_mask(
-                gammas, gammaness=gammaness_wave, r_max=r_max_gamm)]
+                gammas, gammaness=gammaness_wave, r_max=r_max_gamm_wave)]
         proton = proton[selection_mask(
                 proton, gammaness=gammaness_wave, r_max=r_max_prot)]
 
@@ -103,6 +104,8 @@ if __name__ == "__main__":
     print("proton selected (wavelets):", len(proton))
 
     SensCalc = SensitivityPointSource(
+                    reco_energies={'g': gammas['MC_Energy'].values*u.GeV,
+                                   'p': np.random.uniform(100, 600000, len(proton))*u.GeV},
                     mc_energies={'g': gammas['MC_Energy'].values*u.GeV,
                                  'p': proton['MC_Energy'].values*u.GeV},
                     energy_bin_edges={'g': edges_gammas,
@@ -121,7 +124,7 @@ if __name__ == "__main__":
                             e_min_max={"g": (0.1, 330)*u.TeV,
                                        "p": (0.1, 600)*u.TeV},
                             generator_gamma={"g": 2, "p": 2},
-                            alpha=(r_max_gamm/r_max_prot)**2,
+                            alpha=(r_max_gamm_wave/r_max_prot)**2,
                             # sensitivity_energy_bin_edges=
                             #     10**np.array([-1, -.75, -.5, -.25, 0, 2,
                             #               2.25, 2.5, 2.75, 3, 9])*u.TeV
@@ -177,7 +180,7 @@ if __name__ == "__main__":
     # applying some cuts
     if apply_cuts:
         gammas_t = gammas_t[selection_mask(
-                gammas_t, gammaness=gammaness_tail, r_max=r_max_gamm)]
+                gammas_t, gammaness=gammaness_tail, r_max=r_max_gamm_tail)]
         proton_t = proton_t[selection_mask(
                 proton_t, gammaness=gammaness_tail, r_max=r_max_prot)]
 
@@ -186,6 +189,8 @@ if __name__ == "__main__":
     print("proton selected (tailcuts):", len(proton_t))
 
     SensCalc_t = SensitivityPointSource(
+                    reco_energies={'g': gammas_t['MC_Energy'].values*u.GeV,
+                                   'p': np.random.uniform(100, 600000, len(proton_t))*u.GeV},
                     mc_energies={'g': gammas_t['MC_Energy'].values*u.GeV,
                                  'p': proton_t['MC_Energy'].values*u.GeV},
                     energy_bin_edges={'g': edges_gammas,
@@ -204,7 +209,7 @@ if __name__ == "__main__":
                             e_min_max={"g": (0.1, 330)*u.TeV,
                                        "p": (0.1, 600)*u.TeV},
                             generator_gamma={"g": 2, "p": 2},
-                            alpha=(r_max_gamm/r_max_prot)**2,
+                            alpha=(r_max_gamm_tail/r_max_prot)**2,
                             # sensitivity_energy_bin_edges=
                             #     10**np.array([-1, -.75, -.5, -.25, 0, 2,
                             #                   2.25, 2.5, 2.75, 3, 9])*u.TeV
@@ -357,32 +362,32 @@ if __name__ == "__main__":
                    color="red", ls="dashed", alpha=.33, label="Crab Nebula / 100")
 
         # plt.semilogy(
-        #     sensitivities["MC Energy"],
+        #     sensitivities["Energy"],
         #     (sensitivities["Sensitivity"].to(flux_unit) *
-        #      sensitivities["MC Energy"].to(u.erg)**2),
+        #      sensitivities["Energy"].to(u.erg)**2),
         #     color="darkred",
         #     marker="s",
         #     label="wavelets")
         plt.semilogy(
-            sensitivities["MC Energy"].to(u.TeV),
+            sensitivities["Energy"].to(u.TeV),
             (sensitivities["Sensitivity_base"].to(flux_unit) *
-             sensitivities["MC Energy"].to(u.erg)**2),
+             sensitivities["Energy"].to(u.erg)**2),
             color="darkgreen",
             marker="^",
             # ls="",
             label="wavelets (no upscale)")
 
         # plt.semilogy(
-        #     sensitivities_t["MC Energy"].to(energy_unit),
+        #     sensitivities_t["Energy"].to(energy_unit),
         #     (sensitivities_t["Sensitivity"].to(flux_unit) *
-        #      sensitivities_t["MC Energy"].to(u.erg)**2),
+        #      sensitivities_t["Energy"].to(u.erg)**2),
         #     color="C0",
         #     marker="s",
         #     label="tailcuts")
         plt.semilogy(
-            sensitivities_t["MC Energy"].to(energy_unit),
+            sensitivities_t["Energy"].to(energy_unit),
             (sensitivities_t["Sensitivity_base"].to(flux_unit) *
-             sensitivities_t["MC Energy"].to(u.erg)**2),
+             sensitivities_t["Energy"].to(u.erg)**2),
             color="darkorange",
             marker="^",
             # ls="",
