@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+from collections import namedtuple
+
+from astropy import units as u
 from helper_functions import *
 
 from sys import exit
@@ -30,7 +33,7 @@ from ctapipe.calib import CameraCalibrator
 
 
 pckl_load = False
-pckl_write = True
+pckl_write = False
 
 cam_id_list = [
         # 'GATE',
@@ -38,10 +41,31 @@ cam_id_list = [
         # 'NectarCam',
         # 'LSTCam',
         # 'SST-1m',
-        # 'FlashCam',
+        'FlashCam',
         'ASTRICam',
         # 'SCTCam',
         ]
+
+LST_List = ["LSTCam"]
+MST_List = ["NectarCam", "FlashCam"]
+SST_List = ["ASTRICam", "SCTCam", "GATE", "DigiCam", "CHEC"]
+
+
+EnergyFeatures = namedtuple("EnergyFeatures", (
+                                "impact_dist",
+                                "sum_signal_evt",
+                                "max_signal_cam",
+                                "sum_signal_cam",
+                                "N_LST",
+                                "N_MST",
+                                "N_SST",
+                                #  "cen_r2",
+                                #  "phi""_minus_""psi",
+                                "width",
+                                "length",
+                                "skewness",
+                                "kurtosis",
+                                "err_est_pos"))
 
 if __name__ == '__main__':
 
@@ -97,8 +121,8 @@ if __name__ == '__main__':
     allowed_tels = None  # all telescopes
     # allowed_tels = range(10)  # smallest ASTRI array
     allowed_tels = range(34)  # all ASTRI telescopes
-    # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    for filename in filenamelist_gamma[:14][:args.last]:
+    allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
+    for filename in filenamelist_gamma[:10][:args.last]:
 
         if pckl_load:
             break
@@ -127,6 +151,9 @@ if __name__ == '__main__':
             # telescope loop
             tot_signal = 0
             max_signal = 0
+            n_lst = 0
+            n_mst = 0
+            n_sst = 0
             hillas_dict = {}
             for tel_id in event.dl0.tels_with_data:
                 Imagecutflow.count("noCuts")
@@ -151,8 +178,7 @@ if __name__ == '__main__':
                 # trying to clean the image
                 try:
                     pmt_signal, new_geom = \
-                        Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
-                                      event.inst.optical_foclen[tel_id])
+                        Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id])
 
                     if np.count_nonzero(pmt_signal) < 3:
                         continue
@@ -181,6 +207,17 @@ if __name__ == '__main__':
 
                 hillas_dict[tel_id] = moments
                 tot_signal += moments.size
+
+                if cam_geom[tel_id].cam_id in LST_List:
+                    n_lst += 1
+                elif cam_geom[tel_id].cam_id in MST_List:
+                    n_mst += 1
+                elif cam_geom[tel_id].cam_id in SST_List:
+                    n_sst += 1
+                else:
+                    raise ValueError(
+                            "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
+                            "-- please add to corresponding list")
 
                 Imagecutflow.count("Hillas")
 
@@ -216,25 +253,26 @@ if __name__ == '__main__':
 
                 impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
                 impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                features_tel = [
+                features_tel = EnergyFeatures(
                             impact_dist_rec/u.m,
                             tot_signal,
                             max_signal,
                             moments.size,
-                            NTels,
+                            n_lst, n_mst, n_sst,
                             # the distance of the shower core from the centre
                             # since the camera might lose efficiency towards the edge
-                            (moments.cen_x**2 +
-                             moments.cen_y**2) / u.m**2,
+                            # (not a good idea for on-axis point-source MC)
+                            # (moments.cen_x**2 +
+                            #  moments.cen_y**2) / u.m**2,
                             # orientation of the hillas ellipsis wrt. the camera centre
-                            (moments.phi -
-                             moments.psi)/u.deg,
+                            # (moments.phi -
+                            #  moments.psi)/u.deg,
                             moments.width/u.m,
                             moments.length/u.m,
                             moments.skewness,
                             moments.kurtosis,
                             err_est_pos/u.m
-                          ]
+                          )
 
                 if Imagecutflow.cut("features nan", features_tel):
                     continue
@@ -253,22 +291,6 @@ if __name__ == '__main__':
                 break
         if signal_handler.stop:
             break
-
-    feature_labels = [
-                        "impact_dist",
-                        "sum_signal_evt",
-                        "max_signal_cam",
-                        "sum_signal_cam",
-                        "NTels_rec",
-                        "cen_r**2",
-                        "phi - "
-                        "psi",
-                        "width",
-                        "length",
-                        "skewness",
-                        "kurtosis",
-                        "err_est_pos",
-                      ]
 
     print()
 
@@ -290,9 +312,9 @@ if __name__ == '__main__':
                   'random_state': 0}
 
     # try neural network
-    from sklearn.neural_network import MLPRegressor
-    reg_kwargs = {'regressor': MLPRegressor, 'random_state': 1, 'alpha': 1e-5,
-                  'hidden_layer_sizes': (50, 50)}
+    # from sklearn.neural_network import MLPRegressor
+    # reg_kwargs = {'regressor': MLPRegressor, 'random_state': 1, 'alpha': 1e-5,
+    #               'hidden_layer_sizes': (50, 50)}
 
     reg_kwargs['cam_id_list'] = cam_id_list
 
@@ -301,32 +323,26 @@ if __name__ == '__main__':
 
     train_features, train_targets = reg.reshuffle_event_list(Features_event_list,
                                                              MC_Energies)
-    for cam_id, feats in train_features.items():
-        feats = np.array(feats)
-        print()
-        print(cam_id)
-        print("shape:", feats.shape)
-        min_features = np.min(feats, axis=0)
-        max_features = np.max(feats, axis=0)
-        print(min_features)
-        print(max_features)
-
-        feats /= max_features[None, :]
-        # feats = (feats-min_features) / (max_features-min_features)
-        #
-        # min_features = np.min(feats, axis=0)
-        # max_features = np.max(feats, axis=0)
-        # print(cam_id, min_features, max_features)
-        #
-        # train_features[cam_id] = feats
+    # for cam_id, feats in train_features.items():
+    #     feats = np.array(feats)
+    #     print()
+    #     print(cam_id)
+    #     print("shape:", feats.shape)
+    #     min_features = np.min(feats, axis=0)
+    #     max_features = np.max(feats, axis=0)
+    #     print(min_features)
+    #     print(max_features)
+    #
+    #     feats /= max_features[None, :]
+    #     feats = (feats-min_features) / (max_features-min_features)
+    #
+    #     min_features = np.min(feats, axis=0)
+    #     max_features = np.max(feats, axis=0)
+    #     print(cam_id, min_features, max_features)
+    #
+    #     train_features[cam_id] = feats
 
     reg.fit(train_features, train_targets)
-
-    # dummy_filen_name = "/run/user/1001/dummy_reg_{}.pkl"
-    # reg.save(dummy_filen_name)
-    #
-    # reg_2 = EnergyRegressor.load(dummy_filen_name)
-    # print("save,load,predict test:", reg_2.predict(Features_event_list[0:1]))
 
     # save the regressor to disk
     if args.store:
@@ -338,7 +354,7 @@ if __name__ == '__main__':
     if args.plot:
         # extract and show the importance of the various training features
         try:
-            reg.show_importances(feature_labels)
+            reg.show_importances(EnergyFeatures._fields)
             plt.tight_layout()
             plt.suptitle("{} ** {}".format(
                 "wavelets" if args.mode == "wave" else "tailcuts",
@@ -365,7 +381,7 @@ if __name__ == '__main__':
             Epred_hist[cam_id] = np.histogram2d([], [], bins=bins)[0]
             relE_Err_hist[cam_id] = np.histogram2d([], [], bins=relE_bins)[0]
 
-        kf = KFold(n_splits=5)
+        kf = KFold(n_splits=4)
         X, y = np.array(Features_event_list), convert_astropy_array(MC_Energies)
         for i, (train_index, test_index) in enumerate(kf.split(X)):
             X_train, X_test = X[train_index], X[test_index]
@@ -383,14 +399,16 @@ if __name__ == '__main__':
                                                          [np.log10(mce/u.TeV)],
                                                          bins=bins)[0]
                     relE_Err_hist[cam_id] += np.histogram2d([(pred-mce)/mce],
-                                                            [np.log10(mce/u.TeV)],
+                                                            [np.log10(pred/u.TeV)],
+                                                            # [np.log10(mce/u.TeV)],
                                                             bins=relE_bins)[0]
 
-            Epred_hist["combined"] += np.histogram2d(np.log10(y_score["median"]/u.TeV),
+            Epred_hist["combined"] += np.histogram2d(np.log10(y_score["mean"]/u.TeV),
                                                      np.log10(y_test/u.TeV),
                                                      bins=bins)[0]
-            relE_Err_hist["combined"] += np.histogram2d((y_score["median"]-y_test)/y_test,
-                                                        np.log10(y_test/u.TeV),
+            relE_Err_hist["combined"] += np.histogram2d((y_score["mean"]-y_test)/y_test,
+                                                        np.log10(y_score["mean"]/u.TeV),
+                                                        # np.log10(y_test/u.TeV),
                                                         bins=relE_bins)[0]
 
         # calculate number of rows and columns to plot camera-type plots in a grid
@@ -441,8 +459,8 @@ if __name__ == '__main__':
                        extent=[*relE_bins[1, [0, -1]], *relE_bins[0, [0, -1]]],
                        aspect="auto")
             plt.plot(relE_bins[1, [0, -1]], (0, 0))
-            plt.xlabel('log10(E_MC / TeV)')
-            plt.ylabel('(E_predict -E_MC)/ E_MC')
+            plt.xlabel('log10(E_predict / TeV)')
+            plt.ylabel('(E_predict-E_MC)/ E_MC')
             plt.title(cam_id)
             plt.colorbar()
 

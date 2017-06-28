@@ -2,6 +2,8 @@
 
 from helper_functions import *
 
+from collections import namedtuple
+
 from sys import exit, path
 from os.path import expandvars
 from glob import glob
@@ -36,7 +38,7 @@ from ctapipe.calib import CameraCalibrator
 
 
 pckl_load = False
-pckl_write = True
+pckl_write = False
 
 cam_id_list = [
         # 'GATE',
@@ -44,10 +46,30 @@ cam_id_list = [
         # 'NectarCam',
         # 'LSTCam',
         # 'SST-1m',
-        # 'FlashCam',
+        'FlashCam',
         'ASTRICam',
         # 'SCTCam',
         ]
+
+LST_List = ["LSTCam"]
+MST_List = ["NectarCam", "FlashCam"]
+SST_List = ["ASTRICam", "SCTCam", "GATE", "DigiCam", "CHEC"]
+
+
+ClassifierFeatures = namedtuple("ClassifierFeatures", (
+                                "impact_dist",
+                                "sum_signal_evt",
+                                "max_signal_cam",
+                                "sum_signal_cam",
+                                "N_LST",
+                                "N_MST",
+                                "N_SST",
+                                "width",
+                                "length",
+                                "skewness",
+                                "kurtosis",
+                                "err_est_pos"))
+
 
 if __name__ == '__main__':
 
@@ -110,9 +132,11 @@ if __name__ == '__main__':
 
     allowed_tels = None  # all telescopes
     # allowed_tels = range(10)  # smallest ASTRI array
-    allowed_tels = range(34)  # all ASTRI telescopes
-    for filenamelist_class in [sorted(filenamelist_gamma)[:14],
-                               sorted(filenamelist_proton)[:100]]:
+    # allowed_tels = range(34)  # all ASTRI telescopes
+
+    for filenamelist_class in [sorted(filenamelist_gamma)[:14][:10],
+                               sorted(filenamelist_proton)[:100][:75]]:
+
         if pckl_load:
             break
 
@@ -149,6 +173,9 @@ if __name__ == '__main__':
                 # telescope loop
                 tot_signal = 0
                 max_signal = 0
+                n_lst = 0
+                n_mst = 0
+                n_sst = 0
                 hillas_dict = {}
                 for tel_id in event.dl0.tels_with_data:
                     Imagecutflow[cl].count("noCuts")
@@ -174,8 +201,7 @@ if __name__ == '__main__':
                     # trying to clean the image
                     try:
                         pmt_signal, new_geom = \
-                            Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id],
-                                          event.inst.optical_foclen[tel_id])
+                            Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id])
 
                         if np.count_nonzero(pmt_signal) < 3:
                             continue
@@ -229,6 +255,17 @@ if __name__ == '__main__':
                     hillas_dict[tel_id] = moments
                     tot_signal += moments.size
 
+                    if cam_geom[tel_id].cam_id in LST_List:
+                        n_lst += 1
+                    elif cam_geom[tel_id].cam_id in MST_List:
+                        n_mst += 1
+                    elif cam_geom[tel_id].cam_id in SST_List:
+                        n_sst += 1
+                    else:
+                        raise ValueError(
+                                "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
+                                "-- please add to corresponding list")
+
                     Imagecutflow[cl].count("Hillas")
 
                 if Eventcutflow[cl].cut("min2Tels reco", len(hillas_dict)):
@@ -260,18 +297,20 @@ if __name__ == '__main__':
                     moments = hillas_dict[tel_id]
 
                     impact_dist_rec = linalg.length(tel_pos-pos_fit)
-                    features_tel = [
+                    features_tel = ClassifierFeatures(
                                 impact_dist_rec/u.m,
                                 tot_signal,
                                 max_signal,
                                 moments.size,
-                                NTels,
+                                n_lst,
+                                n_mst,
+                                n_sst,
                                 moments.width/u.m,
                                 moments.length/u.m,
                                 moments.skewness,
                                 moments.kurtosis,
-                                err_est_pos/u.m
-                              ]
+                                err_est_pos/u.m)
+
                     # min/max:
                     # features_min = np.array([2.17977766e-03, 3.79483122e+00,
                     #                          2.77974433e+00, 1.02619767e+00,
@@ -304,19 +343,6 @@ if __name__ == '__main__':
                     break
             if signal_handler.stop:
                 break
-
-    feature_labels = [
-                        "impact_dist",
-                        "sum_signal_evt",
-                        "max_signal_cam",
-                        "sum_signal_cam",
-                        "NTels_rec",
-                        "width",
-                        "length",
-                        "skewness",
-                        "kurtosis",
-                        "err_est_pos",
-                      ]
 
     print()
 
@@ -351,8 +377,14 @@ if __name__ == '__main__':
 
     # try neural network
     from sklearn.neural_network import MLPClassifier
-    clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
-                  'hidden_layer_sizes': (50, 50)}
+    from sklearn.preprocessing import StandardScaler
+    # clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
+    #               'hidden_layer_sizes': (200, 200, 100)}
+
+    # hidden layer trials
+    # (100, 50)    AUC: 92-93
+    # (100, 100)   AUC: 93,92,92,93,92
+    # (100, 100)   AUC: 92,93,92,93,93
 
     clf_kwargs['cam_id_list'] = cam_id_list
 
@@ -360,35 +392,25 @@ if __name__ == '__main__':
     print(clf)
 
     train_features, train_classes = clf.reshuffle_event_list(trainFeatures, trainClasses)
-    for cam_id, feats in train_features.items():
-        feats = np.array(feats)
-        print()
-        print(cam_id)
-        print("shape:", feats.shape)
-        min_features = np.min(feats, axis=0)
-        max_features = np.max(feats, axis=0)
-        print(min_features)
-        print(max_features)
+    # max_features = {}
+    # for cam_id, feats in train_features.items():
+    #     feats = np.array(feats)
+    #     print()
+    #     print(cam_id)
+    #     print("shape:", feats.shape)
+    #     # print("feats:\n", feats)
+    #     print()
+    #     min_features = np.min(np.abs(feats), axis=0)
+    #     max_features[cam_id] = np.max(np.abs(feats), axis=0)
+    #     print("min_features:\n", min_features)
+    #     print("max_features:\n", max_features[cam_id])
     #
-    #     feats /= max_features[None, :]
-    #     # feats = (feats-min_features) / (max_features-min_features)
-    #
-    #     min_features = np.min(feats, axis=0)
-    #     max_features = np.max(feats, axis=0)
-    #     print(cam_id, min_features, max_features)
-    #
-    #     train_features[cam_id] = feats
-
-    clf.fit(train_features, train_classes)
-
-    # dummy_filen_name = "/run/user/1001/dummy_clf_{}.pkl"
-    # clf.save(dummy_filen_name)
-    #
-    # clf_2 = EventClassifier.load(dummy_filen_name)
-    # print("save,load,predict test:", clf_2.predict(Features_event_list[0:1]))
+    #     # this has only an effect on the fit underneath `args.store`
+    #     train_features[cam_id] = feats / max_features[cam_id]
 
     # save the classifier to disk
     if args.store:
+        clf.fit(train_features, train_classes)
         clf.save(args.outpath.format(**{
                             "mode": args.mode,
                             "wave_args": args.raw.replace(' ', '').replace(',', ''),
@@ -397,7 +419,8 @@ if __name__ == '__main__':
     if args.plot:
         # extract and show the importance of the various training features
         try:
-            clf.show_importances(feature_labels)
+            clf.fit(train_features, train_classes)
+            clf.show_importances(ClassifierFeatures._fields)
             plt.suptitle("{} ** {}".format(
                 "wavelets" if args.mode == "wave" else "tailcuts",
                 clf))
@@ -405,8 +428,7 @@ if __name__ == '__main__':
                 save_fig('{}/classification_importance_{}_{}_{}'.format(args.plots_dir,
                          args.mode, args.raw.replace(" ", ""), clf))
         except AttributeError as e:
-            print("{} classifier does not support feature importances".format(clf))
-            print(e)
+            print("{} does not support feature importances".format(clf))
 
         # plot area under curve for a few cross-validations
         from sklearn.metrics import roc_curve, auc
@@ -415,23 +437,28 @@ if __name__ == '__main__':
 
         plt.figure()
         X, y = np.array(trainFeatures), np.array(trainClasses)
-        sss = StratifiedShuffleSplit(n_splits=5, test_size=0.5, random_state=0)
+        sss = StratifiedShuffleSplit(n_splits=3, test_size=0.5, random_state=0)
         for i, (train_index, test_index) in enumerate(sss.split(X, y)):
             X_train, X_test = X[train_index], X[test_index]
             y_train, y_test = y[train_index], y[test_index]
 
             clf = EventClassifier(**clf_kwargs)
 
-            clf.fit(*clf.reshuffle_event_list(X_train, y_train))
+            X_train_flat, y_train_flat = clf.reshuffle_event_list(X_train, y_train)
+            # for cam_id in X_train_flat:
+            #     X_train_flat[cam_id] = X_train_flat[cam_id] / max_features[cam_id]
+            clf.fit(X_train_flat, y_train_flat)
 
             y_score = clf.predict_proba_by_event(X_test)[:, 0]
 
             fpr, tpr, _ = roc_curve(y_test == "g", y_score)
             roc_auc = auc(fpr, tpr)
+            print("area under curve:", roc_auc)
 
             lw = 2
             plt.plot(fpr, tpr, color=colours[i],
                      lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+            plt.pause(.1)
 
         # plot a diagonal line that represents purely random choices
         plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
@@ -443,11 +470,12 @@ if __name__ == '__main__':
         plt.suptitle("{} ** {}".format(
             "wavelets" if args.mode == "wave" else "tailcuts",
             clf))
-        plt.legend(loc="lower right", title="different cross validations")
+        plt.legend(loc="lower right", title="cross validation")
 
         if args.write:
             save_fig('{}/classification_area_under_curve_{}_{}_{}'.format(args.plots_dir,
                      args.mode, args.raw.replace(" ", ""), clf))
+        plt.pause(.1)
 
         # plot gammaness as function of number of telescopes
         histos = {'g': None, 'p': None}
@@ -464,15 +492,17 @@ if __name__ == '__main__':
                 test = X_test[y_test == cl]
                 NTels = []
                 for evt in test:
+                    n_tels = 0
                     for c, t in evt.items():
-                        NTels.append(len(t))
+                        n_tels += len(t)
+                    NTels.append(n_tels)
 
                 try:
                     y_score = clf.predict_proba_by_event(test)[:, 0]
                 except:
                     continue
 
-                temp = np.histogram2d(NTels, y_score, bins=(range(1, 10),
+                temp = np.histogram2d(NTels, y_score, bins=(range(2, 10),
                                                             np.linspace(0, 1, 11)))[0].T
 
                 if histos[cl] is None:
@@ -495,4 +525,5 @@ if __name__ == '__main__':
 
         plt.suptitle("{} ** {}".format("wavelets" if args.mode == "wave" else "tailcuts",
                                        clf))
+        plt.subplots_adjust(left=0.10, right=0.95, wspace=0.33)
         plt.show()
