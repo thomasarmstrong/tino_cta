@@ -38,10 +38,9 @@ from collections import OrderedDict
 def main():
 
     # your favourite units here
-    angle_unit  = u.deg
     energy_unit = u.GeV
-    dist_unit   = u.m
-
+    angle_unit = u.deg
+    dist_unit = u.m
 
     parser = make_argparser()
     parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
@@ -124,7 +123,7 @@ def main():
         reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
         reco_event = reco_table.row
     except:
-        print("no pytables installed")
+        print("no pytables installed?")
 
     # define here which telescopes to loop over
     allowed_tels = None
@@ -132,7 +131,7 @@ def main():
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
     # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    for filename in sorted(filenamelist)[:args.last]:
+    for filename in sorted(filenamelist)[:5]:  # args.last]:
 
         print("filename = {}".format(filename))
 
@@ -183,8 +182,7 @@ def main():
 
                     try:
                         pmt_signal, new_geom = \
-                            Cleaner.clean(cal_signal, cam_geom[tel_id],
-                                          event.inst.optical_foclen[tel_id])
+                            Cleaner.clean(cal_signal, cam_geom[tel_id])
                     except (FileNotFoundError, EdgeEventException) as e:
                         continue
                 # end if args.photons
@@ -306,7 +304,7 @@ def main():
     print(args.mode)
     for ntel, xis in xi_vs_tel.items():
         print("NTel: {} -- median xi: {}".format(ntel, np.median(xis)))
-        print("histogram:", np.histogram(xis, bins=xi_edges))
+        # print("histogram:", np.histogram(xis, bins=xi_edges))
 
     # create a list of energy bin-edges and -centres for violin plots
     Energy_edges = np.linspace(2, 8, 13)

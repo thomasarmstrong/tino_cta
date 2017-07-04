@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from helper_functions import *
-
+from astropy import units as u
 from collections import namedtuple
 
 from sys import exit, path
@@ -38,7 +38,7 @@ from ctapipe.calib import CameraCalibrator
 
 
 pckl_load = False
-pckl_write = False
+pckl_write = True
 
 cam_id_list = [
         # 'GATE',
@@ -75,14 +75,14 @@ if __name__ == '__main__':
 
     parser = make_argparser()
     parser.add_argument('-o', '--outpath', type=str,
-                        default='data/classifier_pickle/regressor'
-                                '_{mode}_{wave_args}_{class}_{cam_id}.pkl')
+                        default='data/classifier_pickle/classifier'
+                                '_{mode}_{wave_args}_{classifier}_{cam_id}.pkl')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
 
-    filenamelist_gamma = glob("{}/gamma/run*gz".format(args.indir))
-    filenamelist_proton = glob("{}/proton/run*gz".format(args.indir))
+    filenamelist_gamma = sorted(glob("{}/gamma/run*gz".format(args.indir)))
+    filenamelist_proton = sorted(glob("{}/proton/run*gz".format(args.indir)))
 
     if len(filenamelist_gamma) == 0:
         print("no gammas found")
@@ -133,9 +133,9 @@ if __name__ == '__main__':
     allowed_tels = None  # all telescopes
     # allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-
-    for filenamelist_class in [sorted(filenamelist_gamma)[:14][:10],
-                               sorted(filenamelist_proton)[:100][:75]]:
+    allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
+    for filenamelist_class in [filenamelist_gamma[:10],
+                               filenamelist_proton[:70]]:
 
         if pckl_load:
             break
@@ -288,7 +288,6 @@ if __name__ == '__main__':
 
                 # now prepare the features for the classifier
                 features_evt = {}
-                NTels = len(hillas_dict)
                 for tel_id in hillas_dict.keys():
                     Imagecutflow[cl].count("pre-features")
 
@@ -310,21 +309,6 @@ if __name__ == '__main__':
                                 moments.skewness,
                                 moments.kurtosis,
                                 err_est_pos/u.m)
-
-                    # min/max:
-                    # features_min = np.array([2.17977766e-03, 3.79483122e+00,
-                    #                          2.77974433e+00, 1.02619767e+00,
-                    #                          2.00000000e+00, 1.16415322e-10,
-                    #                          1.40411825e-03, -3.59665307e+00,
-                    #                          1.00054649e+00, 0.00000000e+00])
-                    # features_max = np.array([1.56610377e+06, 1.04894660e+05,
-                    #                          7.13772092e+02, 4.13314324e+04,
-                    #                          3.30000000e+01, 1.85523953e-02,
-                    #                          5.83485922e-02, 4.37219306e+00,
-                    #                          2.15482532e+01, 1.00557300e+02])
-                    # features_tel = (np.array(features_tel)-features_min) / \
-                    #                (features_max-features_min)
-                    # features_tel = (np.array(features_tel)/features_max)
 
                     if Imagecutflow[cl].cut("features nan", features_tel):
                         continue
@@ -413,8 +397,9 @@ if __name__ == '__main__':
         clf.fit(train_features, train_classes)
         clf.save(args.outpath.format(**{
                             "mode": args.mode,
-                            "wave_args": args.raw.replace(' ', '').replace(',', ''),
-                            "class": clf, "cam_id": "{cam_id}"}))
+                            "wave_args": "mixed",
+                            # args.raw.replace(' ', '').replace(',', ''),
+                            "classifier": clf, "cam_id": "{cam_id}"}))
 
     if args.plot:
         # extract and show the importance of the various training features

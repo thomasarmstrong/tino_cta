@@ -32,7 +32,7 @@ except ImportError:
 from ctapipe.calib import CameraCalibrator
 
 
-pckl_load = False
+pckl_load = True
 pckl_write = False
 
 cam_id_list = [
@@ -72,7 +72,7 @@ if __name__ == '__main__':
     parser = make_argparser()
     parser.add_argument('-o', '--outpath', type=str,
                         default='data/classifier_pickle/regressor'
-                                '_{mode}_{wave_args}_{class}_{cam_id}.pkl')
+                                '_{mode}_{wave_args}_{regressor}_{cam_id}.pkl')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
@@ -96,10 +96,10 @@ if __name__ == '__main__':
     Eventcutflow.set_cut("position nan", lambda x: np.isnan(x).any())
 
     Imagecutflow = CutFlow("ImageCutFlow")
-    Imagecutflow.set_cut("features nan", lambda x: np.isnan(x).any())
 
     # pass in config and self if part of a Tool
     calib = CameraCalibrator(None, None)
+    Imagecutflow.set_cut("features nan", lambda x: np.isnan(x).any())
 
     # use this in the selection of the gain channels
     np_true_false = np.array([[True], [False]])
@@ -120,7 +120,7 @@ if __name__ == '__main__':
 
     allowed_tels = None  # all telescopes
     # allowed_tels = range(10)  # smallest ASTRI array
-    allowed_tels = range(34)  # all ASTRI telescopes
+    # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
     for filename in filenamelist_gamma[:10][:args.last]:
 
@@ -348,8 +348,9 @@ if __name__ == '__main__':
     if args.store:
         reg.save(args.outpath.format(**{
                             "mode": args.mode,
-                            "wave_args": args.raw.replace(' ', '').replace(',', ''),
-                            "class": reg, "cam_id": "{cam_id}"}))
+                            "wave_args": "mixed",
+                            # args.raw.replace(' ', '').replace(',', ''),
+                            "regressor": reg, "cam_id": "{cam_id}"}))
 
     if args.plot:
         # extract and show the importance of the various training features
