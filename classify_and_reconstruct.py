@@ -289,6 +289,22 @@ def main():
                     tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
                     tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
 
+                # counting different sized telescops
+                if cam_geom[tel_id].cam_id in LST_List:
+                    n_lst += 1
+                elif cam_geom[tel_id].cam_id in MST_List:
+                    n_mst += 1
+                elif cam_geom[tel_id].cam_id in SST_List:
+                    n_sst += 1
+                else:
+                    raise ValueError(
+                            "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
+                            "-- please add to corresponding list")
+
+                # switch off FlashCam for now (but still count them in n_mst)
+                if cam_geom[tel_id].cam_id is "FlashCam":
+                    continue
+
                 # trying to clean the image
                 try:
                     pmt_signal, new_geom = \
@@ -324,17 +340,6 @@ def main():
 
                 hillas_dict[tel_id] = moments
                 tot_signal += moments.size
-
-                if cam_geom[tel_id].cam_id in LST_List:
-                    n_lst += 1
-                elif cam_geom[tel_id].cam_id in MST_List:
-                    n_mst += 1
-                elif cam_geom[tel_id].cam_id in SST_List:
-                    n_sst += 1
-                else:
-                    raise ValueError(
-                            "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
-                            "-- please add to corresponding list")
 
                 Imagecutflow.count("Hillas")
 
@@ -411,10 +416,6 @@ def main():
                 Imagecutflow.count("features nan")
 
                 cam_id = cam_geom[tel_id].cam_id
-
-                # switch off FlashCam for now (but still count them in n_mst)
-                if cam_id is "FlashCam":
-                    continue
 
                 if cam_id not in reg_features_evt:
                     reg_features_evt[cam_id] = [reg_features_tel]

@@ -37,8 +37,8 @@ except ImportError:
 from ctapipe.calib import CameraCalibrator
 
 
-pckl_load = False
 pckl_write = True
+pckl_load = not pckl_write
 
 cam_id_list = [
         # 'GATE',
@@ -198,6 +198,21 @@ if __name__ == '__main__':
                         tel_phi[tel_id] = 0.*u.deg
                         tel_theta[tel_id] = 20.*u.deg
 
+
+                    if cam_geom[tel_id].cam_id in LST_List:
+                        n_lst += 1
+                    elif cam_geom[tel_id].cam_id in MST_List:
+                        n_mst += 1
+                    elif cam_geom[tel_id].cam_id in SST_List:
+                        n_sst += 1
+                    else:
+                        raise ValueError(
+                                "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
+                                "-- please add to corresponding list")
+
+                    if cam_geom[tel_id].cam_id is not "ASTRICam":
+                        continue
+
                     # trying to clean the image
                     try:
                         pmt_signal, new_geom = \
@@ -223,30 +238,6 @@ if __name__ == '__main__':
                         if not (moments.width > 0 and moments.length > 0):
                             continue
 
-                        if False:
-                            from ctapipe.visualization import CameraDisplay
-                            fig = plt.figure(figsize=(17, 10))
-
-                            ax1 = fig.add_subplot(121)
-                            disp1 = CameraDisplay(cam_geom[tel_id],
-                                                  image=np.sqrt(event.mc.tel[tel_id]
-                                                                .photo_electron_image),
-                                                  ax=ax1)
-                            disp1.cmap = plt.cm.inferno
-                            disp1.add_colorbar()
-                            plt.title("sqrt photo-electron image")
-
-                            ax3 = fig.add_subplot(122)
-                            disp3 = CameraDisplay(new_geom,
-                                                  image=np.sqrt(pmt_signal),
-                                                  ax=ax3)
-                            disp3.overlay_moments(moments, color='seagreen', linewidth=3)
-                            disp3.cmap = plt.cm.inferno
-                            disp3.add_colorbar()
-                            plt.title("sqrt cleaned image")
-                            plt.suptitle(args.mode)
-                            plt.show()
-
                     except HillasParameterizationError as e:
                         print(e)
                         print("ignoring this camera")
@@ -254,17 +245,6 @@ if __name__ == '__main__':
 
                     hillas_dict[tel_id] = moments
                     tot_signal += moments.size
-
-                    if cam_geom[tel_id].cam_id in LST_List:
-                        n_lst += 1
-                    elif cam_geom[tel_id].cam_id in MST_List:
-                        n_mst += 1
-                    elif cam_geom[tel_id].cam_id in SST_List:
-                        n_sst += 1
-                    else:
-                        raise ValueError(
-                                "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
-                                "-- please add to corresponding list")
 
                     Imagecutflow[cl].count("Hillas")
 
@@ -360,15 +340,23 @@ if __name__ == '__main__':
                   'random_state': 0}
 
     # try neural network
-    from sklearn.neural_network import MLPClassifier
-    from sklearn.preprocessing import StandardScaler
-    # clf_kwargs = {'classifier': MLPClassifier, 'random_state': 1, 'alpha': 1e-5,
-    #               'hidden_layer_sizes': (200, 200, 100)}
+    if False:
+        from sklearn.neural_network import MLPClassifier
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
 
-    # hidden layer trials
-    # (100, 50)    AUC: 92-93
-    # (100, 100)   AUC: 93,92,92,93,92
-    # (100, 100)   AUC: 92,93,92,93,93
+        clf_kwargs = {'random_state': 1, 'alpha': 1e-5,
+                      'hidden_layer_sizes': (150, 150, 150)}
+        mlp_clf = MLPClassifier(**clf_kwargs)
+
+        sskal = StandardScaler()
+        clf_kwargs = {"classifier": Pipeline,
+                      "steps": [("sskal", sskal), ("mlp_clf", mlp_clf)]}
+
+        # hidden layer trials
+        # (100, 50)    AUC: 92-93
+        # (100, 100)   AUC: 93,92,92,93,92
+        # (100, 100)   AUC: 92,93,92,93,93
 
     clf_kwargs['cam_id_list'] = cam_id_list
 
@@ -421,6 +409,17 @@ if __name__ == '__main__':
         colours = ["darkorange", "r", "b", "g", "black"]
 
         plt.figure()
+        lw = 2
+        # plot a diagonal line that represents purely random choices
+        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver operating characteristic')
+        plt.suptitle("{} ** {}".format(
+            "wavelets" if args.mode == "wave" else "tailcuts", clf))
+
         X, y = np.array(trainFeatures), np.array(trainClasses)
         sss = StratifiedShuffleSplit(n_splits=3, test_size=0.5, random_state=0)
         for i, (train_index, test_index) in enumerate(sss.split(X, y)):
@@ -440,21 +439,9 @@ if __name__ == '__main__':
             roc_auc = auc(fpr, tpr)
             print("area under curve:", roc_auc)
 
-            lw = 2
             plt.plot(fpr, tpr, color=colours[i],
                      lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
             plt.pause(.1)
-
-        # plot a diagonal line that represents purely random choices
-        plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title('Receiver operating characteristic')
-        plt.suptitle("{} ** {}".format(
-            "wavelets" if args.mode == "wave" else "tailcuts",
-            clf))
         plt.legend(loc="lower right", title="cross validation")
 
         if args.write:
