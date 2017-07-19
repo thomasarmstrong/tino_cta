@@ -22,10 +22,13 @@ except:
     print("something missing from datapipe.denoising.wavelets_mrfilter -- skimage?")
 
 
-try:
-    from .extract_and_crop_simtel_images import crop_astri_image
-except:
-    print("something missing from extract_and_crop_simtel_images")
+# try:
+#     from .extract_and_crop_simtel_images import crop_astri_image
+# except:
+#     print("something missing from extract_and_crop_simtel_images")
+
+
+from datapipe.io.geometry_converter import astri_to_2d_array, array_2d_to_astri
 
 
 class UnknownModeException(Exception):
@@ -112,6 +115,8 @@ class ImageCleaner:
             self.wavelet_cleaning = \
                 lambda *arg, **kwargs: WaveletTransform().clean_image(
                                 *arg, **kwargs,
+                                inject_noise_in_nan=True,
+                                kill_isolated_pixels=True,
                                 tmp_files_directory=tmp_files_directory,
                                 mrfilter_directory=mrfilter_directory)
             self.island_threshold = 1.5
@@ -147,9 +152,10 @@ class ImageCleaner:
                                                  " images only for ASTRI so far")
 
     def clean_wave_astri(self, img, cam_geom):
-        cropped_img = crop_astri_image(img)
+        array2d_img = astri_to_2d_array(img)
         cleaned_img = self.wavelet_cleaning(
-                cropped_img, raw_option_string=self.wavelet_options[cam_geom.cam_id])
+                array2d_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
+                )
 
         self.cutflow.count("wavelet cleaning")
 
@@ -165,10 +171,10 @@ class ImageCleaner:
                     raise EdgeEventException
             self.cutflow.count("wavelet edge")
 
-        new_img = cleaned_img.flatten()
+        new_img = array_2d_to_astri(cleaned_img)
         new_geom = copy(cam_geom)
-        new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
-        new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
+        new_geom.pix_x = cam_geom.pix_x
+        new_geom.pix_y = cam_geom.pix_y
         new_geom.mask = np.ones_like(new_geom.pix_x, dtype=bool)
         new_geom.pix_area = np.ones_like(new_img) * cam_geom.pix_area[0]
 
@@ -179,8 +185,6 @@ class ImageCleaner:
                                 cam_geom, img, cam_geom.cam_id)
 
         square_mask = rot_geom.mask
-        # rot_img[~square_mask] = np.random.normal(0.13, 5.77,
-        #                                          np.count_nonzero(~square_mask))
 
         cleaned_img = self.wavelet_cleaning(
                 rot_img, raw_option_string=self.wavelet_options[cam_geom.cam_id])
@@ -209,8 +213,8 @@ class ImageCleaner:
 
         self.cutflow.count("tailcut cleaning")
 
-        if cam_geom.cam_id == "ASTRI":
-            img = crop_astri_image(img)
+        if "ASTRI" in cam_geom.cam_id:
+            img = astri_to_2d_array(img)
 
             # if set, remove all signal patches but the biggest one
             new_img = self.island_cleaning(img)
@@ -224,11 +228,8 @@ class ImageCleaner:
                         raise EdgeEventException
                 self.cutflow.count("tailcut edge")
 
-            new_img = new_img.flatten()
-            new_geom = copy(cam_geom)
-            new_geom.pix_x = crop_astri_image(cam_geom.pix_x).flatten()
-            new_geom.pix_y = crop_astri_image(cam_geom.pix_y).flatten()
-            new_geom.pix_area = np.ones_like(new_img) * cam_geom.pix_area[0]
+            new_img = array_2d_to_astri(new_img)
+            new_geom = cam_geom
         else:
             rot_geom, rot_img = convert_geometry_1d_to_2d(
                                     cam_geom, img, cam_geom.cam_id)
