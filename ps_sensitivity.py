@@ -14,8 +14,8 @@ from itertools import chain
 
 from helper_functions import *
 
-from ctapipe.analysis.sensitivity import (SensitivityPointSource,
-                                          crab_source_rate, CR_background_rate, Eminus2)
+from ctapipe.analysis.sensitivity import (SensitivityPointSource, e_minus_2,
+                                          crab_source_rate, cr_background_rate)
 
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-poster')
@@ -51,8 +51,7 @@ def selection_mask(event_table, ntels=3, gammaness=.75, r_max=0.1*u.deg):
             (event_table["off_angle"] < r_max))
 
 
-if __name__ == "__main__":
-
+def main_compare():
     parser = make_argparser()
     parser.add_argument('--events_dir', type=str, default="data/events")
     parser.add_argument('--in_file', type=str, default="classified_events")
@@ -428,3 +427,111 @@ if __name__ == "__main__":
         #     proton_weight = proton_weight_flat
 
         plt.show()
+
+
+def main_optimise():
+    parser = make_argparser()
+    parser.add_argument('--events_dir', type=str, default="data/events")
+    parser.add_argument('--in_file', type=str, default="classified_events")
+    args = parser.parse_args()
+
+    apply_cuts = True
+    gammaness_wave = .75
+    gammaness_tail = .75
+    r_max_gamm_wave = 0.04*u.deg
+    r_max_gamm_tail = 0.04*u.deg
+    r_max_prot = 2*u.deg
+
+    NReuse_Gammas = 10
+    NReuse_Proton = 20
+
+    NGammas_per_File = 5000 * NReuse_Gammas
+    NProton_per_File = 5000 * NReuse_Proton
+
+    NGammas_simulated = NGammas_per_File * (498-14)
+    NProton_simulated = NProton_per_File * (6998-100)
+
+    print()
+    print("gammas simulated:", NGammas_simulated)
+    print("proton simulated:", NProton_simulated)
+    print()
+    print("observation time:", observation_time)
+
+    gammas = open_pytable_as_pandas(
+            "{}/{}_{}_{}_run1001-run1012.h5".format(
+                    args.events_dir, args.in_file, "gamma", "wave"))
+
+    proton = open_pytable_as_pandas(
+            "{}/{}_{}_{}_run10000-run10043.h5".format(
+                    args.events_dir, args.in_file, "proton", "wave"))
+
+    print()
+    print("gammas present (wavelets):", len(gammas))
+    print("proton present (wavelets):", len(proton))
+
+    # faking reconstructed energy
+    gammas["reco_Energy"] = gammas["MC_Energy"]
+    proton["reco_Energy"] = np.random.uniform(100, 600000, len(proton))*u.GeV
+
+    # define edges to sort events in
+    n_e_bins = 20
+    e_bins_fine = np.logspace(-1, np.log10(600), n_e_bins)*u.TeV
+    xi_ebinned = [[] for a in range(n_e_bins)]
+
+    for xi, en in zip(gammas["off_angle"], gammas["reco_Energy"]):
+        xi_ebinned[np.digitize(en*u.GeV.to(u.TeV), e_bins_fine)].append(xi)
+
+    xi68_ebinned = np.zeros(len(xi_ebinned))
+
+    for i, ebin in enumerate(xi_ebinned):
+        try:
+            res = np.percentile(ebin, 68)
+        except IndexError:
+            res = 0
+        xi68_ebinned[i] = res
+
+    from scipy.optimize import curve_fit
+
+    popt, pcov = curve_fit(xi_fitfunc, e_bins_fine[1:-1].value, xi68_ebinned[1:-1])
+
+    plt.figure()
+    plt.semilogx(e_bins_fine[1:-1], xi68_ebinned[1:-1])
+    plt.semilogx(e_bins_fine[1:-1], xi_fitfunc(e_bins_fine[1:-1].value, *popt))
+    plt.pause(.1)
+
+    # applying some cuts
+    if apply_cuts:
+        gammas = gammas[selection_mask(
+                gammas, gammaness=gammaness_wave, r_max=r_max_gamm_wave)]
+        proton = proton[selection_mask(
+                proton, gammaness=gammaness_wave, r_max=r_max_prot)]
+
+    SensCalc = SensitivityPointSource(
+            reco_energies={'g': gammas['reco_Energy'].values*u.GeV,
+                           'p': proton['reco_Energy'].values*u.GeV},
+            mc_energies={'g': gammas['MC_Energy'].values*u.GeV,
+                         'p': proton['MC_Energy'].values*u.GeV},
+            energy_bin_edges={'g': edges_gammas,
+                              'p': edges_proton},
+            flux_unit=flux_unit)
+
+    event_weights = SensCalc.generate_event_weights(
+                            n_simulated_events={'g': NGammas_simulated,
+                                                'p': NProton_simulated},
+                            generator_areas={'g': np.pi * (1000*u.m)**2,
+                                             'p': np.pi * (2000*u.m)**2},
+                            observation_time=observation_time,
+                            spectra={'g': crab_source_rate,
+                                     'p': cr_background_rate},
+                            e_min_max={"g": (0.1, 330)*u.TeV,
+                                       "p": (0.1, 600)*u.TeV},
+                            generator_gamma={"g": 2, "p": 2})
+
+
+def xi_fitfunc(x, a, b, c, d, e, f, g, h):
+    x = np.log10(x)
+    return a + b*x + c*x**2 + d*x**3 + e*x**4 + f*x**5 + g*x**6 + h*x**7
+
+
+if __name__ == "__main__":
+    main_optimise()
