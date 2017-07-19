@@ -93,7 +93,7 @@ if __name__ == '__main__':
     # use this in the selection of the gain channels
     np_true_false = np.array([[True], [False]])
 
-    island_cleaning = True
+    island_cleaning = False
     skip_edge_events = False  # args.skip_edge_events
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
@@ -125,8 +125,8 @@ if __name__ == '__main__':
 
     allowed_tels = None
     # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    allowed_tels = range(34)  # all ASTRI telescopes
+    # allowed_tels = range(34, 40)  # use the array of FlashCams instead
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -274,11 +274,9 @@ if __name__ == '__main__':
                     pmt_signal_w, new_geom_w = \
                         Cleaner['w'].clean(pmt_signal+5
                                            if args.add_offset else pmt_signal,
-                                           cam_geom[tel_id],
-                                           event.inst.optical_foclen[tel_id])
+                                           cam_geom[tel_id])
                     pmt_signal_t, new_geom_t = \
-                        Cleaner['t'].clean(pmt_signal.copy(), cam_geom[tel_id],
-                                           event.inst.optical_foclen[tel_id])
+                        Cleaner['t'].clean(pmt_signal.copy(), cam_geom[tel_id])
                     geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id]}
                 except (FileNotFoundError, EdgeEventException) as e:
                     print(e)

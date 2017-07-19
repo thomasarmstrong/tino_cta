@@ -32,8 +32,8 @@ except ImportError:
 from ctapipe.calib import CameraCalibrator
 
 
-pckl_load = True
-pckl_write = False
+pckl_write = True
+pckl_load = not pckl_write
 
 cam_id_list = [
         # 'GATE',
@@ -41,7 +41,7 @@ cam_id_list = [
         # 'NectarCam',
         # 'LSTCam',
         # 'SST-1m',
-        'FlashCam',
+        # 'FlashCam',
         'ASTRICam',
         # 'SCTCam',
         ]
@@ -59,8 +59,6 @@ EnergyFeatures = namedtuple("EnergyFeatures", (
                                 "N_LST",
                                 "N_MST",
                                 "N_SST",
-                                #  "cen_r2",
-                                #  "phi""_minus_""psi",
                                 "width",
                                 "length",
                                 "skewness",
@@ -96,6 +94,8 @@ if __name__ == '__main__':
     Eventcutflow.set_cut("position nan", lambda x: np.isnan(x).any())
 
     Imagecutflow = CutFlow("ImageCutFlow")
+    Imagecutflow.set_cut("noCuts", None)
+    Imagecutflow.set_cut("min charge", lambda x: x < args.min_charge)
 
     # pass in config and self if part of a Tool
     calib = CameraCalibrator(None, None)
@@ -122,7 +122,7 @@ if __name__ == '__main__':
     # allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    for filename in filenamelist_gamma[:10][:args.last]:
+    for filename in filenamelist_gamma[:14][:args.last]:
 
         if pckl_load:
             break
@@ -167,6 +167,21 @@ if __name__ == '__main__':
                     tel_phi[tel_id] = 0.*u.deg
                     tel_theta[tel_id] = 20.*u.deg
 
+                # count the current telescope according to its size
+                if cam_geom[tel_id].cam_id in LST_List:
+                    n_lst += 1
+                elif cam_geom[tel_id].cam_id in MST_List:
+                    n_mst += 1
+                elif cam_geom[tel_id].cam_id in SST_List:
+                    n_sst += 1
+                else:
+                    raise ValueError(
+                            "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
+                            "-- please add to corresponding list")
+
+                if cam_geom[tel_id].cam_id is not "ASTRICam":
+                    continue
+
                 pmt_signal = event.dl1.tel[tel_id].image
                 if pmt_signal.shape[0] > 1:
                     pick = (pmt_signal > 14).any(axis=0) != np_true_false
@@ -203,22 +218,10 @@ if __name__ == '__main__':
                 except HillasParameterizationError as e:
                     print(e)
                     print("ignoring this camera")
-                    pass
+                    continue
 
                 hillas_dict[tel_id] = moments
                 tot_signal += moments.size
-
-                if cam_geom[tel_id].cam_id in LST_List:
-                    n_lst += 1
-                elif cam_geom[tel_id].cam_id in MST_List:
-                    n_mst += 1
-                elif cam_geom[tel_id].cam_id in SST_List:
-                    n_sst += 1
-                else:
-                    raise ValueError(
-                            "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
-                            "-- please add to corresponding list")
-
                 Imagecutflow.count("Hillas")
 
             if Eventcutflow.cut("min2Tels reco", len(hillas_dict)):
@@ -297,13 +300,15 @@ if __name__ == '__main__':
     if pckl_load:
         print("reading pickle")
         from sklearn.externals import joblib
-        Features_event_list = joblib.load("./data/regression_features.pkl")
-        MC_Energies = joblib.load("./data/regression_energy.pkl")
+        Features_event_list = \
+            joblib.load("./data/{}_regression_features.pkl".format(args.mode))
+        MC_Energies = joblib.load("./data/{}_regression_energy.pkl".format(args.mode))
     elif pckl_write:
         print("writing pickle")
         from sklearn.externals import joblib
-        joblib.dump(Features_event_list, "./data/regression_features.pkl")
-        joblib.dump(MC_Energies, "./data/regression_energy.pkl")
+        joblib.dump(Features_event_list,
+                    "./data/{}_regression_features.pkl".format(args.mode))
+        joblib.dump(MC_Energies, "./data/{}_regression_energy.pkl".format(args.mode))
 
     print("length of features:")
     print(len(Features_event_list))
@@ -312,44 +317,34 @@ if __name__ == '__main__':
                   'random_state': 0}
 
     # try neural network
-    # from sklearn.neural_network import MLPRegressor
-    # reg_kwargs = {'regressor': MLPRegressor, 'random_state': 1, 'alpha': 1e-5,
-    #               'hidden_layer_sizes': (50, 50)}
+    if False:
+        from sklearn.neural_network import MLPRegressor
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        mlp_kwargs = {'random_state': 1, 'alpha': 1e-5,
+                      'hidden_layer_sizes': (150, 100, 50, 50, 25, 10)}
+        mlp_reg = MLPRegressor(**mlp_kwargs)
+
+        sskal = StandardScaler()
+        reg_kwargs = {"regressor": Pipeline,
+                      "steps": [("sskal", sskal), ("mlp_reg", mlp_reg)]}
+    elif False:
+        from sklearn.svm import SVR
+        reg_kwargs = {"regressor": SVR}
 
     reg_kwargs['cam_id_list'] = cam_id_list
-
     reg = EnergyRegressor(**reg_kwargs)
     print(reg)
 
-    train_features, train_targets = reg.reshuffle_event_list(Features_event_list,
-                                                             MC_Energies)
-    # for cam_id, feats in train_features.items():
-    #     feats = np.array(feats)
-    #     print()
-    #     print(cam_id)
-    #     print("shape:", feats.shape)
-    #     min_features = np.min(feats, axis=0)
-    #     max_features = np.max(feats, axis=0)
-    #     print(min_features)
-    #     print(max_features)
-    #
-    #     feats /= max_features[None, :]
-    #     feats = (feats-min_features) / (max_features-min_features)
-    #
-    #     min_features = np.min(feats, axis=0)
-    #     max_features = np.max(feats, axis=0)
-    #     print(cam_id, min_features, max_features)
-    #
-    #     train_features[cam_id] = feats
-
-    reg.fit(train_features, train_targets)
+    reg.fit(*reg.reshuffle_event_list(Features_event_list, MC_Energies))
 
     # save the regressor to disk
     if args.store:
         reg.save(args.outpath.format(**{
                             "mode": args.mode,
-                            "wave_args": "mixed",
-                            # args.raw.replace(' ', '').replace(',', ''),
+                            "wave_args": (args.raw or "mixed").replace(' ', '')
+                                                              .replace(',', ''),
                             "regressor": reg, "cam_id": "{cam_id}"}))
 
     if args.plot:
@@ -363,7 +358,7 @@ if __name__ == '__main__':
             if args.write:
                 save_fig('{}/regression_importance_{}_{}_{}'.format(args.plots_dir,
                          args.mode,
-                         args.raw.replace(' ', '').replace(',', ''),
+                         (args.raw or "misc").replace(' ', '').replace(',', ''),
                          reg))
         except AttributeError as e:
             print("{} does not support feature importances".format(reg))
@@ -431,7 +426,7 @@ if __name__ == '__main__':
                        extent=[*bins[1, [0, -1]], *bins[0, [0, -1]]], aspect="auto")
             plt.plot(*bins[:, [0, -1]])
             plt.xlabel('log10(E_MC / TeV)')
-            plt.ylabel('log10(E_predict / TeV)')
+            plt.ylabel('log10(E_reco / TeV)')
             plt.title(cam_id)
             plt.colorbar()
 
@@ -443,7 +438,7 @@ if __name__ == '__main__':
 
         if args.write:
             save_fig('{}/energy_migration_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, args.raw.replace(" ", ""), reg))
+                     args.mode, (args.raw or "misc").replace(" ", ""), reg))
 
         #
         # 2D histogram E_rel_error vs E_mc
@@ -460,8 +455,8 @@ if __name__ == '__main__':
                        extent=[*relE_bins[1, [0, -1]], *relE_bins[0, [0, -1]]],
                        aspect="auto")
             plt.plot(relE_bins[1, [0, -1]], (0, 0))
-            plt.xlabel('log10(E_predict / TeV)')
-            plt.ylabel('(E_predict-E_MC)/ E_MC')
+            plt.xlabel('log10(E_reco / TeV)')
+            plt.ylabel('(E_reco-E_MC)/ E_MC')
             plt.title(cam_id)
             plt.colorbar()
 
@@ -495,6 +490,6 @@ if __name__ == '__main__':
 
         if args.write:
             save_fig('{}/energy_relative_error_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, args.raw.replace(" ", ""), reg))
+                     args.mode, (args.raw or "misc").replace(" ", ""), reg))
 
         plt.show()

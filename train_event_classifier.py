@@ -46,7 +46,7 @@ cam_id_list = [
         # 'NectarCam',
         # 'LSTCam',
         # 'SST-1m',
-        'FlashCam',
+        # 'FlashCam',
         'ASTRICam',
         # 'SCTCam',
         ]
@@ -134,8 +134,8 @@ if __name__ == '__main__':
     # allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    for filenamelist_class in [filenamelist_gamma[:10],
-                               filenamelist_proton[:70]]:
+    for filenamelist_class in [filenamelist_gamma[:14],
+                               filenamelist_proton[:100]]:
 
         if pckl_load:
             break
@@ -198,7 +198,7 @@ if __name__ == '__main__':
                         tel_phi[tel_id] = 0.*u.deg
                         tel_theta[tel_id] = 20.*u.deg
 
-
+                    # count the current telescope according to its size
                     if cam_geom[tel_id].cam_id in LST_List:
                         n_lst += 1
                     elif cam_geom[tel_id].cam_id in MST_List:
@@ -241,7 +241,7 @@ if __name__ == '__main__':
                     except HillasParameterizationError as e:
                         print(e)
                         print("ignoring this camera")
-                        pass
+                        continue
 
                     hillas_dict[tel_id] = moments
                     tot_signal += moments.size
@@ -313,11 +313,13 @@ if __name__ == '__main__':
     if pckl_load:
         print("reading pickle")
         from sklearn.externals import joblib
-        Features_event_list = joblib.load("./data/classification_features.pkl")
+        Features_event_list = \
+            joblib.load("./data/{}_classification_features.pkl".format(args.mode))
     elif pckl_write:
         print("writing pickle")
         from sklearn.externals import joblib
-        joblib.dump(Features_event_list, "./data/classification_features.pkl")
+        joblib.dump(Features_event_list,
+                    "./data/{}_classification_features.pkl".format(args.mode))
 
     print("length of features:")
     for cl, feat in Features_event_list.items():
@@ -345,11 +347,11 @@ if __name__ == '__main__':
         from sklearn.pipeline import Pipeline
         from sklearn.preprocessing import StandardScaler
 
-        clf_kwargs = {'random_state': 1, 'alpha': 1e-5,
+        mlp_kwargs = {'random_state': 1, 'alpha': 1e-5,
                       'hidden_layer_sizes': (150, 150, 150)}
-        mlp_clf = MLPClassifier(**clf_kwargs)
-
+        mlp_clf = MLPClassifier(**mlp_kwargs)
         sskal = StandardScaler()
+
         clf_kwargs = {"classifier": Pipeline,
                       "steps": [("sskal", sskal), ("mlp_clf", mlp_clf)]}
 
@@ -364,21 +366,6 @@ if __name__ == '__main__':
     print(clf)
 
     train_features, train_classes = clf.reshuffle_event_list(trainFeatures, trainClasses)
-    # max_features = {}
-    # for cam_id, feats in train_features.items():
-    #     feats = np.array(feats)
-    #     print()
-    #     print(cam_id)
-    #     print("shape:", feats.shape)
-    #     # print("feats:\n", feats)
-    #     print()
-    #     min_features = np.min(np.abs(feats), axis=0)
-    #     max_features[cam_id] = np.max(np.abs(feats), axis=0)
-    #     print("min_features:\n", min_features)
-    #     print("max_features:\n", max_features[cam_id])
-    #
-    #     # this has only an effect on the fit underneath `args.store`
-    #     train_features[cam_id] = feats / max_features[cam_id]
 
     # save the classifier to disk
     if args.store:
@@ -401,6 +388,7 @@ if __name__ == '__main__':
                 save_fig('{}/classification_importance_{}_{}_{}'.format(args.plots_dir,
                          args.mode, args.raw.replace(" ", ""), clf))
         except AttributeError as e:
+            print(e)
             print("{} does not support feature importances".format(clf))
 
         # plot area under curve for a few cross-validations
@@ -429,8 +417,6 @@ if __name__ == '__main__':
             clf = EventClassifier(**clf_kwargs)
 
             X_train_flat, y_train_flat = clf.reshuffle_event_list(X_train, y_train)
-            # for cam_id in X_train_flat:
-            #     X_train_flat[cam_id] = X_train_flat[cam_id] / max_features[cam_id]
             clf.fit(X_train_flat, y_train_flat)
 
             y_score = clf.predict_proba_by_event(X_test)[:, 0]
@@ -442,11 +428,14 @@ if __name__ == '__main__':
             plt.plot(fpr, tpr, color=colours[i],
                      lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
             plt.pause(.1)
+
+        # legend does not update dynamically, needs to be called at the end
         plt.legend(loc="lower right", title="cross validation")
 
         if args.write:
-            save_fig('{}/classification_area_under_curve_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, args.raw.replace(" ", ""), clf))
+            save_fig('{}/classification_receiver_operating_curve_{}_{}_{}'
+                     .format(args.plots_dir, args.mode,
+                             (args.raw or "misc").replace(" ", ""), clf))
         plt.pause(.1)
 
         # plot gammaness as function of number of telescopes
@@ -474,8 +463,8 @@ if __name__ == '__main__':
                 except:
                     continue
 
-                temp = np.histogram2d(NTels, y_score, bins=(range(2, 10),
-                                                            np.linspace(0, 1, 11)))[0].T
+                temp = np.histogram2d(NTels, y_score,
+                                      bins=(range(2, 10), np.linspace(0, 1, 11)))[0].T
 
                 if histos[cl] is None:
                     histos[cl] = temp
@@ -498,4 +487,10 @@ if __name__ == '__main__':
         plt.suptitle("{} ** {}".format("wavelets" if args.mode == "wave" else "tailcuts",
                                        clf))
         plt.subplots_adjust(left=0.10, right=0.95, wspace=0.33)
+
+        if args.write:
+            save_fig('{}/classification_gammaness_vs_NTel_{}_{}_{}'
+                     .format(args.plots_dir, args.mode,
+                             (args.raw or "misc").replace(" ", ""), clf))
+
         plt.show()
