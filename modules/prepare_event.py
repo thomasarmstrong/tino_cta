@@ -108,8 +108,6 @@ class EventPreparator():
                 else:
                     pmt_signal = pmt_signal.ravel()
 
-                max_signals[tel_id] = np.max(pmt_signal)
-
                 # clean the image
                 try:
                     pmt_signal, new_geom = \
@@ -126,6 +124,9 @@ class EventPreparator():
                     continue
 
                 self.image_cutflow.count("cleaning")
+
+                # could this go into `hillas_parameters` ...?
+                max_signals[tel_id] = np.max(pmt_signal)
 
                 # do the hillas reconstruction of the images
                 try:
