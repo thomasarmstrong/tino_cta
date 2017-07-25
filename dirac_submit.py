@@ -1,7 +1,8 @@
 #!/usr/bin/env python2
 
-import glob
+import os
 import sys
+import glob
 import re
 
 from DIRAC.Core.Base import Script
@@ -31,15 +32,18 @@ dirac = Dirac()
 #        ##    ##    ##       ##       ##   ##    ##  ##  #### ##    ##
 #  ##    ##    ##    ##       ##       ##    ##   ##  ##   ### ##    ##
 #   ######     ##    ######## ######## ##     ## #### ##    ##  ######
-wavelet_args = "-K -C1 -m3 -s2,2,3 -n4"
+mode = "tail" if "tail" in sys.argv else "wave"
+cam_id_list = ["ASTRICam"]
+wavelet_args = None
 
 pilot_args = ' '.join((
         'classify_and_reconstruct.py',
         '--classifier ./{classifier}',
+        '--regressor ./{regressor}',
         '--out_file {out_file}',
         '--store',
         '--indir ./ --infile_list run*.gz',
-        '--tail',  # comment out to do wavelet cleaning
+        '--tail' if "tail" in sys.argv else '',
         ))
 
 
@@ -58,14 +62,22 @@ window_sizes = [3*4, 11*4]
 # I used the first few files to train the classifier -- skip these
 start_runs = [14, 100]
 
-mode = "tail" if "tail" in pilot_args else "wave"
 
-# the pickled classifier on the GRID
-classifier_LFN = "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/classifier/"\
-                 "{}/classifier_{}_{}_{}.pkl".format(
-                         "ASTRI", mode,
-                         re.sub('[ ,]', '', wavelet_args),
-                         "RandomForestClassifier")
+# the pickled classifier and regressor on the GRID
+classifier_LFN = "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/ml_models/"\
+                 "{}/classifier_{}_{}_{}_{}.pkl".format(
+                         "astri_mini",
+                         mode,
+                         re.sub('[ ,]', '', wavelet_args) if wavelet_args else "mixed",
+                         "RandomForestClassifier",
+                         "{cam_id}")
+regressor_LFN = "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/ml_models/"\
+                 "{}/regressor_{}_{}_{}_{}.pkl".format(
+                         "astri_mini",
+                         mode,
+                         re.sub('[ ,]', '', wavelet_args) if wavelet_args else "mixed",
+                         "RandomForestRegressor",
+                         "{cam_id}")
 
 
 # define a template name for the file that's going to be written out.
@@ -84,12 +96,14 @@ input_sandbox = ['modules', 'helper_functions.py',
                  # sets up the environment + script that is being run
                  'dirac_pilot.sh', pilot_args.split()[0],
 
-                 # the pickled model for the event classifier
-                 classifier_LFN,
-
                  # the executable for the wavelet cleaning
                  'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter',
                  ]
+for cam_id in cam_id_list:
+    # the pickled model for the event classifier
+    input_sandbox.append(classifier_LFN.format(cam_id=cam_id))
+    # the pickled model for the energy regressor
+    input_sandbox.append(regressor_LFN.format(cam_id=cam_id))
 
 
 print("\nrunning as:")
@@ -126,10 +140,12 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
 
         j = Job()
         j.setCPUTime(30000)  # 1 h in seconds times 8 (CPU normalisation factor)
-        j.setName('classifier {}.{}.{}'.format(channel, mode, run_token))
+        j.setName('reconstruct {}.{}.{}'.format(channel, mode, run_token))
 
         # bad sites -- here miniconda cannot be found (due to bad vo configuration?)
-        j.setBannedSites(['LCG.CAMK.pl'])
+        # j.setBannedSites(['LCG.CAMK.pl'])
+
+        j.setDestination("ARC.SE-SNIC-T2.se")
 
         j.setInputSandbox(input_sandbox +
                           # adding the data files into the input sandbox instead of input
@@ -152,7 +168,8 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
         # starts the script with all parameters given by `pilot_args`
         j.setExecutable('dirac_pilot.sh',
                         pilot_args.format(out_file=output_filename,
-                                          classifier=classifier_LFN.split('/')[-1]))
+                                          regressor=os.path.basename(regressor_LFN),
+                                          classifier=os.path.basename(classifier_LFN)))
 
         # check if we should somehow stop doing what we are doing
         if "dry" in sys.argv:
