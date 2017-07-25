@@ -168,7 +168,8 @@ class EventPreparator():
                self.event_cutflow.cut("direction nan", dir_fit):
                 continue
 
-            yield PreparedEvent(event, hillas_dict, n_tels,
-                                tot_signal, max_signals, pos_fit, dir_fit,
-                                err_est_pos, err_est_dir
+            yield PreparedEvent(event=event, hillas_dict=hillas_dict, n_tels=n_tels,
+                                tot_signal=tot_signal, max_signals=max_signals,
+                                pos_fit=pos_fit, dir_fit=dir_fit,
+                                err_est_pos=err_est_pos, err_est_dir=err_est_dir
                                 )
