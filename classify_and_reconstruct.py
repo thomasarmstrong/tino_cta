@@ -42,7 +42,7 @@ except:
     from ctapipe.reco.HillasReconstructor import \
         HillasReconstructor, TooFewTelescopesException
 
-from modules.prepare_event import prepare_event
+from modules.prepare_event import EventPreparator
 
 # PyTables
 try:
@@ -114,31 +114,25 @@ def main():
     # tel_theta = {}
     # tel_orientation = (tel_phi, tel_theta)
 
-    # counting events and where they might have gone missing
+    # keeping track of events and where they were rejected
     Eventcutflow = CutFlow("EventCutFlow")
-    Eventcutflow.set_cut("noCuts", None)
-    Eventcutflow.set_cut("min2Tels trig", lambda x: x < 2)
-    Eventcutflow.set_cut("min2Tels reco", lambda x: x < 2)
-    Eventcutflow.set_cut("position nan", lambda x: np.isnan(x).any())
-
     Imagecutflow = CutFlow("ImageCutFlow")
-    Imagecutflow.set_cut("noCuts", None)
-    Imagecutflow.set_cut("min charge", lambda x: x < args.min_charge)
 
-    # pass in config and self if part of a Tool
-    calib = CameraCalibrator(None, None)
+    # takes care of image cleaning
+    cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
+                           wavelet_options=args.raw,
+                           skip_edge_events=False, island_cleaning=True)
 
-    # # use this in the selection of the gain channels
-    # np_true_false = np.array([[True], [False]])
-
-    # class that wraps tail cuts and wavelet cleaning
-    cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
-                           tmp_files_directory=args.wave_temp_dir,
-                           mrfilter_directory=args.wave_dir,
-                           skip_edge_events=False)  # args.skip_edge_events)
-
-    # simple hillas-based shower reco
+    # the class that does the shower reconstruction
     shower_reco = HillasReconstructor()
+
+    preper = EventPreparator(calib=None, cleaner=cleaner,
+                             hillas_parameters=hillas_parameters, shower_reco=shower_reco,
+                             event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
+                             # event/image cuts:
+                             allowed_cam_ids=["ASTRICam"],
+                             min_ntel=2,
+                             min_charge=args.min_charge, min_pixel=3)
 
     # wrapper for the scikit-learn classifier
     classifier = EventClassifier.load(
@@ -186,10 +180,6 @@ def main():
                                     "kurtosis",
                                     "err_est_pos"))
 
-    # LST_List = ["LSTCam"]
-    # MST_List = ["NectarCam", "FlashCam"]
-    # SST_List = ["ASTRICam", "SCTCam", "GATE", "DigiCam", "CHEC"]
-
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
@@ -236,14 +226,11 @@ def main():
                                      max_events=args.max_events)
 
         # loop that cleans and parametrises the images and performs the reconstruction
-        for (event, cam_geom, hillas_dict, n_lst, n_mst, n_sst,
-             tot_signal, max_signal, pos_fit, dir_fit,
-             err_est_pos, _) in prepare_event(source, calib=calib,
-                                              cleaner=cleaner,
-                                              hillas_parameters=hillas_parameters,
-                                              shower_reco=shower_reco,
-                                              Eventcutflow=Eventcutflow,
-                                              Imagecutflow=Imagecutflow):
+        for (event, hillas_dict, n_tels,
+             tot_signal, max_signals, pos_fit, dir_fit,
+             err_est_pos, _) in preper.prepare_event(source):
+
+            n_lst, n_mst, n_sst = n_tels["LST"], n_tels["MST"], n_tels["SST"]
 
             # now prepare the features for the classifier
             cls_features_evt = {}
@@ -259,7 +246,7 @@ def main():
                 cls_features_tel = ClassifierFeatures(
                             impact_dist_rec/u.m,
                             tot_signal,
-                            max_signal,
+                            max_signals[tel_id],
                             moments.size,
                             n_lst, n_mst, n_sst,
                             moments.width/u.m,
@@ -271,7 +258,7 @@ def main():
                 reg_features_tel = EnergyFeatures(
                             impact_dist_rec/u.m,
                             tot_signal,
-                            max_signal,
+                            max_signals[tel_id],
                             moments.size,
                             n_lst, n_mst, n_sst,
                             moments.width/u.m,
@@ -286,7 +273,7 @@ def main():
 
                 Imagecutflow.count("features nan")
 
-                cam_id = cam_geom[tel_id].cam_id
+                cam_id = event.inst.subarray.tel[tel_id].camera.cam_id
 
                 try:
                     reg_features_evt[cam_id] += [reg_features_tel]
@@ -332,7 +319,9 @@ def main():
         if signal_handler.stop:
             break
 
+    print()
     Eventcutflow()
+    print()
     Imagecutflow()
 
     if args.plot:
