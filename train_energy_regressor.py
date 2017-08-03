@@ -13,7 +13,6 @@ from ctapipe.reco.HillasReconstructor import \
 
 from ctapipe.utils import linalg
 
-from ctapipe.instrument import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.image.hillas import HillasParameterizationError, \
@@ -29,7 +28,7 @@ except ImportError:
     from modules.energy_regressor import *
     print("using tino_cta energy_regressor")
 
-from ctapipe.calib import CameraCalibrator
+from modules.prepare_event import EventPreparator
 
 
 pckl_write = True
@@ -46,10 +45,6 @@ cam_id_list = [
         # 'SCTCam',
         ]
 
-LST_List = ["LSTCam"]
-MST_List = ["NectarCam", "FlashCam"]
-SST_List = ["ASTRICam", "SCTCam", "GATE", "DigiCam", "CHEC"]
-
 
 EnergyFeatures = namedtuple("EnergyFeatures", (
                                 "impact_dist",
@@ -63,14 +58,15 @@ EnergyFeatures = namedtuple("EnergyFeatures", (
                                 "length",
                                 "skewness",
                                 "kurtosis",
-                                "err_est_pos"))
+                                "err_est_pos",
+                                "err_est_dir"))
 
 if __name__ == '__main__':
 
     parser = make_argparser()
     parser.add_argument('-o', '--outpath', type=str,
                         default='data/classifier_pickle/regressor'
-                                '_{mode}_{wave_args}_{regressor}_{cam_id}.pkl')
+                                '_{mode}_{cam_id}_{regressor}.pkl')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
@@ -81,35 +77,26 @@ if __name__ == '__main__':
         print("no gammas found")
         exit()
 
-    cam_geom = {}
-    tel_phi = {}
-    tel_theta = {}
-    tel_orientation = (tel_phi, tel_theta)
-
-    # counting events and where they might have gone missing
+    # keeping track of events and where they were rejected
     Eventcutflow = CutFlow("EventCutFlow")
-    Eventcutflow.set_cut("noCuts", None)
-    Eventcutflow.set_cut("min2Tels trig", lambda x: x < 2)
-    Eventcutflow.set_cut("min2Tels reco", lambda x: x < 2)
-    Eventcutflow.set_cut("position nan", lambda x: np.isnan(x).any())
-
     Imagecutflow = CutFlow("ImageCutFlow")
-    Imagecutflow.set_cut("noCuts", None)
-    Imagecutflow.set_cut("min charge", lambda x: x < args.min_charge)
 
-    # pass in config and self if part of a Tool
-    calib = CameraCalibrator(None, None)
-    Imagecutflow.set_cut("features nan", lambda x: np.isnan(x).any())
+    # takes care of image cleaning
+    cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
+                           wavelet_options=args.raw,
+                           skip_edge_events=False, island_cleaning=True)
 
-    # use this in the selection of the gain channels
-    np_true_false = np.array([[True], [False]])
+    # the class that does the shower reconstruction
+    shower_reco = HillasReconstructor()
 
-    # class that wraps tail cuts and wavelet cleaning
-    Cleaner = ImageCleaner(mode=args.mode, wavelet_options=args.raw,
-                           skip_edge_events=False)  # args.skip_edge_events)
-
-    # simple hillas-based shower reco
-    fit = HillasReconstructor()
+    preper = EventPreparator(calib=None, cleaner=cleaner,
+                             hillas_parameters=hillas_parameters, shower_reco=shower_reco,
+                             event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
+                             # event/image cuts:
+                             allowed_cam_ids=["ASTRICam"],  # [] or None means: all
+                             min_ntel=2,
+                             min_charge=args.min_charge, min_pixel=3)
+    Imagecutflow.add_cut("features nan", lambda x: np.isnan(x).any())
 
     Features_event_list = []
     MC_Energies = []
@@ -133,154 +120,41 @@ if __name__ == '__main__':
                                      allowed_tels=allowed_tels,
                                      max_events=args.max_events)
 
-        # event loop
-        for event in source:
-
-            Eventcutflow.count("noCuts")
-
-            mc_shower = event.mc
-            mc_shower_core = np.array([mc_shower.core_x.value,
-                                       mc_shower.core_y.value]) * u.m
-
-            if Eventcutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
-                continue
-
-            # calibrate the event
-            calib.calibrate(event)
-
-            # telescope loop
-            tot_signal = 0
-            max_signal = 0
-            n_lst = 0
-            n_mst = 0
-            n_sst = 0
-            hillas_dict = {}
-            for tel_id in event.dl0.tels_with_data:
-                Imagecutflow.count("noCuts")
-
-                # guessing camera geometry
-                if tel_id not in cam_geom:
-                    cam_geom[tel_id] = CameraGeometry.guess(
-                                        event.inst.pixel_pos[tel_id][0],
-                                        event.inst.pixel_pos[tel_id][1],
-                                        event.inst.optical_foclen[tel_id])
-                    tel_phi[tel_id] = 0.*u.deg
-                    tel_theta[tel_id] = 20.*u.deg
-
-                # count the current telescope according to its size
-                if cam_geom[tel_id].cam_id in LST_List:
-                    n_lst += 1
-                elif cam_geom[tel_id].cam_id in MST_List:
-                    n_mst += 1
-                elif cam_geom[tel_id].cam_id in SST_List:
-                    n_sst += 1
-                else:
-                    raise ValueError(
-                            "unknown camera id: {}".format(cam_geom[tel_id].cam_id) +
-                            "-- please add to corresponding list")
-
-                if cam_geom[tel_id].cam_id is not "ASTRICam":
-                    continue
-
-                pmt_signal = event.dl1.tel[tel_id].image
-                if pmt_signal.shape[0] > 1:
-                    pick = (pmt_signal > 14).any(axis=0) != np_true_false
-                    pmt_signal = pmt_signal.T[pick.T]
-                else:
-                    pmt_signal = pmt_signal.ravel()
-                max_signal = np.max(pmt_signal)
-
-                # trying to clean the image
-                try:
-                    pmt_signal, new_geom = \
-                        Cleaner.clean(pmt_signal.copy(), cam_geom[tel_id])
-
-                    if np.count_nonzero(pmt_signal) < 3:
-                        continue
-
-                except FileNotFoundError as e:
-                    print(e)
-                    continue
-                except EdgeEventException:
-                    continue
-
-                Imagecutflow.count("cleaning")
-
-                # trying to do the hillas reconstruction of the images
-                try:
-                    moments = hillas_parameters(new_geom.pix_x,
-                                                new_geom.pix_y,
-                                                pmt_signal)
-
-                    if not (moments.width > 0 and moments.length > 0):
-                        continue
-
-                except HillasParameterizationError as e:
-                    print(e)
-                    print("ignoring this camera")
-                    continue
-
-                hillas_dict[tel_id] = moments
-                tot_signal += moments.size
-                Imagecutflow.count("Hillas")
-
-            if Eventcutflow.cut("min2Tels reco", len(hillas_dict)):
-                continue
-
-            try:
-                # telescope loop done, now do the core fit
-                fit.get_great_circles(hillas_dict,
-                                      event.inst,
-                                      tel_phi, tel_theta)
-                pos_fit_cr, err_est_pos = fit.fit_core_crosses()
-            except Exception as e:
-                print(e)
-                continue
-
-            if Eventcutflow.cut("position nan", pos_fit_cr):
-                continue
-
-            pos_fit = pos_fit_cr
-
-            Eventcutflow.count("position fit")
+        # loop that cleans and parametrises the images and performs the reconstruction
+        for (event, hillas_dict, n_tels,
+             tot_signal, max_signals, pos_fit, dir_fit,
+             err_est_pos, err_est_dir) in preper.prepare_event(source):
 
             # now prepare the features for the classifier
             features_evt = {}
-            NTels = len(hillas_dict)
             for tel_id in hillas_dict.keys():
                 Imagecutflow.count("pre-features")
 
-                tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
-
                 moments = hillas_dict[tel_id]
 
-                impact_dist_sim = linalg.length(tel_pos-mc_shower_core)
+                tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
                 impact_dist_rec = linalg.length(tel_pos-pos_fit)
+
                 features_tel = EnergyFeatures(
                             impact_dist_rec/u.m,
                             tot_signal,
-                            max_signal,
+                            max_signals[tel_id],
                             moments.size,
-                            n_lst, n_mst, n_sst,
-                            # the distance of the shower core from the centre
-                            # since the camera might lose efficiency towards the edge
-                            # (not a good idea for on-axis point-source MC)
-                            # (moments.cen_x**2 +
-                            #  moments.cen_y**2) / u.m**2,
-                            # orientation of the hillas ellipsis wrt. the camera centre
-                            # (moments.phi -
-                            #  moments.psi)/u.deg,
+                            n_tels["SST"],
+                            n_tels["MST"],
+                            n_tels["SST"],
                             moments.width/u.m,
                             moments.length/u.m,
                             moments.skewness,
                             moments.kurtosis,
-                            err_est_pos/u.m
-                          )
+                            err_est_pos/u.m,
+                            err_est_dir/u.deg
+                        )
 
                 if Imagecutflow.cut("features nan", features_tel):
                     continue
 
-                cam_id = cam_geom[tel_id].cam_id
+                cam_id = event.inst.subarray.tel[tel_id].camera.cam_id
                 if cam_id in features_evt:
                     features_evt[cam_id] += [features_tel]
                 else:
@@ -288,7 +162,7 @@ if __name__ == '__main__':
 
             if len(features_evt):
                 Features_event_list.append(features_evt)
-                MC_Energies.append(mc_shower.energy)
+                MC_Energies.append(event.mc.energy)
 
             if signal_handler.stop:
                 break
@@ -341,11 +215,8 @@ if __name__ == '__main__':
 
     # save the regressor to disk
     if args.store:
-        reg.save(args.outpath.format(**{
-                            "mode": args.mode,
-                            "wave_args": (args.raw or "mixed").replace(' ', '')
-                                                              .replace(',', ''),
-                            "regressor": reg, "cam_id": "{cam_id}"}))
+        reg.save(args.outpath.format(**{"mode": args.mode,
+                                        "regressor": reg, "cam_id": "{cam_id}"}))
 
     if args.plot:
         # extract and show the importance of the various training features
@@ -356,10 +227,8 @@ if __name__ == '__main__':
                 "wavelets" if args.mode == "wave" else "tailcuts",
                 reg))
             if args.write:
-                save_fig('{}/regression_importance_{}_{}_{}'.format(args.plots_dir,
-                         args.mode,
-                         (args.raw or "misc").replace(' ', '').replace(',', ''),
-                         reg))
+                save_fig('{}/regression_importance_{}_{}'.format(args.plots_dir,
+                                                                 args.mode, reg))
         except AttributeError as e:
             print("{} does not support feature importances".format(reg))
             print(e)
@@ -437,8 +306,8 @@ if __name__ == '__main__':
             axs.ravel()[j].axis('off')
 
         if args.write:
-            save_fig('{}/energy_migration_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, (args.raw or "misc").replace(" ", ""), reg))
+            save_fig('{}/energy_migration_{}_{}'.format(args.plots_dir,
+                                                        args.mode, reg))
 
         #
         # 2D histogram E_rel_error vs E_mc
@@ -489,7 +358,7 @@ if __name__ == '__main__':
             axs.ravel()[j].axis('off')
 
         if args.write:
-            save_fig('{}/energy_relative_error_{}_{}_{}'.format(args.plots_dir,
-                     args.mode, (args.raw or "misc").replace(" ", ""), reg))
+            save_fig('{}/energy_relative_error_{}_{}'.format(args.plots_dir,
+                                                             args.mode, reg))
 
         plt.show()

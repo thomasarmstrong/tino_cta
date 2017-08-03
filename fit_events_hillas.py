@@ -22,7 +22,6 @@ except:
     class RecoEvent(dict):
         def __setitem__(self, foo, bar):
             raise NoPyTError
-    reco_event = RecoEvent()
     print("no pytables installed")
 
 from ctapipe.io.hessio import hessio_event_source
@@ -127,7 +126,16 @@ def main():
         reco_table = reco_outfile.create_table("/", "reco_event", RecoEvent)
         reco_event = reco_table.row
     except:
+        reco_event = RecoEvent()
         print("no pytables installed?")
+
+    # ##        #######   #######  ########
+    # ##       ##     ## ##     ## ##     ##
+    # ##       ##     ## ##     ## ##     ##
+    # ##       ##     ## ##     ## ########
+    # ##       ##     ## ##     ## ##
+    # ##       ##     ## ##     ## ##
+    # ########  #######   #######  ##
 
     # define here which telescopes to loop over
     allowed_tels = None
@@ -204,11 +212,19 @@ def main():
     print("\n\n")
     Eventcutflow("min2Tels trig")
     print()
-    Imagecutflow(sort_column=1)
+    Imagecutflow()  # sort_column=1)
 
     # if we don't want to plot anything, we can exit now
     if not args.plot:
         exit(0)
+
+    # ########  ##        #######  ########  ######
+    # ##     ## ##       ##     ##    ##    ##    ##
+    # ##     ## ##       ##     ##    ##    ##
+    # ########  ##       ##     ##    ##     ######
+    # ##        ##       ##     ##    ##          ##
+    # ##        ##       ##     ##    ##    ##    ##
+    # ##        ########  #######     ##     ######
 
     figure = plt.figure()
     xi_edges = np.linspace(0, 5, 20)

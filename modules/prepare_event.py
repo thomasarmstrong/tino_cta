@@ -8,7 +8,7 @@ from ctapipe.image import hillas
 from ctapipe.utils.linalg import rotation_matrix_2d
 
 from modules.ImageCleaning import ImageCleaner, EdgeEventException
-from modules.CutFlow import CutFlow
+from ctapipe.utils.CutFlow import CutFlow
 
 from collections import namedtuple, OrderedDict
 
@@ -42,21 +42,21 @@ class EventPreparator():
         self.image_cutflow = image_cutflow or CutFlow("ImageCutFlow")
 
         self.event_cutflow.set_cuts(OrderedDict([
-                                ("noCuts", None),
-                                ("min2Tels trig", lambda x: x < min_ntel),
-                                ("min2Tels reco", lambda x: x < min_ntel),
-                                # ("GreatCircles", None),
-                                ("position nan", lambda x: np.isnan(x.value).any()),
-                                ("direction nan", lambda x: np.isnan(x.value).any())
-                              ]))
+                    ("noCuts", None),
+                    ("min2Tels trig", lambda x: x < min_ntel),
+                    ("min2Tels reco", lambda x: x < min_ntel),
+                    ("position nan", lambda x: np.isnan(x.value).any()),
+                    ("direction nan", lambda x: np.isnan(x.value).any())
+                ]))
 
         allowed_cam_ids = allowed_cam_ids or []
         self.image_cutflow.set_cuts(OrderedDict([
                     ("noCuts", None),
-                    ("min charge", lambda x: x < min_charge),
                     ("camera type", lambda id: allowed_cam_ids and
                                                id not in allowed_cam_ids),
-                    ("min pixel", lambda s: np.count_nonzero(s) < min_pixel)
+                    ("min pixel", lambda s: np.count_nonzero(s) < min_pixel),
+                    ("min charge", lambda x: x < min_charge),
+                    ("poor moments", lambda m: m.width <= 0 or m.length <= 0)
                 ]))
 
     def prepare_event(self, source):
@@ -123,8 +123,6 @@ class EventPreparator():
                 except EdgeEventException:
                     continue
 
-                self.image_cutflow.count("cleaning")
-
                 # could this go into `hillas_parameters` ...?
                 max_signals[tel_id] = np.max(pmt_signal)
 
@@ -133,12 +131,12 @@ class EventPreparator():
                     moments = self.hillas_parameters(new_geom.pix_x,
                                                      new_geom.pix_y, pmt_signal)
 
-                    # if width and/or length are zero (e.g. when only on pixel or when all
-                    # pixel in one row), the parametrisation won't be very useful: skip
-                    if not (moments.width > 0 and moments.length > 0):
+                    # if width and/or length are zero (e.g. when there is only only one
+                    # pixel or when all  pixel are exactly in one row), the
+                    # parametrisation won't be very useful: skip
+                    if self.image_cutflow.cut("poor moments", moments):
                         continue
 
-                    self.image_cutflow.count("Hillas")
                 except hillas.HillasParameterizationError as e:
                     print(e)
                     print("ignoring this camera")
@@ -159,7 +157,7 @@ class EventPreparator():
                 dir_fit, crossings = self.shower_reco.fit_origin_crosses()
 
                 # don't have a direction error estimate yet
-                err_est_dir = 0
+                err_est_dir = 0*u.deg
             except Exception as e:
                 print(e)
                 continue

@@ -22,6 +22,7 @@ from modules.CutFlow import CutFlow
 from modules.ImageCleaning import ImageCleaner, EdgeEventException
 
 try:
+    raise ImportError
     from ctapipe.reco.event_classifier import *
     print("using ctapipe event_classifier")
 except ImportError:
@@ -29,6 +30,7 @@ except ImportError:
     print("using tino_cta event_classifier")
 
 try:
+    raise ImportError
     from ctapipe.reco.energy_regressor import *
     print("using ctapipe energy_regressor")
 except:
@@ -164,7 +166,8 @@ def main():
                                     "length",
                                     "skewness",
                                     "kurtosis",
-                                    "err_est_pos"))
+                                    "err_est_pos",
+                                    "err_est_dir"))
 
     EnergyFeatures = namedtuple("EnergyFeatures", (
                                     "impact_dist",
@@ -178,7 +181,8 @@ def main():
                                     "length",
                                     "skewness",
                                     "kurtosis",
-                                    "err_est_pos"))
+                                    "err_est_pos",
+                                    "err_est_dir"))
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -228,7 +232,7 @@ def main():
         # loop that cleans and parametrises the images and performs the reconstruction
         for (event, hillas_dict, n_tels,
              tot_signal, max_signals, pos_fit, dir_fit,
-             err_est_pos, _) in preper.prepare_event(source):
+             err_est_pos, err_est_dir) in preper.prepare_event(source):
 
             n_lst, n_mst, n_sst = n_tels["LST"], n_tels["MST"], n_tels["SST"]
 
@@ -253,7 +257,9 @@ def main():
                             moments.length/u.m,
                             moments.skewness,
                             moments.kurtosis,
-                            err_est_pos/u.m)
+                            err_est_pos/u.m,
+                            err_est_dir/u.deg
+                            )
 
                 reg_features_tel = EnergyFeatures(
                             impact_dist_rec/u.m,
@@ -265,8 +271,9 @@ def main():
                             moments.length/u.m,
                             moments.skewness,
                             moments.kurtosis,
-                            err_est_pos/u.m
-                          )
+                            err_est_pos/u.m,
+                            err_est_dir/u.deg
+                            )
 
                 if np.isnan(cls_features_tel).any() or np.isnan(reg_features_tel).any():
                     continue

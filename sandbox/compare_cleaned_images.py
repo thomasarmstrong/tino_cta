@@ -27,7 +27,6 @@ from extract_and_crop_simtel_images import crop_astri_image
 from datapipe.denoising.wavelets_mrfilter import WaveletTransform
 
 from ctapipe.instrument import CameraGeometry
-from ctapipe.instrument.InstrumentDescription import load_hessio
 
 from ctapipe.io.hessio import hessio_event_source
 from ctapipe.image.geometry_converter import *
@@ -41,10 +40,14 @@ from copy import deepcopy
 
 global tel_geom
 
+import time
 
 fig = None
 from ctapipe.visualization import CameraDisplay
 def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_electrons):
+
+    start_time = time.time()
+
     rot_x, rot_y = unskew_hex_pixel_grid(cam_geom.pix_x, cam_geom.pix_y,
                                          cam_geom.cam_rotation)
     colors = cm.inferno(pmt_signal/max(pmt_signal))
@@ -54,11 +57,10 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
     new_geom, new_signal = convert_geometry_1d_to_2d(
         cam_geom, pmt_signal, cam_geom.cam_id)
 
-    unrot_geom, unrot_signal = convert_geometry_back(
-        new_geom, new_signal, cam_geom.cam_id)
+    # unrot_geom, unrot_signal = convert_geometry_back(
+    #     new_geom, new_signal, cam_geom.cam_id)
 
     square_mask = new_geom.mask
-    print(args.raw)
     cleaned_img = wavelet_transform(new_signal,
                                     raw_option_string=args.raw)
 
@@ -78,9 +80,15 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
 
     square_image_add_noise_cleaned_ik = kill_isolpix(square_image_add_noise_cleaned,
                                                      threshold=1.5)
-    unrot_geom, unrot_noised_signal = convert_geometry_back(
-        new_geom, cleaned_img_ik, cam_geom.cam_id)
-        # new_geom, square_image_add_noise_cleaned_ik, cam_geom.cam_id)
+
+    try:
+        unrot_geom, unrot_noised_signal = convert_geometry_back(
+            new_geom, square_image_add_noise_cleaned_ik, cam_geom.cam_id)
+    except:
+        pass
+
+    end_time = time.time()
+    print(end_time - start_time)
 
     global fig
     global cb1, ax1
@@ -184,15 +192,17 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
     cb8 = plt.colorbar()
     ax8.set_axis_off()
 
-
-    ax9 = fig.add_subplot(339)
-    disp9 = CameraDisplay(unrot_geom, image=unrot_noised_signal,
-                          ax=ax9)
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.title("cleaned, original geometry, islands killed")
-    disp9.cmap = plt.cm.inferno
-    disp9.add_colorbar()
-    cb9 = disp9.colorbar
+    try:
+        ax9 = fig.add_subplot(339)
+        disp9 = CameraDisplay(unrot_geom, image=unrot_noised_signal,
+                              ax=ax9)
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.title("cleaned, original geometry, islands killed")
+        disp9.cmap = plt.cm.inferno
+        disp9.add_colorbar()
+        cb9 = disp9.colorbar
+    except:
+        pass
 
     plt.suptitle(cam_geom.cam_id)
     plt.subplots_adjust(top=0.94, bottom=.08, left=0, right=.96, hspace=.41, wspace=.08)

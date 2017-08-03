@@ -13,7 +13,7 @@ export LD_LIBRARY_PATH=./:$LD_LIBRARY_PATH
 # sourcing the ctapipe miniconda environment
 export MINICONDA=/cvmfs/cta.in2p3.fr/software/miniconda
 export PATH=$MINICONDA/bin:$PATH
-source $MINICONDA/bin/activate ctapipe_v0.5
+source $MINICONDA/bin/activate ctapipe_v0.5.2
 # old ctapipe environments:
 # source $MINICONDA/bin/activate ctapipe_v0.4
 

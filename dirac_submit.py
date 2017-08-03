@@ -58,26 +58,24 @@ astri_filelist_proton = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.
 redo = []
 
 # proton files are smaller, can afford more files per run -- at a ratio 11:3
-window_sizes = [3*4, 11*4]
-# I used the first few files to train the classifier -- skip these
+window_sizes = [3*5, 11*5]
+# I used the first few files to train the classifier and regressor -- skip them
 start_runs = [14, 100]
 
 
 # the pickled classifier and regressor on the GRID
-classifier_LFN = "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/ml_models/"\
-                 "{}/classifier_{}_{}_{}_{}.pkl".format(
-                         "astri_mini",
-                         mode,
-                         re.sub('[ ,]', '', wavelet_args) if wavelet_args else "mixed",
-                         "RandomForestClassifier",
-                         "{cam_id}")
-regressor_LFN = "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/ml_models/"\
-                 "{}/regressor_{}_{}_{}_{}.pkl".format(
-                         "astri_mini",
-                         mode,
-                         re.sub('[ ,]', '', wavelet_args) if wavelet_args else "mixed",
-                         "RandomForestRegressor",
-                         "{cam_id}")
+model_path_template = \
+    "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/ml_models/{}/{}_{}_{}_{}.pkl"
+classifier_LFN = model_path_template.format("astri_mini",
+                                            "classifier",
+                                            mode,
+                                            "{cam_id}",
+                                            "RandomForestClassifier")
+regressor_LFN = model_path_template.format("astri_mini",
+                                           "regressor",
+                                           mode,
+                                           "{cam_id}",
+                                           "RandomForestRegressor")
 
 
 # define a template name for the file that's going to be written out.
@@ -144,8 +142,6 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
 
         # bad sites -- here miniconda cannot be found (due to bad vo configuration?)
         # j.setBannedSites(['LCG.CAMK.pl'])
-
-        j.setDestination("ARC.SE-SNIC-T2.se")
 
         j.setInputSandbox(input_sandbox +
                           # adding the data files into the input sandbox instead of input

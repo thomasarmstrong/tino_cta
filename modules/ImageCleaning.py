@@ -21,13 +21,6 @@ try:
 except:
     print("something missing from datapipe.denoising.wavelets_mrfilter -- skimage?")
 
-
-# try:
-#     from .extract_and_crop_simtel_images import crop_astri_image
-# except:
-#     print("something missing from extract_and_crop_simtel_images")
-
-
 from datapipe.io.geometry_converter import astri_to_2d_array, array_2d_to_astri
 
 
@@ -108,7 +101,7 @@ class ImageCleaner:
         self.skip_edge_events = skip_edge_events
         self.cutflow = cutflow
 
-        if mode is None:
+        if mode in [None, "none", "None"]:
             self.clean = self.clean_none
         elif mode == "wave":
             self.clean = self.clean_wave
@@ -172,11 +165,7 @@ class ImageCleaner:
             self.cutflow.count("wavelet edge")
 
         new_img = array_2d_to_astri(cleaned_img)
-        new_geom = copy(cam_geom)
-        new_geom.pix_x = cam_geom.pix_x
-        new_geom.pix_y = cam_geom.pix_y
-        new_geom.mask = np.ones_like(new_geom.pix_x, dtype=bool)
-        new_geom.pix_area = np.ones_like(new_img) * cam_geom.pix_area[0]
+        new_geom = cam_geom
 
         return new_img, new_geom
 
