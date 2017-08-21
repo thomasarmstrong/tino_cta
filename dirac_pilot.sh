@@ -3,6 +3,9 @@
 echo "pwd:"
 pwd
 
+echo "ls /dev/shm"
+ls /dev/shm
+
 echo "ls -lh"
 ls -lh
 

@@ -1,15 +1,10 @@
 from sys import exit, path
 from os.path import expandvars
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/sap-cta-data-pipeline"))
-path.append(expandvars("$CTA_SOFT/"
-            "jeremie_cta/snippets/ctapipe"))
-from datapipe.denoising.wavelets_mrfilter import WaveletTransform
-wavelet_transform = WaveletTransform()
-
 
 from glob import glob
+from copy import deepcopy
 import argparse
+import time
 
 from itertools import chain
 
@@ -18,47 +13,43 @@ import numpy as np
 from astropy import units as u
 
 import matplotlib.pyplot as plt
-plt.style.use('seaborn-talk')
 import matplotlib.patches as patches
 from matplotlib.collections import PatchCollection
 import matplotlib.cm as cm
 
-from extract_and_crop_simtel_images import crop_astri_image
 from datapipe.denoising.wavelets_mrfilter import WaveletTransform
 
 from ctapipe.instrument import CameraGeometry
 
 from ctapipe.io.hessio import hessio_event_source
 from ctapipe.image.geometry_converter import *
+from ctapipe.visualization import CameraDisplay
+from ctapipe.calib import CameraCalibrator
+
 
 # since this is in ./sandbox need to append the software path for now
 path.append(expandvars("$CTA_SOFT/tino_cta"))
 from modules.ImageCleaning import *
 from helper_functions import *
 
-from copy import deepcopy
 
-global tel_geom
-
-import time
+from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+wavelet_transform = WaveletTransform()
 
 fig = None
-from ctapipe.visualization import CameraDisplay
-def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_electrons):
+global tel_geom
+
+
+def transform_and_clean_hex_image(pmt_signal, cam_geom, photo_electrons):
 
     start_time = time.time()
 
-    rot_x, rot_y = unskew_hex_pixel_grid(cam_geom.pix_x, cam_geom.pix_y,
-                                         cam_geom.cam_rotation)
     colors = cm.inferno(pmt_signal/max(pmt_signal))
-
-    x_edges, y_edges, x_scale = get_orthogonal_grid_edges(rot_x, rot_y)
 
     new_geom, new_signal = convert_geometry_1d_to_2d(
         cam_geom, pmt_signal, cam_geom.cam_id)
 
-    # unrot_geom, unrot_signal = convert_geometry_back(
-    #     new_geom, new_signal, cam_geom.cam_id)
+    print("rot_signal", np.count_nonzero(np.isnan(new_signal)))
 
     square_mask = new_geom.mask
     cleaned_img = wavelet_transform(new_signal,
@@ -81,11 +72,8 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
     square_image_add_noise_cleaned_ik = kill_isolpix(square_image_add_noise_cleaned,
                                                      threshold=1.5)
 
-    try:
-        unrot_geom, unrot_noised_signal = convert_geometry_back(
-            new_geom, square_image_add_noise_cleaned_ik, cam_geom.cam_id)
-    except:
-        pass
+    unrot_geom, unrot_noised_signal = convert_geometry_back(
+        new_geom, square_image_add_noise_cleaned_ik, cam_geom.cam_id)
 
     end_time = time.time()
     print(end_time - start_time)
@@ -139,8 +127,6 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
     plt.title("noisy image")
 
     ax3 = fig.add_subplot(331)
-    # plt.hist2d(rot_x, rot_y, bins=(x_edges, y_edges), cmap=cm.inferno,
-    #            weights=pmt_signal)
     plt.imshow(new_signal, interpolation='none', cmap=cm.inferno,
                origin='lower')
     plt.gca().set_aspect('equal', adjustable='box')
@@ -163,8 +149,7 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
     cb5 = plt.colorbar()
     ax5.set_axis_off()
 
-
-
+    #
     ax6 = fig.add_subplot(332)
     plt.imshow(square_image_add_noise, interpolation='none', cmap=cm.inferno,
                origin='lower')
@@ -173,7 +158,7 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
     cb6 = plt.colorbar()
     ax6.set_axis_off()
 
-
+    #
     ax7 = fig.add_subplot(335)
     plt.imshow(np.sqrt(square_image_add_noise_cleaned), interpolation='none',
                cmap=cm.inferno,
@@ -213,11 +198,69 @@ def transform_and_clean_hex_image(pmt_signal, cam_geom, optical_foclen, photo_el
         exit()
 
 
+def transform_and_clean_hex_samples(pmt_samples, cam_geom):
+
+    # rotate all samples in the image to a rectangular image
+    rot_geom, rot_samples = convert_geometry_1d_to_2d(
+        cam_geom, pmt_samples, cam_geom.cam_id)
+
+    print("rot samples.shape:", rot_samples.shape)
+
+    # rotate the samples back to hex image
+    unrot_geom, unrot_samples = convert_geometry_back(rot_geom, rot_samples,
+                                                      cam_geom.cam_id)
+
+    global fig
+    global cb1, ax1
+    global cb2, ax2
+    global cb3, ax3
+    if fig is None:
+        fig = plt.figure(figsize=(10, 10))
+    else:
+        fig.delaxes(ax1)
+        fig.delaxes(ax2)
+        fig.delaxes(ax3)
+        cb1.remove()
+        cb2.remove()
+        cb3.remove()
+
+    ax1 = fig.add_subplot(221)
+    disp1 = CameraDisplay(rot_geom, image=np.sum(rot_samples, axis=-1), ax=ax1)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("rotated image")
+    disp1.cmap = plt.cm.inferno
+    disp1.add_colorbar()
+    cb1 = disp1.colorbar
+
+    ax2 = fig.add_subplot(222)
+    disp2 = CameraDisplay(cam_geom, image=np.sum(pmt_samples, axis=-1), ax=ax2)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("original image")
+    disp2.cmap = plt.cm.inferno
+    disp2.add_colorbar()
+    cb2 = disp2.colorbar
+
+    ax3 = fig.add_subplot(223)
+    disp3 = CameraDisplay(unrot_geom, image=np.sum(unrot_samples, axis=-1), ax=ax3)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.title("de-rotated image")
+    disp3.cmap = plt.cm.inferno
+    disp3.add_colorbar()
+    cb3 = disp3.colorbar
+
+    plt.pause(.1)
+    response = input("press return to continue")
+    if response != "":
+        exit()
+
+
 if __name__ == '__main__':
 
     parser = make_argparser()
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
+    parser.add_argument('--time',  action='store_true',
+                        help="use images sampled in time")
     args = parser.parse_args()
 
     if args.infile_list:
@@ -233,8 +276,7 @@ if __name__ == '__main__':
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
-
-    cam_geom = {}
+    calib = CameraCalibrator(None, None)
 
     # define here which telescopes to loop over
     allowed_tels = None
@@ -249,38 +291,27 @@ if __name__ == '__main__':
                                      max_events=args.max_events)
 
         for event in source:
-
+            calib.calibrate(event)
             for tel_id in event.dl0.tels_with_data:
 
-                if tel_id not in cam_geom:
-                    cam_geom[tel_id] = CameraGeometry.guess(
-                                        event.inst.pixel_pos[tel_id][0],
-                                        event.inst.pixel_pos[tel_id][1],
-                                        event.inst.optical_foclen[tel_id])
+                camera = event.inst.subarray.tel[tel_id].camera
 
-                if cam_geom[tel_id].pix_type == "rectangular":
+                if camera.pix_type == "rectangular":
                     continue
 
-                # if cam_geom[tel_id].cam_id != "DigiCam":
-                #     continue
+                pmt_signal = event.dl1.tel[tel_id].image
+                pmt_samples = np.repeat(np.squeeze(pmt_signal)[:, None], 25, axis=1)
 
-                if cam_geom[tel_id].cam_id == "ASTRI":
-                    cal_signal = apply_mc_calibration_ASTRI(
-                                    event.r0.tel[tel_id].adc_sums,
-                                    event.mc.tel[tel_id].dc_to_pe,
-                                    event.mc.tel[tel_id].pedestal)
+                print("gain, space, time")
+                print("pmt_signal.shape:", pmt_signal.shape)
+                print("cleaned.shape:", event.dl1.tel[tel_id].cleaned.shape)
+                print("samples.shape:", pmt_samples.shape)
+                print()
+
+                if args.time:
+                    transform_and_clean_hex_samples(pmt_samples, camera)
                 else:
-                    cal_signal = apply_mc_calibration(
-                        event.r0.tel[tel_id].adc_sums[0],
-                        event.mc.tel[tel_id].dc_to_pe[0],
-                        event.mc.tel[tel_id].pedestal[0])
-
-                if False:
-                    ''' TODO switch to cleaning module if still desired '''
-                else:
-
-                    transform_and_clean_hex_image(cal_signal,
-                                                  cam_geom[tel_id],
-                                                  event.inst.optical_foclen[tel_id],
-                                                  event.mc.tel[tel_id].photo_electron_image)
-                    continue
+                    transform_and_clean_hex_image(np.squeeze(pmt_signal), camera,
+                                                  event.mc.tel[tel_id]
+                                                       .photo_electron_image)
+                continue

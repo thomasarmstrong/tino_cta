@@ -95,8 +95,7 @@ class ImageCleaner:
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
                  skip_edge_events=True, cutflow=CutFlow("ImageCleaner"),
                  wavelet_options=None,
-                 tmp_files_directory='/tmp/', mrfilter_directory=None,
-                 tail_thresh_up=10, tail_thresh_low=5):
+                 tmp_files_directory='/dev/shm/', mrfilter_directory=None):
         self.mode = mode
         self.skip_edge_events = skip_edge_events
         self.cutflow = cutflow
@@ -108,20 +107,25 @@ class ImageCleaner:
             self.wavelet_cleaning = \
                 lambda *arg, **kwargs: WaveletTransform().clean_image(
                                 *arg, **kwargs,
-                                inject_noise_in_nan=True,
                                 kill_isolated_pixels=True,
                                 tmp_files_directory=tmp_files_directory,
                                 mrfilter_directory=mrfilter_directory)
             self.island_threshold = 1.5
 
+            # command line parameters for the mr_filter call
             self.wavelet_options = \
-                {"ASTRICam": wavelet_options or "-K -C1 -m3 -s2,2,3 -n4",
-                 "FlashCam": wavelet_options or "-K -C1 -m3 -s10,5,3 -n4"}
+                {"ASTRICam": wavelet_options or "-K -C1 -m3 -s2,2,3,3 -n4",
+                 "FlashCam": wavelet_options or "-K -C1 -m3 -s4,4,5,4 -n4"}
+            # parameters for poisson + gauß noise injection
+            self.noise_model = \
+                {"ASTRICam": {"lambda": 1.9, "mu": 0.5, "sigma": 0.8},
+                 "FlashCam": {"lambda": 5.9, "mu": -5.9, "sigma": 2.4}}
 
         elif mode == "tail":
             self.clean = self.clean_tail
-            self.tail_thresh_up = tail_thresh_up
-            self.tail_thresh_low = tail_thresh_low
+            self.tail_thresholds = \
+                {"ASTRICam": (5, 7),  # (5, 10)?
+                 "FlashCam": (12, 15)}
             self.island_threshold = 1.5
             self.dilate = dilate
         else:
@@ -131,14 +135,15 @@ class ImageCleaner:
         if island_cleaning:
             self.island_cleaning = kill_isolpix
         else:
+            # just a pass-through that does nothing
             self.island_cleaning = lambda x, *args, **kw: x
 
     def clean_wave(self, img, cam_geom):
-        if "ASTRI" in cam_geom.cam_id:
-            return self.clean_wave_astri(img, cam_geom)
-
-        elif cam_geom.pix_type.startswith("hex"):
+        if cam_geom.pix_type.startswith("hex"):
             return self.clean_wave_hex(img, cam_geom)
+
+        elif "ASTRI" in cam_geom.cam_id:
+            return self.clean_wave_astri(img, cam_geom)
 
         else:
             raise MissingImplementationException("wavelet cleaning of square-pixel"
@@ -148,6 +153,10 @@ class ImageCleaner:
         array2d_img = astri_to_2d_array(img)
         cleaned_img = self.wavelet_cleaning(
                 array2d_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
+                # parameters for poisson + gauß noise injection
+                nan_noise_lambda=self.noise_model[cam_geom.cam_id]["lambda"],
+                nan_noise_mu=self.noise_model[cam_geom.cam_id]["mu"],
+                nan_noise_sigma=self.noise_model[cam_geom.cam_id]["sigma"]
                 )
 
         self.cutflow.count("wavelet cleaning")
@@ -173,10 +182,12 @@ class ImageCleaner:
         rot_geom, rot_img = convert_geometry_1d_to_2d(
                                 cam_geom, img, cam_geom.cam_id)
 
-        square_mask = rot_geom.mask
-
         cleaned_img = self.wavelet_cleaning(
-                rot_img, raw_option_string=self.wavelet_options[cam_geom.cam_id])
+                rot_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
+                # parameters for poisson + gauß noise injection
+                nan_noise_lambda=self.noise_model[cam_geom.cam_id]["lambda"],
+                nan_noise_mu=self.noise_model[cam_geom.cam_id]["mu"],
+                nan_noise_sigma=self.noise_model[cam_geom.cam_id]["sigma"])
 
         self.cutflow.count("wavelet cleaning")
 
@@ -194,8 +205,8 @@ class ImageCleaner:
 
     def clean_tail(self, img, cam_geom):
         mask = tailcuts_clean(cam_geom, img,
-                              picture_thresh=self.tail_thresh_up,
-                              boundary_thresh=self.tail_thresh_low)
+                              picture_thresh=self.tail_thresholds[cam_geom.cam_id][1],
+                              boundary_thresh=self.tail_thresholds[cam_geom.cam_id][0])
         if self.dilate:
             dilate(cam_geom, mask)
         img[~mask] = 0
@@ -203,6 +214,7 @@ class ImageCleaner:
         self.cutflow.count("tailcut cleaning")
 
         if "ASTRI" in cam_geom.cam_id:
+            # turn into 2d to apply island cleaning
             img = astri_to_2d_array(img)
 
             # if set, remove all signal patches but the biggest one

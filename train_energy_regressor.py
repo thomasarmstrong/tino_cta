@@ -34,13 +34,14 @@ from modules.prepare_event import EventPreparator
 pckl_write = True
 pckl_load = not pckl_write
 
+# for which cam_id to generate a models
 cam_id_list = [
         # 'GATE',
         # 'HESSII',
         # 'NectarCam',
         # 'LSTCam',
         # 'SST-1m',
-        # 'FlashCam',
+        'FlashCam',
         'ASTRICam',
         # 'SCTCam',
         ]
@@ -65,13 +66,13 @@ if __name__ == '__main__':
 
     parser = make_argparser()
     parser.add_argument('-o', '--outpath', type=str,
-                        default='data/classifier_pickle/regressor'
+                        default='data/classifier_pickle/regressor_prod3b'
                                 '_{mode}_{cam_id}_{regressor}.pkl')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
 
-    filenamelist_gamma = sorted(glob("{}/gamma/run*gz".format(args.indir)))
+    filenamelist_gamma = sorted(glob("{}/gamma/*gz".format(args.indir)))
 
     if len(filenamelist_gamma) == 0:
         print("no gammas found")
@@ -93,7 +94,7 @@ if __name__ == '__main__':
                              hillas_parameters=hillas_parameters, shower_reco=shower_reco,
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
-                             allowed_cam_ids=["ASTRICam"],  # [] or None means: all
+                             allowed_cam_ids=[],  # [] or None means: all
                              min_ntel=2,
                              min_charge=args.min_charge, min_pixel=3)
     Imagecutflow.add_cut("features nan", lambda x: np.isnan(x).any())
@@ -109,7 +110,8 @@ if __name__ == '__main__':
     # allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    for filename in filenamelist_gamma[:14][:args.last]:
+    allowed_tels = prod3b_tel_ids("F+A")
+    for filename in filenamelist_gamma[:10][:args.last]:
 
         if pckl_load:
             break
@@ -140,7 +142,7 @@ if __name__ == '__main__':
                             tot_signal,
                             max_signals[tel_id],
                             moments.size,
-                            n_tels["SST"],
+                            n_tels["LST"],
                             n_tels["MST"],
                             n_tels["SST"],
                             moments.width/u.m,
@@ -175,14 +177,16 @@ if __name__ == '__main__':
         print("reading pickle")
         from sklearn.externals import joblib
         Features_event_list = \
-            joblib.load("./data/{}_regression_features.pkl".format(args.mode))
-        MC_Energies = joblib.load("./data/{}_regression_energy.pkl".format(args.mode))
+            joblib.load("./data/{}_regression_features_prod3b.pkl".format(args.mode))
+        MC_Energies = \
+            joblib.load("./data/{}_regression_energy_prod3b.pkl".format(args.mode))
     elif pckl_write:
         print("writing pickle")
         from sklearn.externals import joblib
         joblib.dump(Features_event_list,
-                    "./data/{}_regression_features.pkl".format(args.mode))
-        joblib.dump(MC_Energies, "./data/{}_regression_energy.pkl".format(args.mode))
+                    "./data/{}_regression_features_prod3b.pkl".format(args.mode))
+        joblib.dump(MC_Energies,
+                    "./data/{}_regression_energy_prod3b.pkl".format(args.mode))
 
     print("length of features:")
     print(len(Features_event_list))
@@ -219,6 +223,13 @@ if __name__ == '__main__':
                                         "regressor": reg, "cam_id": "{cam_id}"}))
 
     if args.plot:
+
+        # plot the array layout
+        from ctapipe.plotting.array import ArrayPlotter
+        plotter = ArrayPlotter(event.inst, telescopes=allowed_tels)
+        plotter.draw_array(annotate=True)
+        plt.pause(.1)
+
         # extract and show the importance of the various training features
         try:
             reg.show_importances(EnergyFeatures._fields)

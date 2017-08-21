@@ -1,4 +1,5 @@
-from helper_functions import *
+from os.path import expandvars
+import argparse
 
 import glob
 import numpy as np
@@ -29,14 +30,14 @@ def open_list_of_pytables_as_pandas(filename_list, destination):
 
 if __name__ == "__main__":
 
-    parser = make_argparser()
+    parser = argparse.ArgumentParser(description='')
     parser.add_argument('--events_dir', type=str, default="data/events")
-    parser.add_argument('--in_file', type=str, default="classified_events")
+    parser.add_argument('--in_files_base', type=str, default="classified_events")
     args = parser.parse_args()
 
     for channel in ["gamma", "proton"]:
         for mode in ["tail", "wave"]:
-            filename = "{}/classified_events_{}_{}_*.h5".format(args.events_dir,
-                                                                channel, mode)
+            filename = "{}/{}_{}_{}_*.h5".format(args.events_dir, args.in_files_base,
+                                                 channel, mode)
             open_list_of_pytables_as_pandas(glob.glob(filename),
                                             filename.replace("_*", ""))

@@ -28,6 +28,9 @@ plt.style.use('seaborn-poster')
 edges_gammas = np.logspace(2, np.log10(330000), 28) * u.GeV
 edges_proton = np.logspace(2, np.log10(600000), 30) * u.GeV
 
+sensitivity_energy_bin_edges = np.logspace(-1, 3, 17)*u.TeV
+
+
 # your favourite units here
 angle_unit = u.deg
 energy_unit = u.TeV
@@ -64,9 +67,9 @@ def main_const_theta_cut():
     apply_cuts = True
     gammaness_wave = .75
     gammaness_tail = .75
-    r_max_gamm_wave = 0.04*u.deg
-    r_max_gamm_tail = 0.04*u.deg
-    r_max_prot = 2*u.deg
+    r_max_gamm_wave = 0.05*u.deg
+    r_max_gamm_tail = 0.05*u.deg
+    r_max_prot = 3*u.deg
 
     NReuse_Gammas = 10
     NReuse_Proton = 20
@@ -84,11 +87,11 @@ def main_const_theta_cut():
     print("observation time:", observation_time)
 
     gammas = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run1001-run1012.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "gamma", "wave"))
 
     proton = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run10000-run10043.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "proton", "wave"))
 
     print()
@@ -107,10 +110,10 @@ def main_const_theta_cut():
     print("proton selected (wavelets):", len(proton))
 
     SensCalc = SensitivityPointSource(
-                reco_energies={'g': gammas['MC_Energy'].values*u.GeV,
-                               'p': np.random.uniform(100, 600000, len(proton))*u.GeV},
-                mc_energies={'g': gammas['MC_Energy'].values*u.GeV,
-                             'p': proton['MC_Energy'].values*u.GeV},
+                reco_energies={'g': gammas['reco_Energy'].values*u.TeV,
+                               'p': proton['reco_Energy'].values*u.TeV},
+                mc_energies={'g': gammas['MC_Energy'].values*u.TeV,
+                             'p': proton['MC_Energy'].values*u.TeV},
                 energy_bin_edges={'g': edges_gammas,
                                   'p': edges_proton},
                 flux_unit=flux_unit)
@@ -143,11 +146,11 @@ def main_const_theta_cut():
 
     # now for tailcut
     gammas_t = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run1015-run1026.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "gamma", "tail"))
 
     proton_t = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run10100-run10143.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "proton", "tail"))
 
     if False:
@@ -192,8 +195,8 @@ def main_const_theta_cut():
     print("proton selected (tailcuts):", len(proton_t))
 
     SensCalc_t = SensitivityPointSource(
-                reco_energies={'g': gammas_t['MC_Energy'].values*u.GeV,
-                               'p': np.random.uniform(100, 600000, len(proton_t))*u.GeV},
+                reco_energies={'g': gammas_t['reco_Energy'].values*u.TeV,
+                               'p': proton_t['reco_Energy'].values*u.TeV},
                 mc_energies={'g': gammas_t['MC_Energy'].values*u.GeV,
                              'p': proton_t['MC_Energy'].values*u.GeV},
                 energy_bin_edges={'g': edges_gammas,
@@ -232,7 +235,7 @@ def main_const_theta_cut():
                                sensitivities, sensitivities_t)
 
 
-def main_xi68_cut():
+def main_xi68_cut(percentile={'w': 68, 't': 68}, res_scale=1):
 
     def selection_mask(event_table, ntels=3, gammaness=.75, r_max=None):
         return ((event_table["NTels_reco"] >= ntels) &
@@ -240,9 +243,9 @@ def main_xi68_cut():
                 (event_table["off_angle"] < r_max(event_table["reco_Energy"])))
 
     apply_cuts = True
-    gammaness_wave = .75
-    gammaness_tail = .75
-    theta_on_off_ratio = 4.5
+    gammaness_wave = .95
+    gammaness_tail = .95
+    theta_on_off_ratio = 6
 
     NReuse_Gammas = 10
     NReuse_Proton = 20
@@ -260,11 +263,11 @@ def main_xi68_cut():
     print("observation time:", observation_time)
 
     gammas = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run1001-run1012.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "gamma", "wave"))
 
     proton = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run10000-run10043.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "proton", "wave"))
 
     print()
@@ -273,21 +276,15 @@ def main_xi68_cut():
 
     # now for tailcut
     gammas_t = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run1015-run1026.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "gamma", "tail"))
 
     proton_t = open_pytable_as_pandas(
-            "{}/{}_{}_{}_run10100-run10143.h5".format(
+            "{}/{}_{}_{}.h5".format(
                     args.events_dir, args.in_file, "proton", "tail"))
     print()
     print("gammas present (tailcuts):", len(gammas_t))
     print("proton present (tailcuts):", len(proton_t))
-
-    # faking reconstructed energy
-    gammas["reco_Energy"] = gammas["MC_Energy"] * u.GeV.to(u.TeV)
-    proton["reco_Energy"] = np.random.uniform(100, 600000, len(proton))*u.GeV
-    gammas_t["reco_Energy"] = gammas_t["MC_Energy"] * u.GeV.to(u.TeV)
-    proton_t["reco_Energy"] = np.random.uniform(100, 600000, len(proton_t))*u.GeV
 
     # define edges to sort events in
     n_e_bins = 20
@@ -295,6 +292,7 @@ def main_xi68_cut():
     xi_ebinned_w = [[] for a in range(n_e_bins)]
     xi_ebinned_t = [[] for a in range(n_e_bins)]
 
+    # sort off-angles in bins of recnstructed energy
     for xi, en in zip(gammas["off_angle"], gammas["reco_Energy"]):
         xi_ebinned_w[np.digitize(en, e_bins_fine)].append(xi)
     for xi, en in zip(gammas_t["off_angle"], gammas_t["reco_Energy"]):
@@ -305,17 +303,21 @@ def main_xi68_cut():
     xi68_ebinned_t = np.full(len(xi_ebinned_t), np.inf)
     for i, (ebin_w, ebin_t) in enumerate(zip(xi_ebinned_w, xi_ebinned_t)):
         try:
-            xi68_ebinned_w[i] = np.percentile(ebin_w, 68)
-            xi68_ebinned_t[i] = np.percentile(ebin_t, 68)
+            xi68_ebinned_w[i] = np.percentile(ebin_w, percentile['w'])
+            xi68_ebinned_t[i] = np.percentile(ebin_t, percentile['t'])
         except IndexError:
             pass
 
     from scipy.optimize import curve_fit
-    popt_w, pcov_w = curve_fit(fitfunc_log, e_bins_fine[1:-1].value, xi68_ebinned_w[1:-1])
-    popt_t, pcov_t = curve_fit(fitfunc_log, e_bins_fine[1:-1].value, xi68_ebinned_t[1:-1])
+    popt_w, pcov_w = curve_fit(fitfunc_log,
+                               e_bins_fine[xi68_ebinned_w != np.inf].value,
+                               xi68_ebinned_w[xi68_ebinned_w != np.inf])
+    popt_t, pcov_t = curve_fit(fitfunc_log,
+                               e_bins_fine[xi68_ebinned_t != np.inf].value,
+                               xi68_ebinned_t[xi68_ebinned_t != np.inf])
 
-    print("fit args w:", popt_w)
-    print("fit args t:", popt_t)
+    # print("fit args w:", popt_w)
+    # print("fit args t:", popt_t)
 
     # fit args w: [ 0.34308449 -0.61659649  0.47705377  0.05055861 -0.18217412  0.04727536
     #   0.01758018 -0.00635498]
@@ -325,15 +327,19 @@ def main_xi68_cut():
     if True:
         plt.figure()
         plt.semilogx(e_bins_fine[1:-1], xi68_ebinned_w[1:-1],
-                     color="darkred", label="MC wave")
+                     color="darkred",
+                     label="MC wave -- {} %".format(percentile['w']))
         plt.semilogx(e_bins_fine[1:-1], xi68_ebinned_t[1:-1],
-                     color="darkorange", label="MC tail")
+                     color="darkorange",
+                     label="MC tail -- {} %".format(percentile['t']))
         plt.semilogx(e_bins_fine[1:-1], fitfunc_log(e_bins_fine[1:-1].value, *popt_w),
                      marker="^", ls="", color="darkred", label="fit wave")
         plt.semilogx(e_bins_fine[1:-1], fitfunc_log(e_bins_fine[1:-1].value, *popt_t),
                      marker="^", ls="", color="darkorange", label="fit tail")
         plt.xlabel("E / TeV")
-        plt.ylabel(r"$\xi_{68}$ / deg")
+        plt.ylabel(r"$\xi$ / deg")
+        plt.gca().set_yscale("log")
+        plt.grid()
         plt.legend()
         plt.pause(.1)
 
@@ -341,16 +347,23 @@ def main_xi68_cut():
     if apply_cuts:
         gammas = gammas[selection_mask(
                 gammas, gammaness=gammaness_wave,
-                r_max=lambda e: fitfunc_log(e, *popt_w))]
+                r_max=lambda e: fitfunc_log(e, *popt_w)*res_scale)]
         proton = proton[selection_mask(
                 proton, gammaness=gammaness_wave,
-                r_max=lambda e: fitfunc_log(e, *popt_w)*theta_on_off_ratio)]
+                r_max=lambda e: fitfunc_log(e, *popt_w)*res_scale*theta_on_off_ratio)]
         gammas_t = gammas_t[selection_mask(
-                gammas_t, gammaness=gammaness_wave,
-                r_max=lambda e: fitfunc_log(e, *popt_t))]
+                gammas_t, gammaness=gammaness_tail,
+                r_max=lambda e: fitfunc_log(e, *popt_t)*res_scale)]
         proton_t = proton_t[selection_mask(
-                proton_t, gammaness=gammaness_wave,
-                r_max=lambda e: fitfunc_log(e, *popt_t)*theta_on_off_ratio)]
+                proton_t, gammaness=gammaness_tail,
+                r_max=lambda e: fitfunc_log(e, *popt_t)*res_scale*theta_on_off_ratio)]
+
+    print()
+    print("gammas selected (wavelets):", len(gammas))
+    print("proton selected (wavelets):", len(proton))
+    print()
+    print("gammas selected (tailcuts):", len(gammas_t))
+    print("proton selected (tailcuts):", len(proton_t))
 
     SensCalc = SensitivityPointSource(
             reco_energies={'g': gammas['reco_Energy'].values*u.TeV,
@@ -375,7 +388,7 @@ def main_xi68_cut():
 
     sensitivities = SensCalc.get_sensitivity(
             alpha=theta_on_off_ratio**-2,
-            sensitivity_energy_bin_edges=np.logspace(-1, 3, 17)*u.TeV)
+            sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
 
     # sensitvity for tail cuts
     SensCalc_t = SensitivityPointSource(
@@ -401,7 +414,10 @@ def main_xi68_cut():
 
     sensitivities_t = SensCalc_t.get_sensitivity(
             alpha=theta_on_off_ratio**-2,
-            sensitivity_energy_bin_edges=np.logspace(-1, 3, 17)*u.TeV)
+            sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
+
+    make_performance_plots(gammas, proton, suptitle="wavelet")
+    make_performance_plots(gammas_t, proton_t, suptitle="tailcut")
 
     make_sensitivity_plots(SensCalc, SensCalc_t,
                            sensitivities, sensitivities_t)
@@ -570,7 +586,7 @@ def main_minimise():
     popt_x, pcov_x = curve_fit(fitfunc_log, en_cuts.value, xi_cuts)
     popt_g, pcov_g = curve_fit(fitfunc_log, en_cuts.value, ga_cuts)
 
-    popt_x = np.array([0.34308449, -0.61659649, 0.47705377, 0.05055861, -0.18217412 ,
+    popt_x = np.array([0.34308449, -0.61659649, 0.47705377, 0.05055861, -0.18217412,
                        0.04727536, 0.01758018, -0.00635498])
 
     plt.figure()
@@ -585,11 +601,12 @@ def main_minimise():
 
     # finally applying the cuts
     gammas = gammas[selection_mask(gammas,
-            gammaness=lambda e: fitfunc_log(e, *popt_g),
-            r_max=lambda e: fitfunc_log(e, *popt_x))]
+                                   gammaness=lambda e: fitfunc_log(e, *popt_g),
+                                   r_max=lambda e: fitfunc_log(e, *popt_x))]
     proton = proton[selection_mask(proton,
-            gammaness=lambda e: fitfunc_log(e, *popt_g),
-            r_max=lambda e: fitfunc_log(e, *popt_x)*theta_on_off_ratio)]
+                                   gammaness=lambda e: fitfunc_log(e, *popt_g),
+                                   r_max=lambda e: fitfunc_log(e, *popt_x)
+                                   * theta_on_off_ratio)]
 
     sens, SensCalc = make_sensitivity(gammas, proton,
                                       np.logspace(-1, 3, 17)*u.TeV)
@@ -768,7 +785,7 @@ def make_sensitivity_plots(SensCalc, SensCalc_t, sensitivities, sensitivities_t)
         plt.gca().set_xscale("log")
         plt.grid()
         plt.xlim([1e-2, 2e3])
-        plt.ylim([5e-14, 5e-9])
+        plt.ylim([5e-15, 5e-10])
 
         # plot the sensitivity ratios
         # plt.figure()
@@ -816,6 +833,24 @@ def make_sensitivity_plots(SensCalc, SensCalc_t, sensitivities, sensitivities_t)
         #     proton_weight = proton_weight_flat
 
 
+def make_performance_plots(gammas, proton, suptitle=None):
+
+    fig, axes = plt.subplots(1, 2)
+    plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
+    plot_hex_and_violin(gammas["NTels_reco"], np.log10(gammas["off_angle"]),
+                        np.arange(1, 11)-.5,
+                        xlabel="N Tels", ylabel=r"$\log_{10}(\xi$ / degree)",
+                        do_hex=False, axis=axes[0], extent=[1.5, 8, -3, 0])
+    plot_hex_and_violin(np.log10(gammas["reco_Energy"]),
+                        np.log10(gammas["off_angle"]),
+                        np.linspace(-1, 3, 17),
+                        xlabel="log_10(E_reco / TeV)",
+                        ylabel=r"$\log_{10}(\xi$ / degree)",
+                        v_padding=0.015, axis=axes[1], extent=[-.5, 2.5, -3, 0])
+    if suptitle:
+        plt.suptitle(suptitle)
+
+
 if __name__ == "__main__":
     np.random.seed(19)
 
@@ -824,15 +859,10 @@ if __name__ == "__main__":
     parser.add_argument('--in_file', type=str, default="classified_events")
     args = parser.parse_args()
 
-    # from itertools import count
-    # for i in count(19):
-    #     print(i)
-    #     np.random.seed(i)
-    #     main_xi68_cut()
-    #     plt.show()
-
     # main_minimise()
-    main_xi68_cut()
     # main_const_theta_cut()
+
+    main_xi68_cut(percentile={'w': 50, 't': 50})
+
     if args.plot:
         plt.show()

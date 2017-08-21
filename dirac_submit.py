@@ -55,7 +55,8 @@ astri_filelist_proton = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.
 
 # set here the `run_token` of files you want to resubmit
 # submits everything if empty
-redo = []
+redo = [
+]
 
 # proton files are smaller, can afford more files per run -- at a ratio 11:3
 window_sizes = [3*5, 11*5]
@@ -137,11 +138,13 @@ for i, astri_filelist in enumerate([astri_filelist_gamma, astri_filelist_proton]
         print(run_filelist)
 
         j = Job()
-        j.setCPUTime(30000)  # 1 h in seconds times 8 (CPU normalisation factor)
+        j.setCPUTime(100000)  # about 4 h in seconds times 8 (CPU normalisation factor)
         j.setName('reconstruct {}.{}.{}'.format(channel, mode, run_token))
 
         # bad sites -- here miniconda cannot be found (due to bad vo configuration?)
-        # j.setBannedSites(['LCG.CAMK.pl'])
+        j.setBannedSites([
+                # 'LCG.CAMK.pl',
+                'LCG.CETA.es'])
 
         j.setInputSandbox(input_sandbox +
                           # adding the data files into the input sandbox instead of input

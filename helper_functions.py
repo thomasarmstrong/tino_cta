@@ -1,10 +1,11 @@
-import matplotlib.pyplot as plt
 import numpy as np
-
+import matplotlib.pyplot as plt
 # plt.style.use('seaborn-talk')
 # plt.style.use('t_slides')
 
 import signal
+
+
 class SignalHandler():
     ''' handles ctrl+c signals; set up via
         signal_handler = SignalHandler()
@@ -79,8 +80,9 @@ def make_argparser():
     parser.add_argument('-c', '--min_charge', type=int, default=0,
                         help="minimum charge per telescope after cleaning")
     parser.add_argument('-i', '--indir',   type=str,
-                        default=expandvars("$HOME/Data/cta/ASTRI9/"))
                         # default="/media/tmichael/Transcend/Data/cta/ASTRI9/")
+                        # default=expandvars("$HOME/Data/cta/ASTRI9/"))
+                        default=expandvars("$HOME/Data/cta/Prod3b/"))
     parser.add_argument('-f', '--infile_list',   type=str, default="", nargs='*',
                         help="give a specific list of files to run on")
     parser.add_argument('--plots_dir', type=str, default="plots",
@@ -134,7 +136,7 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
 
 def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
                         xlabel="", ylabel="", zlabel="", do_hex=True, do_violin=True,
-                        cm=plt.cm.inferno, **kwargs):
+                        cm=plt.cm.inferno, axis=None, v_padding=.015, **kwargs):
 
     """
     takes two arrays of coordinates and creates a 2D hexbin plot and a violin plot (or
@@ -160,14 +162,28 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
         more arguments to be passed to plt.hexbin
     """
 
-    plt.figure()
+    if axis:
+        if do_hex and do_violin:
+            from matplotlib.axes import Axes
+            from matplotlib.transforms import Bbox
+            axis_bbox = axis.get_position()
+            axis.axis("off")
+        else:
+            plt.sca(axis)
 
     # make a normal 2D hexplot from the given data
     if do_hex:
 
-        # if we do both plot types, open a subplot
+        # if we do both plot types,
         if do_violin:
-            plt.subplot(211)
+            if axis:
+                ax_hex_pos = axis_bbox.get_points().copy()  # [[x0, y0], [x1, y1]]
+                ax_hex_pos[0, 1] += np.diff(ax_hex_pos, axis=0)[0, 1]*(.5+v_padding)
+                ax_hex = Axes(plt.gcf(), Bbox.from_extents(ax_hex_pos))
+                plt.gcf().add_axes(ax_hex)
+                plt.sca(ax_hex)
+            else:
+                plt.subplot(211)
 
         plt.hexbin(abscissa,
                    ordinate,
@@ -188,12 +204,20 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
 
         # if we do both plot types, open a subplot
         if do_hex:
-            plt.subplot(212)
+            if axis:
+                ax_vio_pos = axis_bbox.get_points().copy()  # [[x0, y0], [x1, y1]]
+                ax_vio_pos[1, 1] -= np.diff(ax_vio_pos, axis=0)[0, 1]*(.5+v_padding)
+                ax_vio = Axes(plt.gcf(), Bbox.from_extents(ax_vio_pos))
+                plt.gcf().add_axes(ax_vio)
+                plt.sca(ax_vio)
+            else:
+                plt.subplot(212)
 
         # to plot the violins, sort the ordinate values into a dictionary
         # the keys are the central values of the bins given by `bin_edges`
         val_vs_dep = {}
         bin_centres = (bin_edges[1:]+bin_edges[:-1])/2.
+
         for dep, val in zip(abscissa, ordinate):
             # get the bin number this event belongs into
             # outliers are put into the first and last bin accordingly
@@ -202,12 +226,12 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
 
             # the central value of the bin is the key for the dictionary
             if bin_centres[ibin] not in val_vs_dep:
-                val_vs_dep[bin_centres[ibin]]  = [val]
+                val_vs_dep[bin_centres[ibin]] = [val]
             else:
                 val_vs_dep[bin_centres[ibin]] += [val]
 
-        vals = [a for a in val_vs_dep.values()]
-        keys = [a for a in val_vs_dep.keys()]
+        keys = [k[0] for k in sorted(val_vs_dep.items())]
+        vals = [k[1] for k in sorted(val_vs_dep.items())]
 
         # calculate the widths of the violins as 90 % of the corresponding bin width
         widths = []
@@ -229,6 +253,45 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
             plt.ylim(extent[2:])
 
         plt.grid()
+
+
+def prod3b_tel_ids(cam_id):
+    if cam_id == "LSTCam":
+        tel_ids = np.arange(12)
+    elif cam_id == "FlashCam":
+        tel_ids = np.arange(12, 53)
+    elif cam_id == "NectarCam":
+        tel_ids = np.arange(53, 94)
+    elif cam_id == "ASTRICam":
+        tel_ids = np.arange(95, 252)
+    elif cam_id == "CHEC":
+        tel_ids = np.arange(252, 410)
+    elif cam_id == "DigiCam":
+        tel_ids = np.arange(410, 567)
+
+    elif cam_id == "L+F+A":
+        tel_ids = np.array([4, 5, 6, 11, 12, 13, 14, 15, 16, 19, 20, 23, 24,
+                            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 47, 48,
+                            49, 50, 51, 52, 99, 100, 101, 102, 110, 111, 116,
+                            117, 122, 123, 124, 125, 126, 127, 132, 133, 134,
+                            135, 142, 143, 144, 145, 158, 159, 164, 165, 166,
+                            167, 169, 170, 184, 185, 186, 187, 188, 189, 190,
+                            191, 192, 193, 194, 195, 208, 209, 210, 211, 212,
+                            213, 220, 221, 222, 223, 224, 225, 226, 227, 228,
+                            229, 234, 235, 236, 237, 238, 239, 240, 241, 242,
+                            243, 244, 245])
+    elif cam_id == "F+A":
+        tel_ids = np.array([12, 13, 14, 15, 16, 19, 20, 23, 24,
+                            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 47, 48,
+                            49, 50, 51, 52, 99, 100, 101, 102, 110, 111, 116,
+                            117, 122, 123, 124, 125, 126, 127, 132, 133, 134,
+                            135, 142, 143, 144, 145, 158, 159, 164, 165, 166,
+                            167, 169, 170, 184, 185, 186, 187, 188, 189, 190,
+                            191, 192, 193, 194, 195, 208, 209, 210, 211, 212,
+                            213, 220, 221, 222, 223, 224, 225, 226, 227, 228,
+                            229, 234, 235, 236, 237, 238, 239, 240, 241, 242,
+                            243, 244, 245])
+    return tel_ids
 
 
 def ipython_shell():

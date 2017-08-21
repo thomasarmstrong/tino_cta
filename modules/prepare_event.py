@@ -27,6 +27,10 @@ tel_orientation = (tel_phi, tel_theta)
 np_true_false = np.array([[True], [False]])
 
 
+def raise_error(message):
+    raise ValueError(message)
+
+
 class EventPreparator():
     def __init__(self, calib=None, cleaner=None, hillas_parameters=None,
                  shower_reco=None, event_cutflow=None, image_cutflow=None,
@@ -35,7 +39,8 @@ class EventPreparator():
         self.calib = calib or CameraCalibrator(None, None)
         self.cleaner = cleaner or ImageCleaner(mode=None)
         self.hillas_parameters = hillas_parameters or hillas.hillas_parameters
-        self.shower_reco = shower_reco
+        self.shower_reco = shower_reco or \
+            raise_error("need to provide a shower reconstructor....")
 
         # adding cutflows and cuts for events and images
         self.event_cutflow = event_cutflow or CutFlow("EventCutFlow")
@@ -106,7 +111,7 @@ class EventPreparator():
                     pick = (pmt_signal > 14).any(axis=0) != np_true_false
                     pmt_signal = pmt_signal.T[pick.T]
                 else:
-                    pmt_signal = pmt_signal.ravel()
+                    pmt_signal = np.squeeze(pmt_signal)
 
                 # clean the image
                 try:

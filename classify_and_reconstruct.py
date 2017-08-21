@@ -53,6 +53,7 @@ except:
     print("no pytables installed")
 
 
+# which models to load for classifier/regressor
 cam_id_list = [
         # 'GATE',
         # 'HESSII',
@@ -331,6 +332,16 @@ def main():
     print()
     Imagecutflow()
 
+    # do some simple event selection and print the corresponding selection efficiency
+    N_selected = len([x for x in reco_table.where(
+        """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
+    N_total = len(reco_table)
+    print("\nfraction selected events:")
+    print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
+
+    print("\nlength filenamelist:", len(filenamelist[:args.last]))
+
+    # do some plotting if so desired
     if args.plot:
         gammaness = [x['gammaness'] for x in reco_table]
         NTels_rec = [x['NTels_reco'] for x in reco_table]
@@ -395,18 +406,7 @@ def main():
         plt.ylabel("E_rec / TeV")
         plt.colorbar()
 
-        plt.pause(.1)
-
-    # do some simple event selection and print the corresponding selection efficiency
-    N_selected = len([x for x in reco_table.where(
-        """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
-    N_total = len(reco_table)
-    print("\nfraction selected events:")
-    print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
-
-    print("\nlength filenamelist:", len(filenamelist[:args.last]))
-
-    plt.show()
+        plt.show()
 
 
 if __name__ == '__main__':

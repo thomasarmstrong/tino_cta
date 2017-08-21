@@ -40,13 +40,14 @@ from modules.prepare_event import EventPreparator
 pckl_write = True
 pckl_load = not pckl_write
 
+# for which cam_id to generate a models
 cam_id_list = [
         # 'GATE',
         # 'HESSII',
         # 'NectarCam',
         # 'LSTCam',
         # 'SST-1m',
-        # 'FlashCam',
+        'FlashCam',
         'ASTRICam',
         # 'SCTCam',
         ]
@@ -71,14 +72,14 @@ if __name__ == '__main__':
 
     parser = make_argparser()
     parser.add_argument('-o', '--outpath', type=str,
-                        default='data/classifier_pickle/classifier'
+                        default='data/classifier_pickle/classifier_prod3b'
                                 '_{mode}_{cam_id}_{classifier}.pkl')
     parser.add_argument('--check', action='store_true',
                         help="run a self check on the classification")
     args = parser.parse_args()
 
-    filenamelist_gamma = sorted(glob("{}/gamma/run*gz".format(args.indir)))
-    filenamelist_proton = sorted(glob("{}/proton/run*gz".format(args.indir)))
+    filenamelist_gamma = sorted(glob("{}/gamma/*gz".format(args.indir)))
+    filenamelist_proton = sorted(glob("{}/proton/*gz".format(args.indir)))
 
     if len(filenamelist_gamma) == 0:
         print("no gammas found")
@@ -103,7 +104,7 @@ if __name__ == '__main__':
                              hillas_parameters=hillas_parameters, shower_reco=shower_reco,
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
-                             allowed_cam_ids=["ASTRICam"],  # [] or None means: all
+                             allowed_cam_ids=[],  # [] or None means: all
                              min_ntel=2,
                              min_charge=args.min_charge, min_pixel=3)
     Imagecutflow.add_cut("features nan", lambda x: np.isnan(x).any())
@@ -119,9 +120,10 @@ if __name__ == '__main__':
     allowed_tels = None  # all telescopes
     # allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    for filenamelist_class in [filenamelist_gamma[:14],
-                               filenamelist_proton[:100]]:
+    # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
+    allowed_tels = prod3b_tel_ids("F+A")
+    for filenamelist_class in [filenamelist_gamma[:10],
+                               filenamelist_proton[:60]]:
 
         if pckl_load:
             break
@@ -161,7 +163,7 @@ if __name__ == '__main__':
                                 tot_signal,
                                 max_signals[tel_id],
                                 moments.size,
-                                n_tels["SST"],
+                                n_tels["LST"],
                                 n_tels["MST"],
                                 n_tels["SST"],
                                 moments.width/u.m,
@@ -196,14 +198,14 @@ if __name__ == '__main__':
         print("reading pickle")
         from sklearn.externals import joblib
         Features_event_list = \
-            joblib.load("./data/{}_classification_features_new.pkl".format(args.mode))
+            joblib.load("./data/{}_classification_features_prod3b.pkl".format(args.mode))
     elif pckl_write:
         print("writing pickle")
         from sklearn.externals import joblib
         joblib.dump(Features_event_list,
-                    "./data/{}_classification_features_new.pkl".format(args.mode))
+                    "./data/{}_classification_features_prod3b.pkl".format(args.mode))
 
-    print("length of features:")
+    print("number of events:")
     for cl, feat in Features_event_list.items():
         print(cl, len(feat))
 
@@ -214,10 +216,13 @@ if __name__ == '__main__':
     # in gammas and protons; then add them to a single list
     minEvents = min([len(Features) for Features in Features_event_list.values()])
     for cl in Features_event_list.keys():
-        trainFeatures = np.append(
-                            trainFeatures,
-                            np.random.choice(Features_event_list[cl], minEvents, False))
-        trainClasses += [cl]*minEvents
+        # trainFeatures = np.append(
+        #                     trainFeatures,
+        #                     np.random.choice(Features_event_list[cl], minEvents, False))
+        # trainClasses += [cl]*minEvents
+        trainFeatures += Features_event_list[cl]
+        trainClasses += [cl]*len(Features_event_list[cl])
+
 
     # use default random forest classifier
     clf_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
@@ -237,17 +242,16 @@ if __name__ == '__main__':
         clf_kwargs = {"classifier": Pipeline,
                       "steps": [("sskal", sskal), ("mlp_clf", mlp_clf)]}
 
-        # hidden layer trials
-        # (100, 50)    AUC: 92-93
-        # (100, 100)   AUC: 93,92,92,93,92
-        # (100, 100)   AUC: 92,93,92,93,93
-
     clf_kwargs['cam_id_list'] = cam_id_list
 
     clf = EventClassifier(**clf_kwargs)
     print(clf)
 
     train_features, train_classes = clf.reshuffle_event_list(trainFeatures, trainClasses)
+
+    print("number of g:", np.count_nonzero(np.array(train_classes["ASTRICam"]) == 'g'))
+    print("number of p:", np.count_nonzero(np.array(train_classes["ASTRICam"]) == 'p'))
+    # exit()
 
     # save the classifier to disk
     if args.store:

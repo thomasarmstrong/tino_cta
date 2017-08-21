@@ -16,8 +16,6 @@ import seaborn as sns
 from ctapipe.instrument import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 
-from ctapipe.instrument.InstrumentDescription import load_hessio
-
 from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
 
 from ctapipe.image.hillas import HillasParameterizationError, \
@@ -44,7 +42,7 @@ from helper_functions import *
 from astropy import units as u
 from astropy.table import Table, vstack, hstack
 performance_table = Table(names=("Eps_w", "Eps_t",
-                                 "alpha_w", "alpha_t", "alpha_s",
+                                 "alpha_w", "alpha_t",
                                  "hill_width_w", "hill_length_w",
                                  "hill_width_t", "hill_length_t",
                                  "sig_w", "sig_t", "sig_p",
@@ -79,7 +77,6 @@ if __name__ == '__main__':
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
-    cam_geom = {}
     tel_phi = {}
     tel_theta = {}
     tel_orientation = (tel_phi, tel_theta)
@@ -93,7 +90,7 @@ if __name__ == '__main__':
     # use this in the selection of the gain channels
     np_true_false = np.array([[True], [False]])
 
-    island_cleaning = False
+    island_cleaning = True
     skip_edge_events = False  # args.skip_edge_events
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
@@ -127,6 +124,8 @@ if __name__ == '__main__':
     # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
+    allowed_tels = prod3b_tel_ids("FlashCam")
+    # allowed_tels = prod3b_tel_ids("ASTRICam")
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 
@@ -137,8 +136,6 @@ if __name__ == '__main__':
         for event in source:
 
             print()
-            print('Scanning input file... count = {}'.format(event.count))
-            print('Event ID: {}'.format(event.dl0.event_id))
             print('Available telscopes: {}'.format(event.dl0.tels_with_data))
 
             # getting the MC shower info
@@ -154,12 +151,10 @@ if __name__ == '__main__':
 
                 pmt_signal_p = event.mc.tel[tel_id].photo_electron_image
 
-                # guessing camera geometry
-                if tel_id not in cam_geom:
-                    cam_geom[tel_id] = CameraGeometry.guess(
-                                        event.inst.pixel_pos[tel_id][0],
-                                        event.inst.pixel_pos[tel_id][1],
-                                        event.inst.optical_foclen[tel_id])
+                # getting camera geometry
+                camera = event.inst.subarray.tel[tel_id].camera
+
+                if tel_id not in tel_phi:
                     tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
                     tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
 
@@ -170,114 +165,13 @@ if __name__ == '__main__':
                 else:
                     pmt_signal = pmt_signal.ravel()
 
-                #
-                # resampling of the hex grid into sqare grid
-                #pix_x, pix_y = cam_geom[tel_id].pix_x, cam_geom[tel_id].pix_y
-                #hex_size = (cam_geom[tel_id].pix_area[0] *
-                            #(2/3**0.5)**3)**0.5 / 2
-                #nx, ny = 150, 150
-
-                #if cam_geom[tel_id].cam_id not in qr_to_pix_id_map_tel_map:
-                    #qr_to_pix_id_map = make_qr_to_pix_id_map(pix_x.value,
-                                                             #pix_y.value,
-                                                             #hex_size.value)
-                    #qr_to_pix_id_map_tel_map[cam_geom[tel_id].cam_id] = qr_to_pix_id_map
-
-                #resample_x, resample_y, resample_img = \
-                    #resample_hex_to_rect(pmt_signal, geom=cam_geom[tel_id],
-                                         #nx=nx, ny=ny)
-
-
-
-                #min_x = np.min(pix_x)
-                #max_x = np.max(pix_x)
-                #min_y = np.min(pix_y)
-                #max_y = np.max(pix_y)
-
-                #lim_x, lim_y = 0.57, 1.04
-                #trimmed_x   = resample_x  [(np.abs(resample_x) < lim_x) &
-                                           #(np.abs(resample_y) < lim_y)]
-                #trimmed_y   = resample_y  [(np.abs(resample_x) < lim_x) &
-                                           #(np.abs(resample_y) < lim_y)]
-                #trimmed_img = resample_img[(np.abs(resample_x) < lim_x) &
-                                           #(np.abs(resample_y) < lim_y)]
-
-                #from datapipe.denoising.wavelets_mrfilter import WaveletTransform
-                #wavelet_transform = WaveletTransform()
-                #rect_img = np.histogram2d(trimmed_x, trimmed_y, weights=trimmed_img,
-                                          #bins=(np.linspace(min_x, max_x, nx),
-                                                #np.linspace(min_y, max_y, ny)))[0].T
-
-                #rect_x, rect_y = np.meshgrid(np.linspace(min_x, max_x, nx-1),
-                                             #np.linspace(min_y, max_y, ny-1))
-
-                #clean_rect_img = wavelet_transform(
-                    #rect_img,
-                    #raw_option_string=args.raw)
-
-                #clean_rect_img = kill_isolpix(clean_rect_img, threshold=2)
-
-                #from copy import copy
-                #trim_geom = copy(cam_geom[tel_id])
-                #trim_geom.pix_x = rect_x.ravel()
-                #trim_geom.pix_y = rect_y.ravel()
-                #trim_geom.mask = np.ones_like(clean_rect_img.ravel())
-                #trim_geom.pixel_shape = "rectangular"
-                #trim_geom.cam_rotation = 0 * u.deg
-                #trim_geom.pix_area = np.ones_like(clean_rect_img.ravel()) * .6 *\
-                    #abs(trimmed_x[0]-trimmed_x[1]) * \
-                    #abs(trimmed_y[0]-trimmed_y[ny])*u.m*u.m
-
-                #fig = plt.figure()
-                #ax1 = fig.add_subplot(221)
-                #disp1 = CameraDisplay(cam_geom[tel_id],
-                                      #image=pmt_signal_p,
-                                      #ax=ax1)
-                #disp1.cmap = plt.cm.hot
-                #disp1.add_colorbar()
-                #plt.title("PE image")
-
-
-                #ax2 = fig.add_subplot(222)
-                #disp2 = CameraDisplay(cam_geom[tel_id],
-                                    #image=pmt_signal,
-                                    #ax=ax2)
-                #disp2.cmap = plt.cm.hot
-                #disp2.add_colorbar()
-                #plt.title("calibrated noisy image")
-
-                #ax3 = fig.add_subplot(223)
-
-
-                #plt.hist2d(trimmed_x, trimmed_y, weights=trimmed_img,
-                           #bins=(np.linspace(min_x, max_x, nx),
-                                 #np.linspace(min_y, max_y, ny)),
-                           #cmap=plt.cm.hot
-                           #)
-                #ax3.set_aspect('equal')
-                #plt.colorbar()
-                #plt.title("resampled, trimmed noisy image")
-
-                #ax4 = fig.add_subplot(224)
-                #plt.imshow(clean_rect_img, interpolation='none', origin='lower',
-                           #cmap=plt.cm.hot)
-                #plt.colorbar()
-                #plt.title("trimmed \"filtered\" image")
-
-                #plt.show()
-
-                #continue
-
-
                 # now cleaning the image with wavelet and tail cuts
                 try:
                     pmt_signal_w, new_geom_w = \
-                        Cleaner['w'].clean(pmt_signal+5
-                                           if args.add_offset else pmt_signal,
-                                           cam_geom[tel_id])
+                        Cleaner['w'].clean(pmt_signal.copy(), camera)
                     pmt_signal_t, new_geom_t = \
-                        Cleaner['t'].clean(pmt_signal.copy(), cam_geom[tel_id])
-                    geom = {'w': new_geom_w, 't': new_geom_t, 'p': cam_geom[tel_id]}
+                        Cleaner['t'].clean(pmt_signal.copy(), camera)
+                    geom = {'w': new_geom_w, 't': new_geom_t, 'p': camera}
                 except (FileNotFoundError, EdgeEventException) as e:
                     print(e)
                     continue
@@ -286,18 +180,15 @@ if __name__ == '__main__':
                 do the hillas parametrisation of the two cleaned images '''
                 try:
                     hillas = {}
-                    hillas['p'] = hillas_parameters(cam_geom[tel_id].pix_x,
-                                                    cam_geom[tel_id].pix_y,
-                                                    pmt_signal_p)
+                    # hillas['p'] = hillas_parameters(camera.pix_x,
+                    #                                 camera.pix_y,
+                    #                                 pmt_signal_p)
                     hillas['w'] = hillas_parameters(new_geom_w.pix_x,
                                                     new_geom_w.pix_y,
                                                     pmt_signal_w)
                     hillas['t'] = hillas_parameters(new_geom_t.pix_x,
                                                     new_geom_t.pix_y,
                                                     pmt_signal_t)
-                    #hillas['s'] = hillas_parameters(trim_geom.pix_x,
-                                                    #trim_geom.pix_y,
-                                                    #clean_rect_img.ravel())
                 except HillasParameterizationError as e:
                     print(e)
                     continue
@@ -319,14 +210,14 @@ if __name__ == '__main__':
                 for k, h in hillas.items():
 
                     fit.get_great_circles({tel_id: h},
-                                          event.inst, tel_phi, tel_theta)
+                                          event.inst.subarray, tel_phi, tel_theta)
                     c = fit.circles[tel_id]
 
                     alpha[k] = abs((angle(c.norm, shower_org)*u.rad) - 90*u.deg).to(u.deg)
                     length[k] = h.length
                     width[k] = h.width
 
-                for k, signal in {'p': pmt_signal_p,
+                for k, signal in {  # 'p': pmt_signal_p,
                                   'w': pmt_signal_w}.items():
 
                     h = hillas[k]
@@ -346,52 +237,43 @@ if __name__ == '__main__':
                     dl = D[0]*T[0] + D[1]*T[1]
                     dp = D[0]*T[1] - D[1]*T[0]
 
-                    for pe, pp in zip(signal[abs(dl) > 1*hillas['p'].length],
-                                      dp[abs(dl) > 1*hillas['p'].length]):
+                    for pe, pp in zip(signal[abs(dl) > 1*hillas[k].length],
+                                      dp[abs(dl) > 1*hillas[k].length]):
 
                         pe_vs_dp[k].fill([np.log10(sum_p), pp], pe)
 
                 '''
                 do some plotting '''
                 if args.plot_c and signal_handler.draw:
-                    fig = plt.figure(figsize=(10,10))
+                    fig = plt.figure(figsize=(10, 10))
 
                     ax1 = fig.add_subplot(221)
-                    disp1 = CameraDisplay(cam_geom[tel_id],
+                    disp1 = CameraDisplay(camera,
                                           image=pmt_signal_p,
                                           ax=ax1)
-                    disp1.cmap = plt.cm.hot
+                    disp1.cmap = plt.cm.inferno
                     disp1.add_colorbar()
-                    disp1.overlay_moments(hillas['p'], color='seagreen', linewidth=3)
-                    plt.title("PE image ; alpha = {:4.3f}".format(alpha['p']))
+                    # disp1.overlay_moments(hillas['p'], color='seagreen', linewidth=3)
+                    # plt.title("PE image ; alpha = {:4.3f}".format(alpha['p']))
 
                     ax2 = fig.add_subplot(222)
-                    disp2 = CameraDisplay(cam_geom[tel_id],
+                    disp2 = CameraDisplay(camera,
                                           image=pmt_signal,
                                           ax=ax2)
-                    disp2.cmap = plt.cm.hot
+                    disp2.cmap = plt.cm.inferno
                     disp2.add_colorbar()
                     plt.title("calibrated noisy image")
 
                     ax3 = fig.add_subplot(223)
-                    #disp3 = CameraDisplay(trim_geom,
-                                          #image=clean_rect_img.ravel(),
-                                          #ax=ax3)
-                    #disp3.overlay_moments(hillas['s'], color='seagreen', linewidth=3)
-                    #disp3.cmap = plt.cm.hot
-                    #disp3.add_colorbar()
-                    #plt.title("wave trimm cleaned ; alpha = {:4.3f}"
-                              #.format(alpha['t']))
-
                     disp3 = CameraDisplay(new_geom_t,
                                           image=np.sqrt(pmt_signal_t),
                                           ax=ax3)
-                    disp3.cmap = plt.cm.hot
+                    disp3.cmap = plt.cm.inferno
                     disp3.add_colorbar()
                     disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
                     plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
-                              .format(Cleaner['t'].tail_thresh_up,
-                                      Cleaner['t'].tail_thresh_low,
+                              .format(Cleaner['t'].tail_thresholds[new_geom_t.cam_id][0],
+                                      Cleaner['t'].tail_thresholds[new_geom_t.cam_id][1],
                                       alpha['t']))
 
                     ax4 = fig.add_subplot(224)
@@ -401,7 +283,7 @@ if __name__ == '__main__':
                                                     if pmt_signal_w.shape[-1] == 25
                                                     else pmt_signal_w),
                                           ax=ax4)
-                    disp4.cmap = plt.cm.hot
+                    disp4.cmap = plt.cm.inferno
                     disp4.add_colorbar()
                     disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
                     plt.title("wave slant cleaned ; alpha = {:4.3f}".format(alpha['w']))
@@ -421,7 +303,7 @@ if __name__ == '__main__':
                 '''
                 now fill the table '''
                 performance_table.add_row([Epsilon_intensity_w, Epsilon_intensity_t,
-                                           alpha['w'], alpha['t'], -100, #alpha['s'],
+                                           alpha['w'], alpha['t'],
                                            width['w'], length['w'],
                                            width['t'], length['t'],
                                            sum_w, sum_t, sum_p,
@@ -436,11 +318,9 @@ if __name__ == '__main__':
             of the two cleaning methods '''
             alphas_w = performance_table["alpha_w"]
             alphas_t = performance_table["alpha_t"]
-            alphas_s = performance_table["alpha_s"]
             print()
             print("alpha_w res (68-percentile) = {}".format(np.percentile(alphas_w, 68)))
             print("alpha_t res (68-percentile) = {}".format(np.percentile(alphas_t, 68)))
-            print("alpha_s res (68-percentile) = {}".format(np.percentile(alphas_s, 68)))
 
             if signal_handler.stop: break
         if signal_handler.stop: break
@@ -474,9 +354,9 @@ if __name__ == '__main__':
     # sns.set_context("paper", rc={"lines.linewidth": 10})
     sns.violinplot(x="log10(sig_p)", y="log10(alpha)", hue="mode", data=data.to_pandas(),
                    palette="Set2", inner="quartiles", split=True)
-    #sns.swarmplot(x="log10(sig_p)", y="log10(alpha)", hue="mode", data=data.to_pandas(),
-                  #palette="Set1", split=False)
-    plt.show()
+    # sns.swarmplot(x="log10(sig_p)", y="log10(alpha)", hue="mode", data=data.to_pandas(),
+    #               palette="Set1", split=False)
+    plt.pause(.1)
 
     # print how many telescopes participated in each log-signal bin
     sig_p = performance_table["sig_p"]
@@ -527,9 +407,9 @@ if __name__ == '__main__':
         plt.colorbar()
         plt.pause(.1)
 
-        for pe_bin in [2, 3, 4, 5]:
+        for pe_bin in []:  # [2, 3, 4, 5]:
+            fig = plt.figure()
             if np.sum(pe_vs_dp_w.norm[pe_bin][1:-1]) > 0:
-                fig = plt.figure()
                 plt.style.use('t_slides')
                 bin_centres = (pe_vs_dp_p.bin_edges[1][1:]+pe_vs_dp_p.bin_edges[1][:-1])/2
 
@@ -583,6 +463,7 @@ if __name__ == '__main__':
 
         mode = "wave" if k == "w" else "tail"
 
+        plt.figure()
         plot_hex_and_violin(
                 np.log10(Epsilon_2),
                 np.log10(sig_p),
@@ -591,53 +472,56 @@ if __name__ == '__main__':
                 xlabel="log10(Epsilon 2)",
                 zlabel="log10(counts)",
                 bins='log',
-                extent=(-3, 0, 1.5, 5),
+                extent=(-.5, 0, 1.5, 5),
                 do_violin=False)
+        plt.grid()
         plt.suptitle(mode)
         plt.tight_layout()
         plt.pause(.1)
 
-        '''
-        plot the angular error of the hillas ellipsis vs the number of photo electrons '''
+        # plot the angular error of the hillas ellipsis vs the number of photo electrons
+        plt.figure()
         plot_hex_and_violin(np.log10(sig_p),
                             np.log10(hillas_tilt/angle_unit),
                             npe_edges,
-                            extent=[0, 5, -5, 1],
+                            extent=[1, 4, -5, 1],
                             xlabel="log10(number of photo electrons)",
                             ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+        plt.grid()
         plt.suptitle(mode)
         plt.tight_layout()
         if args.write:
             save_fig("plots/alpha_vs_photoelecrons_{}".format(mode))
         plt.pause(.1)
 
-        '''
-        plot the angular error of the hillas
-        ellipsis vs the measured signal on the camera '''
-        plot_hex_and_violin(np.log10(sig_p),
+        # plot the angular error of the hillas ellipsis vs the measured camera signal
+        plt.figure()
+        plot_hex_and_violin(np.log10(sig),
                             np.log10(hillas_tilt/angle_unit),
                             size_edges,
-                            extent=[0, 5, -5, 1],
+                            extent=[1, 4, -5, 1],
                             xlabel="log10(signal size)",
                             ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+        plt.grid()
         plt.suptitle(mode)
         plt.tight_layout()
         if args.write:
             save_fig("plots/alpha_vs_signal_{}".format(mode))
         plt.pause(.1)
 
-        '''
-        plot the angular error of the hillas ellipsis vs the length/width ratio '''
-        plot_hex_and_violin(np.log10(hillas_length/hillas_width),
-                            np.log10(hillas_tilt/angle_unit),
-                            lovw_edges,
-                            extent=[0, 2, -4.5, 1],
-                            xlabel="log10(length/width)",
-                            ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
-        plt.suptitle(mode)
-        plt.tight_layout()
-        if args.write:
-            save_fig("plots/alpha_vs_lenOVwidth_{}".format(mode))
-        plt.pause(.1)
+        # plot the angular error of the hillas ellipsis vs the length/width ratio
+        # plt.figure()
+        # plot_hex_and_violin(np.log10(hillas_length/hillas_width),
+        #                     np.log10(hillas_tilt/angle_unit),
+        #                     lovw_edges,
+        #                     extent=[0, 2, -4.5, 1],
+        #                     xlabel="log10(length/width)",
+        #                     ylabel=r"log10($\alpha$/{:latex})".format(angle_unit))
+        # plt.grid()
+        # plt.suptitle(mode)
+        # plt.tight_layout()
+        # if args.write:
+        #     save_fig("plots/alpha_vs_lenOVwidth_{}".format(mode))
+        # plt.pause(.1)
 
     plt.show()
