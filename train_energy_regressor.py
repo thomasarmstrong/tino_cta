@@ -111,7 +111,7 @@ if __name__ == '__main__':
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
     allowed_tels = prod3b_tel_ids("F+A")
-    for filename in filenamelist_gamma[:10][:args.last]:
+    for filename in filenamelist_gamma[:14][:args.last]:
 
         if pckl_load:
             break

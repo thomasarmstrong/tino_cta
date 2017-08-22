@@ -299,22 +299,22 @@ def main_xi68_cut(percentile={'w': 68, 't': 68}, res_scale=1):
         xi_ebinned_t[np.digitize(en, e_bins_fine)].append(xi)
 
     # get the 68th percentile resolution in every energy bin
-    xi68_ebinned_w = np.full(len(xi_ebinned_w), np.inf)
-    xi68_ebinned_t = np.full(len(xi_ebinned_t), np.inf)
+    xi_cut_ebinned_w = np.full(len(xi_ebinned_w), np.inf)
+    xi_cut_ebinned_t = np.full(len(xi_ebinned_t), np.inf)
     for i, (ebin_w, ebin_t) in enumerate(zip(xi_ebinned_w, xi_ebinned_t)):
         try:
-            xi68_ebinned_w[i] = np.percentile(ebin_w, percentile['w'])
-            xi68_ebinned_t[i] = np.percentile(ebin_t, percentile['t'])
+            xi_cut_ebinned_w[i] = np.percentile(ebin_w, percentile['w'])
+            xi_cut_ebinned_t[i] = np.percentile(ebin_t, percentile['t'])
         except IndexError:
             pass
 
     from scipy.optimize import curve_fit
     popt_w, pcov_w = curve_fit(fitfunc_log,
-                               e_bins_fine[xi68_ebinned_w != np.inf].value,
-                               xi68_ebinned_w[xi68_ebinned_w != np.inf])
+                               e_bins_fine[xi_cut_ebinned_w != np.inf].value,
+                               xi_cut_ebinned_w[xi_cut_ebinned_w != np.inf])
     popt_t, pcov_t = curve_fit(fitfunc_log,
-                               e_bins_fine[xi68_ebinned_t != np.inf].value,
-                               xi68_ebinned_t[xi68_ebinned_t != np.inf])
+                               e_bins_fine[xi_cut_ebinned_t != np.inf].value,
+                               xi_cut_ebinned_t[xi_cut_ebinned_t != np.inf])
 
     # print("fit args w:", popt_w)
     # print("fit args t:", popt_t)
@@ -326,18 +326,18 @@ def main_xi68_cut(percentile={'w': 68, 't': 68}, res_scale=1):
 
     if True:
         plt.figure()
-        plt.semilogx(e_bins_fine[1:-1], xi68_ebinned_w[1:-1],
-                     color="darkred",
+        plt.semilogx(e_bins_fine[1:-1], xi_cut_ebinned_w[1:-1],
+                     color="darkred", marker="^", ls="",
                      label="MC wave -- {} %".format(percentile['w']))
-        plt.semilogx(e_bins_fine[1:-1], xi68_ebinned_t[1:-1],
-                     color="darkorange",
+        plt.semilogx(e_bins_fine[1:-1], xi_cut_ebinned_t[1:-1],
+                     color="darkorange", marker="^", ls="",
                      label="MC tail -- {} %".format(percentile['t']))
         plt.semilogx(e_bins_fine[1:-1], fitfunc_log(e_bins_fine[1:-1].value, *popt_w),
-                     marker="^", ls="", color="darkred", label="fit wave")
+                     color="darkred", label="fit wave")
         plt.semilogx(e_bins_fine[1:-1], fitfunc_log(e_bins_fine[1:-1].value, *popt_t),
-                     marker="^", ls="", color="darkorange", label="fit tail")
+                     color="darkorange", label="fit tail")
         plt.xlabel("E / TeV")
-        plt.ylabel(r"$\xi$ / deg")
+        plt.ylabel(r"$\xi_{cut}$ / deg")
         plt.gca().set_yscale("log")
         plt.grid()
         plt.legend()
@@ -417,7 +417,7 @@ def main_xi68_cut(percentile={'w': 68, 't': 68}, res_scale=1):
             sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
 
     make_performance_plots(gammas, proton, suptitle="wavelet")
-    make_performance_plots(gammas_t, proton_t, suptitle="tailcut")
+    # make_performance_plots(gammas_t, proton_t, suptitle="tailcut")
 
     make_sensitivity_plots(SensCalc, SensCalc_t,
                            sensitivities, sensitivities_t)
@@ -847,6 +847,115 @@ def make_performance_plots(gammas, proton, suptitle=None):
                         xlabel="log_10(E_reco / TeV)",
                         ylabel=r"$\log_{10}(\xi$ / degree)",
                         v_padding=0.015, axis=axes[1], extent=[-.5, 2.5, -3, 0])
+    if suptitle:
+        plt.suptitle(suptitle)
+
+    # plot resolution as energy-binned 68th percentiles
+    percentile = {"g": 68, "p": 68}
+
+    # define edges to sort events in
+    n_e_bins = 20
+    e_bins_fine = np.logspace(-1, np.log10(600), n_e_bins)*u.TeV
+    xi_ebinned_g = [[] for a in range(n_e_bins)]
+    xi_ebinned_p = [[] for a in range(n_e_bins)]
+
+    # for the angular resolution
+
+    # sort off-angles in bins of reconstructed energy
+    for xi, en in zip(gammas["off_angle"], gammas["reco_Energy"]):
+        xi_ebinned_g[np.digitize(en, e_bins_fine)].append(xi)
+    for xi, en in zip(proton["off_angle"], proton["reco_Energy"]):
+        xi_ebinned_p[np.digitize(en, e_bins_fine)].append(xi)
+
+    # get the 68th percentile resolution in every energy bin
+    xi68_ebinned_g = np.full(len(xi_ebinned_g), np.inf)
+    xi68_ebinned_p = np.full(len(xi_ebinned_p), np.inf)
+    for i, (ebin_g, ebin_p) in enumerate(zip(xi_ebinned_g, xi_ebinned_p)):
+        try:
+            xi68_ebinned_g[i] = np.percentile(ebin_g, percentile['g'])
+            xi68_ebinned_p[i] = np.percentile(ebin_p, percentile['p'])
+        except IndexError:
+            pass
+
+    plt.figure()
+    plt.semilogx(e_bins_fine[1:-1], xi68_ebinned_g[1:-1],
+                 color="darkred", marker="^", ls="-",
+                 label="gamma -- {} %".format(percentile['g']))
+    plt.semilogx(e_bins_fine[1:-1], xi68_ebinned_p[1:-1],
+                 color="darkorange", marker="^", ls="--",
+                 label="proton -- {} %".format(percentile['p']))
+    plt.xlabel(r"$E_{reco}$ / TeV")
+    plt.ylabel(r"$\xi_{68}$ / deg")
+    plt.gca().set_yscale("log")
+    plt.grid()
+    plt.legend()
+    if suptitle:
+        plt.suptitle(suptitle)
+
+    # for the energy resolution
+    n_e_bins = 50
+    e_bins_fine = np.logspace(-1, np.log10(600), n_e_bins)*u.TeV
+
+    # MC Energy vs. reco Energy 2D histograms
+    fig = plt.figure()
+    ax = plt.subplot(121)
+    counts_g, _, _ = np.histogram2d(gammas["reco_Energy"],
+                                    gammas["MC_Energy"],
+                                    bins=(e_bins_fine, e_bins_fine))
+    ax.pcolormesh(e_bins_fine.value, e_bins_fine.value, counts_g)
+    plt.plot(e_bins_fine.value[[0, -1]], e_bins_fine.value[[0, -1]],
+             color="darkgreen")
+    plt.title("gamma")
+    plt.xlabel(r"$E_{MC}$ / TeV")
+    plt.ylabel(r"$E_{reco}$ / TeV")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    plt.grid()
+
+    ax = plt.subplot(122)
+    counts_p, _, _ = np.histogram2d(proton["reco_Energy"],
+                                    proton["MC_Energy"],
+                                    bins=(e_bins_fine, e_bins_fine))
+    ax.pcolormesh(e_bins_fine.value, e_bins_fine.value, counts_p)
+    plt.plot(e_bins_fine.value[[0, -1]], e_bins_fine.value[[0, -1]],
+             color="darkgreen")
+    plt.title("proton")
+    plt.xlabel(r"$E_{MC}$ / TeV")
+    plt.ylabel(r"$E_{reco}$ / TeV")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    plt.grid()
+
+    plt.subplots_adjust(top=.90, bottom=.11, left=.12, right=.90,
+                        hspace=.20, wspace=.31)
+
+    if suptitle:
+        plt.suptitle(suptitle)
+
+    # energy resolution as 68th percentile of the relative reconstructed error binned in
+    # reconstructed energy
+    plt.figure()
+    DeltaE = np.abs(gammas["reco_Energy"] - gammas["MC_Energy"])
+    DeltaE_ebinned = [[] for a in range(n_e_bins)]
+
+    # sort relative energy error in bins of reconstructed energy
+    for DE, en_r, en_mc in zip(DeltaE, gammas["reco_Energy"], gammas["MC_Energy"]):
+        DeltaE_ebinned[np.digitize(en_r, e_bins_fine)].append(DE/en_mc)
+
+    # get the 68th percentile resolution in every energy bin
+    DeltaE68_ebinned = np.full(len(DeltaE_ebinned), np.inf)
+    for i, ebin in enumerate(DeltaE_ebinned):
+        try:
+            DeltaE68_ebinned[i] = np.percentile(ebin, 68)
+        except IndexError:
+            pass
+
+    plt.plot(e_bins_fine, DeltaE68_ebinned, marker='^', color="darkgreen")
+    plt.title("gamma")
+    plt.xlabel(r"$E_{reco}$ / TeV")
+    plt.ylabel(r"$(E_{reco} - E_{MC})/E_{MC}$")
+    plt.gca().set_xscale("log")
+
     if suptitle:
         plt.suptitle(suptitle)
 
