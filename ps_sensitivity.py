@@ -934,11 +934,10 @@ def make_performance_plots(gammas, proton, suptitle=None):
 
     # energy resolution as 68th percentile of the relative reconstructed error binned in
     # reconstructed energy
-    plt.figure()
     DeltaE = np.abs(gammas["reco_Energy"] - gammas["MC_Energy"])
-    DeltaE_ebinned = [[] for a in range(n_e_bins)]
 
     # sort relative energy error in bins of reconstructed energy
+    DeltaE_ebinned = [[] for a in range(n_e_bins)]
     for DE, en_r, en_mc in zip(DeltaE, gammas["reco_Energy"], gammas["MC_Energy"]):
         DeltaE_ebinned[np.digitize(en_r, e_bins_fine)].append(DE/en_mc)
 
@@ -950,6 +949,7 @@ def make_performance_plots(gammas, proton, suptitle=None):
         except IndexError:
             pass
 
+    plt.figure()
     plt.plot(e_bins_fine, DeltaE68_ebinned, marker='^', color="darkgreen")
     plt.title("gamma")
     plt.xlabel(r"$E_{reco}$ / TeV")
