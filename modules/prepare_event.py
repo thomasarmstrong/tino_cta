@@ -54,7 +54,6 @@ class EventPreparator():
                     ("direction nan", lambda x: np.isnan(x.value).any())
                 ]))
 
-        allowed_cam_ids = allowed_cam_ids or []
         self.image_cutflow.set_cuts(OrderedDict([
                     ("noCuts", None),
                     ("camera type", lambda id: allowed_cam_ids and
