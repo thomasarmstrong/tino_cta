@@ -30,7 +30,6 @@ except ImportError:
     print("using tino_cta event_classifier")
 
 try:
-    raise ImportError
     from ctapipe.reco.energy_regressor import *
     print("using ctapipe energy_regressor")
 except:
@@ -60,7 +59,7 @@ cam_id_list = [
         # 'NectarCam',
         # 'LSTCam',
         # 'SST-1m',
-        # 'FlashCam',
+        'FlashCam',
         'ASTRICam',
         # 'SCTCam',
         ]
@@ -133,7 +132,7 @@ def main():
                              hillas_parameters=hillas_parameters, shower_reco=shower_reco,
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
-                             allowed_cam_ids=["ASTRICam"],
+                             allowed_cam_ids=[],
                              min_ntel=2,
                              min_charge=args.min_charge, min_pixel=3)
 
@@ -223,6 +222,7 @@ def main():
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = range(34, 39)  # FlashCam telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 39).tolist()
+    allowed_tels = prod3b_tel_ids("F+A")
     for filename in filenamelist[:args.last]:
         print("filename = {}".format(filename))
 
@@ -363,7 +363,8 @@ def main():
                                bins=(NTel_bins, np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         im = ax.imshow(histo_normed, interpolation='none', origin='lower',
-                       aspect='auto', extent=(*NTel_bins[[0, -1]], 0, 1),
+                       aspect='auto',
+                       # extent=(*NTel_bins[[0, -1]], 0, 1),
                        cmap=plt.cm.inferno)
         ax.set_xlabel("NTels")
         ax.set_ylabel("drifted gammaness")
@@ -376,7 +377,8 @@ def main():
                                bins=(NTel_bins, np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         im = ax.imshow(histo_normed, interpolation='none', origin='lower',
-                       aspect='auto', extent=(*NTel_bins[[0, -1]], 0, 1),
+                       aspect='auto',
+                       # extent=(*NTel_bins[[0, -1]], 0, 1),
                        cmap=plt.cm.inferno)
         ax.set_xlabel("NTels")
         plt.setp(ax.get_yticklabels(), visible=False)
@@ -389,7 +391,8 @@ def main():
                                bins=(NTel_bins, np.linspace(0, 1, 11)))[0].T
         histo_normed = histo / histo.max(axis=0)
         im = ax.imshow(histo_normed, interpolation='none', origin='lower',
-                       aspect='auto', extent=(*NTel_bins[[0, -1]], 0, 1),
+                       aspect='auto',
+                       # extent=(*NTel_bins[[0, -1]], 0, 1),
                        cmap=plt.cm.inferno)
         cb = fig.colorbar(im, ax=ax)
         ax.set_xlabel("NTels")
