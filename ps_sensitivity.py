@@ -18,8 +18,9 @@ from ctapipe.analysis.sensitivity import (SensitivityPointSource, e_minus_2,
                                           crab_source_rate, cr_background_rate)
 
 import matplotlib.pyplot as plt
-plt.style.use('seaborn-poster')
+# plt.style.use('seaborn-poster')
 # plt.style.use('t_slides')
+plt.rc('text', usetex=True)
 
 
 # MC energy ranges:
@@ -337,7 +338,7 @@ def main_xi68_cut(percentile={'w': 68, 't': 68}, res_scale=1):
         plt.semilogx(e_bins_fine[1:-1], fitfunc_log(e_bins_fine[1:-1].value, *popt_t),
                      color="darkorange", label="fit tail")
         plt.xlabel("E / TeV")
-        plt.ylabel(r"$\xi_{cut}$ / deg")
+        plt.ylabel(r"$\xi_\mathrm{cut} / ^\circ$")
         plt.gca().set_yscale("log")
         plt.grid()
         plt.legend()
@@ -679,7 +680,7 @@ def make_sensitivity_plots(SensCalc, SensCalc_t, sensitivities, sensitivities_t)
                 bin_centres_g,
                 SensCalc_t.effective_areas['g'], label="tailcuts")
             plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
-            plt.ylabel(r"effective area / $\mathrm{m^2}$")
+            plt.ylabel(r"$A_\mathrm{eff} / $\mathrm{m^2}$")
             plt.title("gammas")
             plt.legend()
 
@@ -691,7 +692,7 @@ def make_sensitivity_plots(SensCalc, SensCalc_t, sensitivities, sensitivities_t)
                 bin_centres_p,
                 SensCalc_t.effective_areas['p'], label="tailcuts")
             plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_p.unit)+"}$")
-            plt.ylabel(r"effective area / $\mathrm{m^2}$")
+            plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m^2}$")
             plt.title("protons")
             plt.legend()
 
@@ -784,7 +785,7 @@ def make_sensitivity_plots(SensCalc, SensCalc_t, sensitivities, sensitivities_t)
         plt.ylabel(r'$E^2 \Phi /$ {:latex}'.format(sensitivity_unit))
         plt.gca().set_xscale("log")
         plt.grid()
-        plt.xlim([1e-2, 2e3])
+        plt.xlim([1e-1, 2e3])
         plt.ylim([5e-15, 5e-10])
 
         # plot the sensitivity ratios
@@ -836,16 +837,17 @@ def make_sensitivity_plots(SensCalc, SensCalc_t, sensitivities, sensitivities_t)
 def make_performance_plots(gammas, proton, suptitle=None):
 
     fig, axes = plt.subplots(1, 2)
-    plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
+    # plt.subplots_adjust(left=0.11, right=0.97, hspace=0.39, wspace=0.29)
     plot_hex_and_violin(gammas["NTels_reco"], np.log10(gammas["off_angle"]),
                         np.arange(1, 11)-.5,
-                        xlabel="N Tels", ylabel=r"$\log_{10}(\xi$ / degree)",
+                        xlabel=r"$N_\mathrm{Tels}$",
+                        ylabel=r"$\log_{10}(\xi / ^\circ)$",
                         do_hex=False, axis=axes[0], extent=[1.5, 8, -3, 0])
     plot_hex_and_violin(np.log10(gammas["reco_Energy"]),
                         np.log10(gammas["off_angle"]),
                         np.linspace(-1, 3, 17),
-                        xlabel="log_10(E_reco / TeV)",
-                        ylabel=r"$\log_{10}(\xi$ / degree)",
+                        xlabel=r"$\log_{10}(E_\mathrm{reco}$ / TeV)",
+                        ylabel=r"$\log_{10}(\xi / ^\circ)$",
                         v_padding=0.015, axis=axes[1], extent=[-.5, 2.5, -3, 0])
     if suptitle:
         plt.suptitle(suptitle)
@@ -884,8 +886,8 @@ def make_performance_plots(gammas, proton, suptitle=None):
     plt.semilogx(e_bins_fine[1:-1], xi68_ebinned_p[1:-1],
                  color="darkorange", marker="^", ls="--",
                  label="proton -- {} %".format(percentile['p']))
-    plt.xlabel(r"$E_{reco}$ / TeV")
-    plt.ylabel(r"$\xi_{68}$ / deg")
+    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
+    plt.ylabel(r"$\xi_\mathrm{68} / ^\circ$")
     plt.gca().set_yscale("log")
     plt.grid()
     plt.legend()
@@ -899,35 +901,35 @@ def make_performance_plots(gammas, proton, suptitle=None):
     # MC Energy vs. reco Energy 2D histograms
     fig = plt.figure()
     ax = plt.subplot(121)
-    counts_g, _, _ = np.histogram2d(gammas["reco_Energy"],
-                                    gammas["MC_Energy"],
+    counts_g, _, _ = np.histogram2d(gammas["MC_Energy"],
+                                    gammas["reco_Energy"],
                                     bins=(e_bins_fine, e_bins_fine))
     ax.pcolormesh(e_bins_fine.value, e_bins_fine.value, counts_g)
     plt.plot(e_bins_fine.value[[0, -1]], e_bins_fine.value[[0, -1]],
              color="darkgreen")
     plt.title("gamma")
-    plt.xlabel(r"$E_{MC}$ / TeV")
-    plt.ylabel(r"$E_{reco}$ / TeV")
+    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
+    plt.ylabel(r"$E_\mathrm{MC}$ / TeV")
     ax.set_xscale("log")
     ax.set_yscale("log")
     plt.grid()
 
     ax = plt.subplot(122)
-    counts_p, _, _ = np.histogram2d(proton["reco_Energy"],
-                                    proton["MC_Energy"],
+    counts_p, _, _ = np.histogram2d(proton["MC_Energy"],
+                                    proton["reco_Energy"],
                                     bins=(e_bins_fine, e_bins_fine))
     ax.pcolormesh(e_bins_fine.value, e_bins_fine.value, counts_p)
     plt.plot(e_bins_fine.value[[0, -1]], e_bins_fine.value[[0, -1]],
              color="darkgreen")
     plt.title("proton")
-    plt.xlabel(r"$E_{MC}$ / TeV")
-    plt.ylabel(r"$E_{reco}$ / TeV")
+    plt.xlabel("$E_\mathrm{reco}$ / TeV")
+    plt.ylabel(r"$E_\mathrm{MC}$ / TeV")
     ax.set_xscale("log")
     ax.set_yscale("log")
     plt.grid()
 
-    plt.subplots_adjust(top=.90, bottom=.11, left=.12, right=.90,
-                        hspace=.20, wspace=.31)
+    # plt.subplots_adjust(top=.90, bottom=.11, left=.12, right=.90,
+    #                     hspace=.20, wspace=.31)
 
     if suptitle:
         plt.suptitle(suptitle)
@@ -939,7 +941,7 @@ def make_performance_plots(gammas, proton, suptitle=None):
     # sort relative energy error in bins of reconstructed energy
     DeltaE_ebinned = [[] for a in range(n_e_bins)]
     for DE, en_r, en_mc in zip(DeltaE, gammas["reco_Energy"], gammas["MC_Energy"]):
-        DeltaE_ebinned[np.digitize(en_r, e_bins_fine)].append(DE/en_mc)
+        DeltaE_ebinned[np.digitize(en_r, e_bins_fine)].append(DE/en_r)
 
     # get the 68th percentile resolution in every energy bin
     DeltaE68_ebinned = np.full(len(DeltaE_ebinned), np.inf)
@@ -952,12 +954,31 @@ def make_performance_plots(gammas, proton, suptitle=None):
     plt.figure()
     plt.plot(e_bins_fine, DeltaE68_ebinned, marker='^', color="darkgreen")
     plt.title("gamma")
-    plt.xlabel(r"$E_{reco}$ / TeV")
-    plt.ylabel(r"$(E_{reco} - E_{MC})/E_{MC}$")
+    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
+    plt.ylabel(r"$(E_\mathrm{reco} - E_\mathrm{MC})_{68}/E_\mathrm{reco}$")
+    plt.gca().set_xscale("log")
+
+    # Ebias as mean of 1-E_reco/E_true
+    Ebias_ebinned = [[] for a in range(n_e_bins)]
+    # sort energy biases in bins of reconstructed energy
+    for e_mc, e_reco in zip(gammas["MC_Energy"], gammas["reco_Energy"]):
+        Ebias_ebinned[np.digitize(e_reco, e_bins_fine)].append(1 - e_reco / e_mc)
+    Ebias_medians = np.full(len(Ebias_ebinned), np.inf)
+    for i, ebin in enumerate(Ebias_ebinned):
+        try:
+            Ebias_medians[i] = np.percentile(ebin, 68)
+        except IndexError:
+            pass
+
+    plt.figure()
+    plt.plot(e_bins_fine, Ebias_medians)
+    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
+    plt.ylabel(r"$(1 - E_\mathrm{reco}/E_\mathrm{MC})_{50}$")
     plt.gca().set_xscale("log")
 
     if suptitle:
         plt.suptitle(suptitle)
+    plt.show()
 
 
 if __name__ == "__main__":
