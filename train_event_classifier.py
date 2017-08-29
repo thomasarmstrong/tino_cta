@@ -122,8 +122,8 @@ if __name__ == '__main__':
     # allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
     allowed_tels = prod3b_tel_ids("F+A")
-    for filenamelist_class in [filenamelist_gamma[:14],
-                               filenamelist_proton[:99]]:
+    for filenamelist_class in [filenamelist_gamma[:30],
+                               filenamelist_proton[:30]]:
 
         if pckl_load:
             break
@@ -223,7 +223,6 @@ if __name__ == '__main__':
         trainFeatures += Features_event_list[cl]
         trainClasses += [cl]*len(Features_event_list[cl])
 
-
     # use default random forest classifier
     clf_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
                   'random_state': 0}
@@ -251,7 +250,7 @@ if __name__ == '__main__':
 
     print("number of g:", np.count_nonzero(np.array(train_classes["ASTRICam"]) == 'g'))
     print("number of p:", np.count_nonzero(np.array(train_classes["ASTRICam"]) == 'p'))
-    # exit()
+    print()
 
     # save the classifier to disk
     if args.store:
@@ -346,7 +345,8 @@ if __name__ == '__main__':
                     continue
 
                 temp = np.histogram2d(NTels, y_score,
-                                      bins=(range(2, 10), np.linspace(0, 1, 11)))[0].T
+                                      bins=(np.linspace(0, 50, 21),
+                                            np.linspace(0, 1, 11)))[0].T
 
                 if histos[cl] is None:
                     histos[cl] = temp
@@ -360,7 +360,8 @@ if __name__ == '__main__':
             ax = plt.subplot(121 if cl == "g" else 122)
             histo_normed = histo / histo.max(axis=0)
             im = ax.imshow(histo_normed, interpolation='none', origin='lower',
-                           aspect='auto', extent=(1, 9, 0, 1), cmap=plt.cm.inferno)
+                           aspect='auto', extent=(1, 50, 0, 1),
+                           cmap=plt.cm.inferno)
             cb = fig.colorbar(im, ax=ax)
             ax.set_xlabel("NTels")
             ax.set_ylabel("drifted gammaness")
