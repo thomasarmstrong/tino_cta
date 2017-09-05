@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-import os
+from os.path import basename
 import sys
 import glob
 import re
@@ -22,15 +22,13 @@ def sliding_window(my_list, window_size, step_size=None, start=0):
         yield my_list[start:]
 
 
+# this thing submits all the jobs
+dirac = Dirac()
+
+
 # list of files on my GRID SE space
 # not submitting jobs where we already have the output
 GRID_filelist = open('vo.cta.in2p3.fr-user-t-tmichael.lfns').read()
-
-# this thing submits all the jobs
-dirac = Dirac()
-# checking Dirac for already submitted jobs sometimes needs a date
-jobs_date = None
-# jobs_date = '2017-08-29'
 
 
 #   ######  ######## ######## ######## ########  #### ##    ##  ######
@@ -40,25 +38,22 @@ jobs_date = None
 #        ##    ##    ##       ##       ##   ##    ##  ##  #### ##    ##
 #  ##    ##    ##    ##       ##       ##    ##   ##  ##   ### ##    ##
 #   ######     ##    ######## ######## ##     ## #### ##    ##  ######
+sys.argv.append("tail")
 mode = "tail" if "tail" in sys.argv else "wave"
 cam_id_list = ["ASTRICam", "FlashCam"]
-wavelet_args = None
+wavelet_args = None  # setting this would overwrite the camera-specific defaults
 
-pilot_args = ' '.join((
-        'classify_and_reconstruct.py',
+pilot = 'dirac_pilot.sh'
+execute = 'classify_and_reconstruct.py'
+pilot_args = ' '.join([execute,
         '--classifier ./{classifier}',
         '--regressor ./{regressor}',
         '--out_file {out_file}',
         '--store',
         '--indir ./ --infile_list *.simtel.gz',
         '--tail' if "tail" in sys.argv else '',
-        ))
+        ])
 
-# files containing lists of the ASTRI files on the GRID
-astri_filelist_gamma = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.fr"
-                            "-user-c-ciro.bigongiari-MiniArray9-Simtel-gamma.lfns")
-astri_filelist_proton = open("/local/home/tmichael/Data/cta/ASTRI9/vo.cta.in2p3.fr"
-                             "-user-c-ciro.bigongiari-MiniArray9-Simtel-proton.lfns")
 
 # files containing lists of the Prod3b files on the GRID
 prod3b_filelist_gamma = open("/local/home/tmichael/Data/cta/Prod3b/"
@@ -67,14 +62,11 @@ prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/"
                               "Paranal_proton_North_20deg_HB9_merged.list")
 
 
-# proton files are smaller, can afford more files per run -- at a ratio 11:3
-# window_sizes = [3*5, 11*5]  # ASTRI
 if mode == "wave":
     window_sizes = [15, 15]
 else:
-    window_sizes = [60, 60]
+    window_sizes = [20, 20]
 # I used the first few files to train the classifier and regressor -- skip them
-# start_runs = [14, 100]  # ASTRI
 start_runs = [30, 30]
 
 
@@ -82,37 +74,36 @@ start_runs = [30, 30]
 model_path_template = \
     "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/ml_models/{}/{}_{}_{}_{}.pkl"
 classifier_LFN = model_path_template.format(
-                                            # "astri_mini",
-                                            "prod3b/paranal",
-                                            "classifier",
-                                            mode,
-                                            "{cam_id}",
-                                            "RandomForestClassifier")
+    # "astri_mini",
+    "prod3b/paranal",
+    "classifier",
+    mode,
+    "{cam_id}",
+    "RandomForestClassifier")
 regressor_LFN = model_path_template.format(
-                                           # "astri_mini",
-                                           "prod3b/paranal",
-                                           "regressor",
-                                           mode,
-                                           "{cam_id}",
-                                           "RandomForestRegressor")
+    # "astri_mini",
+    "prod3b/paranal",
+    "regressor",
+    mode,
+    "{cam_id}",
+    "RandomForestRegressor")
 
 
 # define a template name for the file that's going to be written out.
 # the placeholder braces are going to get set during the file-loop
 output_filename_template = 'classified_events_{}_{}_{}.h5'
-# output_path = "cta/astri_mini/"
 output_path = "cta/prod3b/paranal/"
 
 # sets all the local files that are going to be uploaded with the job plus the pickled
 # classifier (if the file name starts with `LFN:`, it will be copied from the GRID itself)
-input_sandbox = ['modules', 'helper_functions.py',
+input_sandbox = ['modules', 'helper_functions.py', 'snippets/append_tables.py',
 
                  # python wrapper for the mr_filter wavelet cleaning
                  '/local/home/tmichael/software/jeremie_cta/'
                  'sap-cta-data-pipeline/datapipe/',
 
                  # sets up the environment + script that is being run
-                 'dirac_pilot.sh', pilot_args.split()[0],
+                 pilot, execute,
 
                  # the executable for the wavelet cleaning
                  'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter',
@@ -125,50 +116,6 @@ for cam_id in cam_id_list:
 
 #
 
-# ########  ######## ########   #######
-# ##     ## ##       ##     ## ##     ##
-# ##     ## ##       ##     ## ##     ##
-# ########  ######   ##     ## ##     ##
-# ##   ##   ##       ##     ## ##     ##
-# ##    ##  ##       ##     ## ##     ##
-# ##     ## ######## ########   #######
-
-# set here the `run_token` of files you want to resubmit
-# submits everything if empty
-redo = dict([
-    # enter run_tokens here as first element of a pair
-])
-# if resubmit is given as a command line argument, use dirac to find all jobs with
-# "Failed" status and resubmit those
-if "resubmit" in sys.argv:
-    redo = []
-    redo_ids = []
-    for status in ["Failed", "Stalled"]:
-        try:
-            redo_ids += dirac.selectJobs(status=status, date=jobs_date,
-                                         owner="tmichael")['Value']
-        except KeyError:
-            print("KeyError -- no {} jobs present?".format(status))
-
-    n_jobs = len(redo_ids)
-    if n_jobs == 0:
-        print("no jobs found to resubmit ... exiting now")
-        exit()
-
-    print("getting names from {} failed/stalled jobs... please wait..."
-          .format(n_jobs))
-    for i, id in enumerate(redo_ids):
-        if ((1000*i)/n_jobs) % 10 == 0:
-            print("\r{} %".format((100*i)/n_jobs)),
-        jobname = dirac.attributes(id)["Value"]["JobName"]
-        if mode not in jobname:
-            continue
-        redo.append(jobname.split('.')[-1])
-    else:
-        print("\n... done")
-        redo = dict(zip(redo, redo_ids))
-
-
 # ########  ##     ## ##    ## ##    ## #### ##    ##  ######
 # ##     ## ##     ## ###   ## ###   ##  ##  ###   ## ##    ##
 # ##     ## ##     ## ####  ## ####  ##  ##  ####  ## ##
@@ -177,27 +124,34 @@ if "resubmit" in sys.argv:
 # ##    ##  ##     ## ##   ### ##   ###  ##  ##   ### ##    ##
 # ##     ##  #######  ##    ## ##    ## #### ##    ##  ######
 
+# get jobs from today and yesterday...
+import datetime as d
+days = []
+for i in range(2):  # how many days do you want to look back?
+    days.append((d.date.today()-d.timedelta(days=i)).isoformat())
+
 # get list of run_tokens that are currently running / waiting
 running_ids = []
 running_tokens = []
-for status in ["Running", "Waiting"]:
-    try:
-        running_ids += dirac.selectJobs(status=status,  # date=jobs_date,
-                                        owner="tmichael")['Value']
-    except KeyError:
-        pass
+for status in ["Waiting", "Running"]:
+    for day in days:
+        try:
+            running_ids += dirac.selectJobs(status=status,  date=day,
+                                            owner="tmichael")['Value']
+        except KeyError:
+            pass
 
 n_jobs = len(running_ids)
 if n_jobs > 0:
     print("getting names from {} running/waiting jobs... please wait..."
           .format(n_jobs))
     for i, id in enumerate(running_ids):
-        if ((1000*i)/n_jobs) % 10 == 0:
-            print("\r{} %".format((100*i)/n_jobs)),
+        if ((100*i)/n_jobs) % 5 == 0:
+            print("\r{} %".format(((20*i)/n_jobs)*5)),
         jobname = dirac.attributes(id)["Value"]["JobName"]
         if mode not in jobname:
             continue
-        running_tokens.append(jobname.split('.')[-1])
+        running_tokens.append(jobname.split('_')[-1])
     else:
         print("\n... done")
 
@@ -209,11 +163,10 @@ print(input_sandbox)
 print("\nwith output file:")
 print(output_filename_template.format(
         '{particle-type}', '{cleaning-mode}', '{run-token}'))
-if len(redo):
-    print("\nredoing these tokens:")
-    print(redo.keys())
 
-for i, astri_filelist in enumerate([prod3b_filelist_gamma, prod3b_filelist_proton]):
+for i, astri_filelist in enumerate([
+        prod3b_filelist_gamma,
+        prod3b_filelist_proton]):
     window_size = window_sizes[i]
     start_run = start_runs[i]
     for run_filelist in sliding_window([l.strip() for l in astri_filelist],
@@ -224,89 +177,89 @@ for i, astri_filelist in enumerate([prod3b_filelist_gamma, prod3b_filelist_proto
         # this selects the `runxxx` part of the first and last file in the run
         # list and joins them with a dash so that we get a nice identifier in
         # the outpult file name. if there is only one file in the list, use only that one
-        # run_token = re.split('/|\.|_', run_filelist[+0])[-3]  # ASTRI
         run_token = re.split('_', run_filelist[+0])[3]
-
         if len(run_filelist) > 1:
-            # run_token = '-'.join([run_token, re.split('/|\.', run_filelist[-1])[-3]])
             run_token = '-'.join([run_token, re.split('_', run_filelist[-1])[3]])
-
-        # if is a resubmitting, kill the old process, otherwis it would get resubmitted
-        # again and again
-        # (if you are afraid to miss a run, update `GRID_filelist` and submit normally)
-        if run_token in redo:
-            this_job_id = redo[run_token]
-            print("\ndeleting JobID {}".format(this_job_id))
-            dirac.deleteJob(this_job_id)
-
-        # setting output name
-        output_filename = output_filename_template.format(channel, mode, run_token)
-
-        # if some jobs failed and you want to resubmit, add their token to `redo`
-        if len(redo) and run_token not in redo:
-            continue
 
         print("-" * 20)
         print("\n")
 
+        # setting output name
+        output_filename = output_filename_template.format(channel, mode, run_token)
+
         # if job already running / waiting, skip
         if run_token in running_tokens:
-            print("{} still running".format(run_token))
+            print("\n{} still running".format(run_token))
             continue
 
         # if file already in GRID storage, skip
         # (you cannot overwrite it there, delete it and resubmit)
         if output_filename in GRID_filelist:
-            print("{} already on GRID SE".format(run_token))
+            print("\n{} already on GRID SE".format(run_token))
             continue
-
-        print("\nrunning on {} file{}".format(len(run_filelist),
-                                              "" if len(run_filelist) == 1 else "s"))
-        # print(run_filelist)
 
         j = Job()
         # runtime in seconds times 8 (CPU normalisation factor)
-        j.setCPUTime(10 * 3600 * 8)
-        j.setName('reconstruct {}.{}.{}'.format(channel, mode, run_token))
+        j.setCPUTime(6 * 3600 * 8)
+        j.setName('_'.join([channel, mode, run_token]))
+        j.setInputSandbox(input_sandbox)
 
         # bad sites
         j.setBannedSites([
-                'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
-                'LCG.CAMK.pl',      # no miniconda (bad vo configuration?)
-                'LCG.CETA.es'])
+            'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
+            'LCG.CAMK.pl',      # no miniconda (bad vo configuration?)
+            'LCG.Prague.cz',    # no miniconda (bad vo configuration?)
+            'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
+            'LCG.OBSPM.fr',
+            'LCG.LAPP.fr',      # no miniconda (bad vo configuration?)
+            # 'LCG.PIC.es',       #
+            # 'LCG.M3PEC.fr',     #
+            # 'LCG.CETA.es'
+        ])
 
-        j.setInputSandbox(input_sandbox +  # []
-                          # adding the data files into the input sandbox instead of input
-                          # data to not be bound to the very busy frascati site
-                          [f.replace('/vo', 'LFN:/vo') for f in run_filelist]
-                          )
+        # mr_filter loses its executable property by uploading it to the GRID SE; reset
+        j.setExecutable('chmod', '+x mr_filter')
 
-        # setting input
-        # j.setInputData(run_filelist)
+        for run_file in run_filelist:
+            run_token = re.split('_', run_file)[3]
+            output_filename_temp = output_filename_template.format(channel, mode, run_token)
 
-        # print("\nOutputSandbox: {}".format(output_filename))
-        # j.setOutputSandbox([output_filename])
+            # consecutively downloads the data files, processes them, deletes the input and
+            # goes on to the next input file; afterwards, the output files are merged
+            j.setExecutable('dirac-dms-get-file', "LFN:"+run_file)
+
+            # the pilot script sets up the environment, i.e. ctapipe through miniconda
+            # and then executes the `pilot_args` through python
+            j.setExecutable(pilot,
+                            pilot_args.format(out_file=output_filename_temp,
+                                              regressor=basename(regressor_LFN),
+                                              classifier=basename(classifier_LFN)))
+            j.setExecutable('rm', basename(run_file))
+
+        j.setExecutable('ls', '-lh')
+
+        # pilot necessary again to run the python script
+        j.setExecutable(pilot, ' '.join([
+            'append_tables.py',
+            '--events_dir ./',
+            '--no_auto',
+            '--out_file', output_filename
+        ]))
+
 
         print("OutputData: {}{}".format(output_path, output_filename))
         j.setOutputData([output_filename], outputSE=None, outputPath=output_path)
 
-        # the `dirac_pilot.sh` is the executable. it sets up the environment and then
-        # starts the script with all parameters given by `pilot_args`
-        j.setExecutable('dirac_pilot.sh',
-                        pilot_args.format(out_file=output_filename,
-                                          regressor=os.path.basename(regressor_LFN),
-                                          classifier=os.path.basename(classifier_LFN)))
 
         # check if we should somehow stop doing what we are doing
         if "dry" in sys.argv:
             print("\nrunning dry -- not submitting")
             break
 
-        # this sends the job to the GRID and uploads all the files into the input sandbox
-        # in the process
+        # this sends the job to the GRID and uploads all the
+        # files into the input sandbox in the process
         print("\nsubmitting job")
-        res = dirac.submit(j)
-        print('Submission Result: {}'.format(res['Value']))
+        print('Submission Result: {}'.format(dirac.submit(j)['Value']))
 
         # break if this is only a test submission
         if "test" in sys.argv:
@@ -314,7 +267,7 @@ for i, astri_filelist in enumerate([prod3b_filelist_gamma, prod3b_filelist_proto
             break
 
     # since there are two nested loops, need to break again
-    if "dry" in sys.argv:
+    if "dry" in sys.argv or "test" in sys.argv:
         break
 
 

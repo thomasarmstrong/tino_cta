@@ -182,6 +182,7 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
                 ax_hex = Axes(plt.gcf(), Bbox.from_extents(ax_hex_pos))
                 plt.gcf().add_axes(ax_hex)
                 plt.sca(ax_hex)
+                ax_hex.set_xticklabels([])
             else:
                 plt.subplot(211)
 
@@ -248,7 +249,8 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
         if extent:
             # adding a colour bar to the hexbin plot reduces its width by 1/5
             # adjusting the extent of the violin plot to sync up with the hexbin plot
-            plt.xlim([extent[0], (5.*extent[1] - extent[0])/4.])
+            plt.xlim([extent[0],
+                      (5.*extent[1] - extent[0])/4. if do_hex else extent[1]])
             # for good measure also sync the vertical extent
             plt.ylim(extent[2:])
 

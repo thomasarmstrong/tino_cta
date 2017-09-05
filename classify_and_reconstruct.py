@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from sys import exit
 
 from collections import namedtuple
@@ -111,10 +113,6 @@ def main():
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
 
-    # cam_geom = {}
-    # tel_phi = {}
-    # tel_theta = {}
-    # tel_orientation = (tel_phi, tel_theta)
 
     # keeping track of events and where they were rejected
     Eventcutflow = CutFlow("EventCutFlow")
