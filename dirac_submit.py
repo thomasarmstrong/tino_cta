@@ -182,20 +182,19 @@ for i, astri_filelist in enumerate([
             run_token = '-'.join([run_token, re.split('_', run_filelist[-1])[3]])
 
         print("-" * 20)
-        print("\n")
 
         # setting output name
         output_filename = output_filename_template.format(channel, mode, run_token)
 
         # if job already running / waiting, skip
         if run_token in running_tokens:
-            print("\n{} still running".format(run_token))
+            print("\n{} still running\n".format(run_token))
             continue
 
         # if file already in GRID storage, skip
         # (you cannot overwrite it there, delete it and resubmit)
         if output_filename in GRID_filelist:
-            print("\n{} already on GRID SE".format(run_token))
+            print("\n{} already on GRID SE\n".format(run_token))
             continue
 
         j = Job()
@@ -222,10 +221,16 @@ for i, astri_filelist in enumerate([
 
         for run_file in run_filelist:
             run_token = re.split('_', run_file)[3]
-            output_filename_temp = output_filename_template.format(channel, mode, run_token)
+            output_filename_temp = \
+                output_filename_template.format(channel, mode, run_token)
 
-            # consecutively downloads the data files, processes them, deletes the input and
-            # goes on to the next input file; afterwards, the output files are merged
+            # wait for a random number of seconds (up to five minutes) before starting
+            # to add a bit more entropy in the starting times of the dirac querries
+            sleep = random.randint(0, 5*60)
+            j.setExecutable('sleep', sleep)
+
+            # consecutively downloads the data files, processes them, deletes the input
+            # and goes on to the next input file; afterwards, the output files are merged
             j.setExecutable('dirac-dms-get-file', "LFN:"+run_file)
 
             # the pilot script sets up the environment, i.e. ctapipe through miniconda
@@ -246,10 +251,8 @@ for i, astri_filelist in enumerate([
             '--out_file', output_filename
         ]))
 
-
-        print("OutputData: {}{}".format(output_path, output_filename))
+        print("\nOutputData: {}{}".format(output_path, output_filename))
         j.setOutputData([output_filename], outputSE=None, outputPath=output_path)
-
 
         # check if we should somehow stop doing what we are doing
         if "dry" in sys.argv:
@@ -259,7 +262,7 @@ for i, astri_filelist in enumerate([
         # this sends the job to the GRID and uploads all the
         # files into the input sandbox in the process
         print("\nsubmitting job")
-        print('Submission Result: {}'.format(dirac.submit(j)['Value']))
+        print('Submission Result: {}\n'.format(dirac.submit(j)['Value']))
 
         # break if this is only a test submission
         if "test" in sys.argv:
