@@ -4,6 +4,7 @@ from os.path import basename
 import sys
 import glob
 import re
+import random
 
 from DIRAC.Core.Base import Script
 Script.parseCommandLine()
@@ -56,9 +57,9 @@ pilot_args = ' '.join([execute,
 
 
 # files containing lists of the Prod3b files on the GRID
-prod3b_filelist_gamma = open("/local/home/tmichael/Data/cta/Prod3b/"
+prod3b_filelist_gamma = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
                              "Paranal_gamma_North_20deg_HB9_merged.list")
-prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/"
+prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
                               "Paranal_proton_North_20deg_HB9_merged.list")
 
 
@@ -227,7 +228,7 @@ for i, astri_filelist in enumerate([
             # wait for a random number of seconds (up to five minutes) before starting
             # to add a bit more entropy in the starting times of the dirac querries
             sleep = random.randint(0, 5*60)
-            j.setExecutable('sleep', sleep)
+            j.setExecutable('sleep', str(sleep))
 
             # consecutively downloads the data files, processes them, deletes the input
             # and goes on to the next input file; afterwards, the output files are merged
