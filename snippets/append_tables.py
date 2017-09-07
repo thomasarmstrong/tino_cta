@@ -35,7 +35,7 @@ def merge_list_of_pytables_as_pandas(filename_list, destination, do_return=True)
         return pd.DataFrame(pyt_table[:])
 
 
-def merge_list_of_tables_as_pandas(filename_list, destination):
+def merge_list_of_tables_as_pandas(filename_list, destination, do_return=True):
     store = pd.HDFStore(destination)
     for i, filename in enumerate(sorted(filename_list)):
         s = pd.HDFStore(filename)
@@ -43,10 +43,11 @@ def merge_list_of_tables_as_pandas(filename_list, destination):
         if i == 0:
             store.put('reco_events', df, format='table', data_columns=True)
         else:
-            store.append(key='reco_events', value=df,format='table')
-    return store['reco_events']
+            store.append(key='reco_events', value=df, format='table')
+    if do_return:
+        return store['reco_events']
 
-    
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='')
@@ -58,10 +59,14 @@ if __name__ == "__main__":
 
     if args.auto:
         for channel in ["gamma", "proton"]:
-            for mode in ["wave"]:  # , "tail"]:
-                filename = "{}/{}_{}_{}_*.h5".format(args.events_dir, args.in_files_base,
-                                                     channel, mode)
+            for mode in ["wave", "tail"]:
+                filename = "{}/{}/{}_{}_{}_*.h5".format(
+                        args.events_dir, mode,
+                        args.in_files_base,
+                        channel, mode)
                 merge_list_of_tables_as_pandas(glob.glob(filename),
                                                filename.replace("_*", ""))
     else:
-        merge_list_of_pytables_as_pandas(glob.glob(args.events_dir+args.in_files_base+"*.h5"), args.out_file, do_return=False)
+        merge_list_of_pytables_as_pandas(
+                glob.glob(args.events_dir+args.in_files_base+"*.h5"),
+                args.out_file, do_return=False)
