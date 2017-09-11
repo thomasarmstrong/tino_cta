@@ -28,7 +28,7 @@ except ImportError:
     from ctapipe.reco.HillasReconstructor import \
         HillasReconstructor, TooFewTelescopesException
 
-from modules.ImageCleaning import ImageCleaner, EdgeEventException
+from modules.ImageCleaning import ImageCleaner, EdgeEvent
 from modules.CutFlow import CutFlow
 
 from modules.reSampling import resample_hex_to_rect, \
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
     allowed_tels = range(34)  # all ASTRI telescopes
     # allowed_tels = range(34, 40)  # use the array of FlashCams instead
-    allowed_tels = prod3b_tel_ids("FlashCam")
+    allowed_tels = prod3b_tel_ids("LSTCam")
     # allowed_tels = prod3b_tel_ids("ASTRICam")
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
@@ -172,7 +172,7 @@ if __name__ == '__main__':
                     pmt_signal_t, new_geom_t = \
                         Cleaner['t'].clean(pmt_signal.copy(), camera)
                     geom = {'w': new_geom_w, 't': new_geom_t, 'p': camera}
-                except (FileNotFoundError, EdgeEventException) as e:
+                except (FileNotFoundError, EdgeEvent) as e:
                     print(e)
                     continue
 
@@ -269,7 +269,7 @@ if __name__ == '__main__':
                                           image=np.sqrt(pmt_signal_t),
                                           ax=ax3)
                     disp3.cmap = plt.cm.inferno
-                    disp3.add_colorbar()
+                    disp3.add_colorbar(label="sqrt(signal)")
                     disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
                     plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
                               .format(Cleaner['t'].tail_thresholds[new_geom_t.cam_id][0],
@@ -279,12 +279,12 @@ if __name__ == '__main__':
                     ax4 = fig.add_subplot(224)
                     disp4 = CameraDisplay(new_geom_w,
                                           image=np.sqrt(
-                                                    np.sum(pmt_signal_w, axis=1)
-                                                    if pmt_signal_w.shape[-1] == 25
-                                                    else pmt_signal_w),
+                                              np.sum(pmt_signal_w, axis=1)
+                                              if pmt_signal_w.shape[-1] == 25
+                                              else pmt_signal_w),
                                           ax=ax4)
                     disp4.cmap = plt.cm.inferno
-                    disp4.add_colorbar()
+                    disp4.add_colorbar(label="sqrt(signal)")
                     disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
                     plt.title("wave slant cleaned ; alpha = {:4.3f}".format(alpha['w']))
                     plt.suptitle("Camera {}".format(tel_id))
