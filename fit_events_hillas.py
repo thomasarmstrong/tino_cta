@@ -35,7 +35,7 @@ from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopesException
 
 
-from modules.ImageCleaning import ImageCleaner, EdgeEventException
+from modules.ImageCleaning import ImageCleaner
 from modules.CutFlow import CutFlow
 
 from modules.prepare_event import EventPreparator
@@ -142,11 +142,7 @@ def main():
 
     # define here which telescopes to loop over
     allowed_tels = None
-    allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = range(34, 40)  # use the array of FlashCams instead
-    # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    # allowed_tels = prod3b_tel_ids("ASTRICam")
+    allowed_tels = prod3b_tel_ids("L+F+A")
     for filename in sorted(filenamelist)[:5][:args.last]:
 
         print("filename = {}".format(filename))
@@ -154,20 +150,6 @@ def main():
         source = hessio_event_source(filename,
                                      allowed_tels=allowed_tels,
                                      max_events=args.max_events)
-
-        # for event in source:
-        #     for tel_id in event.dl0.tels_with_data:
-        #         camera = event.inst.subarray.tel[tel_id].camera
-        #
-        #         if camera.cam_id in cam_id_map:
-        #             cam_id_map[camera.cam_id].add(tel_id)
-        #         else:
-        #             cam_id_map[camera.cam_id] = set([tel_id])
-        # for key, items in cam_id_map.items():
-        #     print(key)
-        #     print(sorted(items))
-        #     print()
-        # exit()
 
         # loop that cleans and parametrises the images and performs the reconstruction
         for (event, hillas_dict, n_tels,
