@@ -7,7 +7,7 @@ from ctapipe.image import hillas
 
 from ctapipe.utils.linalg import rotation_matrix_2d
 
-from modules.ImageCleaning import ImageCleaner, EdgeEventException
+from modules.ImageCleaning import ImageCleaner, EdgeEvent
 from ctapipe.utils.CutFlow import CutFlow
 
 from collections import namedtuple, OrderedDict
@@ -32,6 +32,12 @@ def raise_error(message):
 
 
 class EventPreparator():
+
+    pe_thresh = {
+        "ASTRICam": 14,
+        "LSTCam": 100,
+        "NectarCam": 190}
+
     def __init__(self, calib=None, cleaner=None, hillas_parameters=None,
                  shower_reco=None, event_cutflow=None, image_cutflow=None,
                  # event/image cuts:
@@ -104,10 +110,11 @@ class EventPreparator():
                 pmt_signal = event.dl1.tel[tel_id].image
 
                 # the PMTs on some (most?) cameras have 2 gain channels. select one
-                # according to a threshold (14 here). ultimately, this will be done IN the
+                # according to a threshold. ultimately, this will be done IN the
                 # camera/telescope itself but until then, do it here
                 if pmt_signal.shape[0] > 1:
-                    pick = (pmt_signal > 14).any(axis=0) != np_true_false
+                    pick = (self.pe_thresh[camera.cam_id]
+                            < pmt_signal).any(axis=0) != np_true_false
                     pmt_signal = pmt_signal.T[pick.T]
                 else:
                     pmt_signal = np.squeeze(pmt_signal)
@@ -124,7 +131,7 @@ class EventPreparator():
                 except FileNotFoundError as e:
                     print(e)
                     continue
-                except EdgeEventException:
+                except EdgeEvent:
                     continue
 
                 # could this go into `hillas_parameters` ...?

@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 
 from ctapipe.image.cleaning import tailcuts_clean, dilate
 
-from .CutFlow import CutFlow
+from ctapipe.utils.CutFlow import CutFlow
 
 
 try:
@@ -18,21 +18,25 @@ except:
 
 try:
     from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+    from datapipe.denoising import cdf
+    from datapipe.denoising.inverse_transform_sampling import \
+        EmpiricalDistribution as EmpDist
+
 except:
     print("something missing from datapipe.denoising.wavelets_mrfilter -- skimage?")
 
 from datapipe.io.geometry_converter import astri_to_2d_array, array_2d_to_astri
 
 
-class UnknownModeException(Exception):
+class UnknownMode(Exception):
     pass
 
 
-class EdgeEventException(Exception):
+class EdgeEvent(Exception):
     pass
 
 
-class MissingImplementationException(Exception):
+class MissingImplementation(Exception):
     pass
 
 
@@ -93,11 +97,13 @@ class ImageCleaner:
                                      [0, 0, 1, 1, 1]])
 
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
-                 skip_edge_events=True, cutflow=CutFlow("ImageCleaner"),
+                 skip_edge_events=True, edge_width=1,
+                 cutflow=CutFlow("ImageCleaner"),
                  wavelet_options=None,
                  tmp_files_directory='/dev/shm/', mrfilter_directory=None):
         self.mode = mode
         self.skip_edge_events = skip_edge_events
+        self.edge_width = edge_width
         self.cutflow = cutflow
 
         if mode in [None, "none", "None"]:
@@ -115,21 +121,31 @@ class ImageCleaner:
             # command line parameters for the mr_filter call
             self.wavelet_options = \
                 {"ASTRICam": wavelet_options or "-K -C1 -m3 -s2,2,3,3 -n4",
-                 "FlashCam": wavelet_options or "-K -C1 -m3 -s4,4,5,4 -n4"}
+                 "FlashCam": wavelet_options or "-K -C1 -m3 -s4,4,5,4 -n4",
+                 "LSTCam": wavelet_options or "-K -C1 -m3 -s2,4.5,3.5,3 -n4"}
             # parameters for poisson + gauß noise injection
             self.noise_model = \
-                {"ASTRICam": {"lambda": 1.9, "mu": 0.5, "sigma": 0.8},
-                 "FlashCam": {"lambda": 5.9, "mu": -5.9, "sigma": 2.4}}
+                {"ASTRICam": EmpDist(cdf.ASTRI_CDF_FILE),
+                 "FlashCam": EmpDist(cdf.FLASHCAM_CDF_FILE),
+                 "LSTCam": EmpDist(cdf.LSTCAM_CDF_FILE)}
 
         elif mode == "tail":
             self.clean = self.clean_tail
             self.tail_thresholds = \
                 {"ASTRICam": (5, 7),  # (5, 10)?
-                 "FlashCam": (12, 15)}
+                 "FlashCam": (12, 15),
+                 # ASWG Zeuthen talk by Abelardo Moralejo:
+                 "LSTCam": (5, 10),
+                 "NectarCam": (4, 8),
+                 # "FlashCam": (4, 8),  # there is some scaling missing?
+                 "SSTCam": (3, 6),
+                 "GCTCam": (2, 4),
+                 "SCTCam": (1.5, 3)}
+
             self.island_threshold = 1.5
             self.dilate = dilate
         else:
-            raise UnknownModeException(
+            raise UnknownMode(
                 'cleaning mode "{}" not found'.format(mode))
 
         if island_cleaning:
@@ -146,18 +162,14 @@ class ImageCleaner:
             return self.clean_wave_astri(img, cam_geom)
 
         else:
-            raise MissingImplementationException("wavelet cleaning of square-pixel"
-                                                 " images only for ASTRI so far")
+            raise MissingImplementation(
+                    "wavelet cleaning of square-pixel images only for ASTRI so far")
 
     def clean_wave_astri(self, img, cam_geom):
         array2d_img = astri_to_2d_array(img)
         cleaned_img = self.wavelet_cleaning(
                 array2d_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
-                # parameters for poisson + gauß noise injection
-                nan_noise_lambda=self.noise_model[cam_geom.cam_id]["lambda"],
-                nan_noise_mu=self.noise_model[cam_geom.cam_id]["mu"],
-                nan_noise_sigma=self.noise_model[cam_geom.cam_id]["sigma"]
-                )
+                noise_distribution=self.noise_model[cam_geom.cam_id])
 
         self.cutflow.count("wavelet cleaning")
 
@@ -166,11 +178,10 @@ class ImageCleaner:
 
         if self.skip_edge_events:
             edge_thresh = np.max(cleaned_img)/5.
-            if (cleaned_img[0, :]  > edge_thresh).any() or \
-               (cleaned_img[-1, :] > edge_thresh).any() or \
-               (cleaned_img[:, 0]  > edge_thresh).any() or \
-               (cleaned_img[:, -1] > edge_thresh).any():
-                    raise EdgeEventException
+            mask = np.ones_like(cleaned_img, bool)
+            mask[self.edge_width:-self.edge_width, self.edge_width:-self.edge_width] = 0
+            if (cleaned_img[mask] > edge_thresh).any():
+                    raise EdgeEvent
             self.cutflow.count("wavelet edge")
 
         new_img = array_2d_to_astri(cleaned_img)
@@ -184,10 +195,7 @@ class ImageCleaner:
 
         cleaned_img = self.wavelet_cleaning(
                 rot_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
-                # parameters for poisson + gauß noise injection
-                nan_noise_lambda=self.noise_model[cam_geom.cam_id]["lambda"],
-                nan_noise_mu=self.noise_model[cam_geom.cam_id]["mu"],
-                nan_noise_sigma=self.noise_model[cam_geom.cam_id]["sigma"])
+                noise_distribution=self.noise_model[cam_geom.cam_id])
 
         self.cutflow.count("wavelet cleaning")
 
@@ -204,9 +212,10 @@ class ImageCleaner:
         return new_img, new_geom
 
     def clean_tail(self, img, cam_geom):
-        mask = tailcuts_clean(cam_geom, img,
-                              picture_thresh=self.tail_thresholds[cam_geom.cam_id][1],
-                              boundary_thresh=self.tail_thresholds[cam_geom.cam_id][0])
+        mask = tailcuts_clean(
+                cam_geom, img,
+                picture_thresh=self.tail_thresholds[cam_geom.cam_id][1],
+                boundary_thresh=self.tail_thresholds[cam_geom.cam_id][0])
         if self.dilate:
             dilate(cam_geom, mask)
         img[~mask] = 0
@@ -222,11 +231,11 @@ class ImageCleaner:
 
             if self.skip_edge_events:
                 edge_thresh = np.max(new_img)/5.
-                if (new_img[0, :]  > edge_thresh).any() or  \
-                   (new_img[-1, :] > edge_thresh).any() or  \
-                   (new_img[:, 0]  > edge_thresh).any() or  \
-                   (new_img[:, -1] > edge_thresh).any():
-                        raise EdgeEventException
+                mask = np.ones_like(new_img, bool)
+                mask[self.edge_width:-self.edge_width,
+                     self.edge_width:-self.edge_width] = 0
+                if (new_img[mask] > edge_thresh).any():
+                    raise EdgeEven
                 self.cutflow.count("tailcut edge")
 
             new_img = array_2d_to_astri(new_img)
