@@ -82,7 +82,7 @@ def make_argparser():
     parser.add_argument('-i', '--indir',   type=str,
                         # default="/media/tmichael/Transcend/Data/cta/ASTRI9/")
                         # default=expandvars("$HOME/Data/cta/ASTRI9/"))
-                        default=expandvars("$HOME/Data/cta/Prod3b/"))
+                        default=expandvars("$HOME/Data/cta/Prod3b/Paranal"))
     parser.add_argument('-f', '--infile_list',   type=str, default="", nargs='*',
                         help="give a specific list of files to run on")
     parser.add_argument('--plots_dir', type=str, default="plots",

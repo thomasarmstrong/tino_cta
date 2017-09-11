@@ -206,12 +206,12 @@ for i, astri_filelist in enumerate([
 
         # bad sites
         j.setBannedSites([
-            'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
+            # 'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
             'LCG.CAMK.pl',      # no miniconda (bad vo configuration?)
             'LCG.Prague.cz',    # no miniconda (bad vo configuration?)
             'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
             'LCG.OBSPM.fr',
-            'LCG.LAPP.fr',      # no miniconda (bad vo configuration?)
+            # 'LCG.LAPP.fr',      # no miniconda (bad vo configuration?)
             # 'LCG.PIC.es',       #
             # 'LCG.M3PEC.fr',     #
             # 'LCG.CETA.es'
