@@ -17,6 +17,7 @@ from ctapipe.instrument import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.utils.linalg import get_phi_theta, set_phi_theta, angle, length
+from ctapipe.utils.CutFlow import CutFlow
 
 from ctapipe.image.hillas import HillasParameterizationError, \
                                  hillas_parameters_4 as hillas_parameters
@@ -29,11 +30,6 @@ except ImportError:
         HillasReconstructor, TooFewTelescopesException
 
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
-from modules.CutFlow import CutFlow
-
-from modules.reSampling import resample_hex_to_rect, \
-                               make_qr_to_pix_id_map, \
-                               qr_to_pix_id_map_tel_map
 
 from ctapipe.calib import CameraCalibrator
 
@@ -283,6 +279,9 @@ if __name__ == '__main__':
                                               if pmt_signal_w.shape[-1] == 25
                                               else pmt_signal_w),
                                           ax=ax4)
+                    hw = hillas['w']
+                    plt.scatter([hw.cen_x/u.m, (hw.cen_x+hw.length*np.cos(hw.psi))/u.m],
+                                [hw.cen_y/u.m, (hw.cen_y+hw.length*np.sin(hw.psi))/u.m])
                     disp4.cmap = plt.cm.inferno
                     disp4.add_colorbar(label="sqrt(signal)")
                     disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)

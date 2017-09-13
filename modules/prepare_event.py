@@ -15,7 +15,7 @@ from collections import namedtuple, OrderedDict
 PreparedEvent = namedtuple("PreparedEvent",
                            ["event", "hillas_dict", "n_tels",
                             "tot_signal", "max_signals",
-                            "pos_fit", "dir_fit",
+                            "pos_fit", "dir_fit", "h_max",
                             "err_est_pos", "err_est_dir"
                             ])
 
@@ -94,7 +94,7 @@ class EventPreparator():
 
                 # can this be improved?
                 if tel_id not in tel_phi:
-                    tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
+                    tel_phi[tel_id] = (np.pi/2+event.mc.tel[tel_id].azimuth_raw)*u.rad
                     tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
 
                 # count the current telescope according to its size
@@ -113,6 +113,7 @@ class EventPreparator():
                 # according to a threshold. ultimately, this will be done IN the
                 # camera/telescope itself but until then, do it here
                 if pmt_signal.shape[0] > 1:
+                    pmt_signal = np.squeeze(pmt_signal)
                     pick = (self.pe_thresh[camera.cam_id]
                             < pmt_signal).any(axis=0) != np_true_false
                     pmt_signal = pmt_signal.T[pick.T]
@@ -142,6 +143,51 @@ class EventPreparator():
                     moments = self.hillas_parameters(new_geom.pix_x,
                                                      new_geom.pix_y, pmt_signal)
 
+                    # import matplotlib.pyplot as plt
+                    # from mpl_toolkits.mplot3d import Axes3D
+                    # from ctapipe.reco.HillasReconstructor import guess_pix_direction
+                    # # NOTE this is correct: +cos(psi) ; +sin(psi)
+                    # p2_x = moments.cen_x + moments.length * np.cos(moments.psi)
+                    # p2_y = moments.cen_y + moments.length * np.sin(moments.psi)
+                    # foclen = \
+                    # event.inst.subarray.tel[tel_id].optics.effective_focal_length
+                    #
+                    # dir_c, dir_1, dir_2 = guess_pix_direction(
+                    #     np.array([0, moments.cen_x / u.m, p2_x / u.m]) * u.m,
+                    #     np.array([0, moments.cen_y / u.m, p2_y / u.m]) * u.m,
+                    #     90*u.deg-event.mc.tel[tel_id].azimuth_raw * u.rad,
+                    #     (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad,
+                    #     foclen)
+                    #
+                    # pos = event.inst.subarray.positions[tel_id]
+                    # fig = plt.figure()
+                    # ax = fig.gca(projection='3d')
+                    # points_c = [pos + t * dir_c * u.m for t in np.linspace(0, 5000, 3)]
+                    # points_1 = [pos + t * dir_1 * u.m for t in np.linspace(0, 5000, 3)]
+                    # points_2 = [pos + t * dir_2 * u.m for t in np.linspace(0, 5000, 3)]
+                    # ax.plot(*np.array(points_c).T, color="g", label="tel_dir")
+                    # ax.plot(*np.array(points_1).T, color="r", label="centroid")
+                    # ax.plot(*np.array(points_2).T, color="b", label="offset")
+                    # # ax.set_aspect("equal")
+                    # plt.xlim([-1000, 1000])
+                    # plt.ylim([-1000, 1000])
+                    # ax.set_zlim([0, 2000])
+                    # # ax.invert_yaxis()
+                    # plt.xlabel("x")
+                    # plt.ylabel("y")
+                    # plt.legend()
+                    #
+                    #
+                    # from ctapipe.visualization import CameraDisplay
+                    # fig = plt.figure()
+                    # disp4 = CameraDisplay(new_geom, image=pmt_signal, ax=fig.gca())
+                    # hw = moments
+                    # plt.scatter([0], [0], color="white", marker="P")
+                    # plt.scatter([hw.cen_x/u.m], [hw.cen_y/u.m], color="r")
+                    # plt.scatter([(hw.cen_x+hw.length*np.cos(hw.psi))/u.m],
+                    #             [(hw.cen_y+hw.length*np.sin(hw.psi))/u.m], color="b")
+                    # plt.show()
+
                     # if width and/or length are zero (e.g. when there is only only one
                     # pixel or when all  pixel are exactly in one row), the
                     # parametrisation won't be very useful: skip
@@ -165,10 +211,9 @@ class EventPreparator():
                 self.shower_reco.get_great_circles(hillas_dict, event.inst.subarray,
                                                    tel_phi, tel_theta)
                 pos_fit, err_est_pos = self.shower_reco.fit_core_crosses()
-                dir_fit, crossings = self.shower_reco.fit_origin_crosses()
-
-                # don't have a direction error estimate yet
-                err_est_dir = 0*u.deg
+                dir_fit, err_est_dir = self.shower_reco.fit_origin_crosses()
+                h_max = self.shower_reco.fit_h_max(
+                        hillas_dict, event.inst.subarray, tel_phi, tel_theta)
             except Exception as e:
                 print(e)
                 continue
@@ -179,6 +224,6 @@ class EventPreparator():
 
             yield PreparedEvent(event=event, hillas_dict=hillas_dict, n_tels=n_tels,
                                 tot_signal=tot_signal, max_signals=max_signals,
-                                pos_fit=pos_fit, dir_fit=dir_fit,
+                                pos_fit=pos_fit, dir_fit=dir_fit, h_max=h_max,
                                 err_est_pos=err_est_pos, err_est_dir=err_est_dir
                                 )

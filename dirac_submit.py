@@ -13,9 +13,7 @@ from DIRAC.Interfaces.API.Dirac import Dirac
 
 
 def sliding_window(my_list, window_size, step_size=None, start=0):
-    if step_size is None:
-        step_size = window_size
-    start = start
+    step_size = step_size or window_size
     while start+window_size < len(my_list):
         yield my_list[start:start+window_size]
         start += step_size
@@ -63,10 +61,7 @@ prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
                               "Paranal_proton_North_20deg_HB9_merged.list")
 
 
-if mode == "wave":
-    window_sizes = [15, 15]
-else:
-    window_sizes = [20, 20]
+window_sizes = [20, 20]
 # I used the first few files to train the classifier and regressor -- skip them
 start_runs = [30, 30]
 
@@ -165,13 +160,11 @@ print("\nwith output file:")
 print(output_filename_template.format(
         '{particle-type}', '{cleaning-mode}', '{run-token}'))
 
-for i, astri_filelist in enumerate([
+for i, filelist in enumerate([
         prod3b_filelist_gamma,
         prod3b_filelist_proton]):
-    window_size = window_sizes[i]
-    start_run = start_runs[i]
-    for run_filelist in sliding_window([l.strip() for l in astri_filelist],
-                                       window_size, start=start_run):
+    for run_filelist in sliding_window([l.strip() for l in filelist],
+                                       window_sizes[i], start=start_runs[i]):
 
         channel = "gamma" if "gamma" in " ".join(run_filelist) else "proton"
 
@@ -263,7 +256,7 @@ for i, astri_filelist in enumerate([
         # this sends the job to the GRID and uploads all the
         # files into the input sandbox in the process
         print("\nsubmitting job")
-        print('Submission Result: {}\n'.format(dirac.submit(j)['Value']))
+        # print('Submission Result: {}\n'.format(dirac.submit(j)['Value']))
 
         # break if this is only a test submission
         if "test" in sys.argv:

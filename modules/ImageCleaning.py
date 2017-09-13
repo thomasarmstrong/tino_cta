@@ -122,11 +122,14 @@ class ImageCleaner:
             self.wavelet_options = \
                 {"ASTRICam": wavelet_options or "-K -C1 -m3 -s2,2,3,3 -n4",
                  "FlashCam": wavelet_options or "-K -C1 -m3 -s4,4,5,4 -n4",
-                 "LSTCam": wavelet_options or "-K -C1 -m3 -s2,4.5,3.5,3 -n4"}
+                 "LSTCam": wavelet_options or "-K -C1 -m3 -s2,4.5,3.5,3 -n4",
+                 "DigiCam": wavelet_options or "-K -C1 -m3 -s3,3,4,4 -n4"
+                 }
             # parameters for poisson + gauß noise injection
             self.noise_model = \
                 {"ASTRICam": EmpDist(cdf.ASTRI_CDF_FILE),
                  "FlashCam": EmpDist(cdf.FLASHCAM_CDF_FILE),
+                 "DigiCam": EmpDist(cdf.DIGICAM_CDF_FILE),
                  "LSTCam": EmpDist(cdf.LSTCAM_CDF_FILE)}
 
         elif mode == "tail":
@@ -138,7 +141,7 @@ class ImageCleaner:
                  "LSTCam": (5, 10),
                  "NectarCam": (4, 8),
                  # "FlashCam": (4, 8),  # there is some scaling missing?
-                 "SSTCam": (3, 6),
+                 "DigiCam": (3, 6),
                  "GCTCam": (2, 4),
                  "SCTCam": (1.5, 3)}
 

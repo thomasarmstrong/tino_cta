@@ -40,31 +40,6 @@ class SignalHandler():
             self.stop = True
 
 
-def apply_mc_calibration_ASTRI(adcs, gains, peds, adc_tresh=3500):
-    """
-    apply basic calibration for ASTRI telescopes with two gains
-    """
-
-    calibrated = [(adc0-ped0)*gain0 if adc0 < adc_tresh
-                  else (adc1-ped1)*gain1
-                  for adc0, adc1, gain0, gain1, ped0, ped1
-                  in zip(*adcs, *gains, *peds)]
-
-    return np.array(calibrated)
-
-
-def apply_mc_calibration(adcs, gains, peds):
-    """
-    apply basic calibration
-    """
-
-    if adcs.ndim > 1:  # if it's per-sample need to correct the peds
-        return ((adcs - peds[:, np.newaxis] / adcs.shape[1]) *
-                gains[:, np.newaxis])
-
-    return (adcs - peds) * gains
-
-
 def convert_astropy_array(arr, unit=None):
     if unit is None:
         unit = arr[0].unit
@@ -257,42 +232,62 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
         plt.grid()
 
 
-def prod3b_tel_ids(cam_id):
-    if cam_id == "LSTCam":
-        tel_ids = np.arange(12)
-    elif cam_id == "FlashCam":
-        tel_ids = np.arange(12, 53)
-    elif cam_id == "NectarCam":
-        tel_ids = np.arange(53, 94)
-    elif cam_id == "ASTRICam":
-        tel_ids = np.arange(95, 252)
-    elif cam_id == "CHEC":
-        tel_ids = np.arange(252, 410)
-    elif cam_id == "DigiCam":
-        tel_ids = np.arange(410, 567)
+def prod3b_tel_ids(cam_id, site="south"):
+    if site.lower() in ["south", "paranal", "chile"]:
+        if cam_id == "LSTCam":
+            tel_ids = np.arange(12)
+        elif cam_id == "FlashCam":
+            tel_ids = np.arange(12, 53)
+        elif cam_id == "NectarCam":
+            tel_ids = np.arange(53, 94)
+        elif cam_id == "ASTRICam":
+            tel_ids = np.arange(95, 252)
+        elif cam_id == "CHEC":
+            tel_ids = np.arange(252, 410)
+        elif cam_id == "DigiCam":
+            tel_ids = np.arange(410, 567)
 
-    elif cam_id == "L+F+A":
-        tel_ids = np.array([4, 5, 6, 11, 12, 13, 14, 15, 16, 19, 20, 23, 24,
-                            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 47, 48,
-                            49, 50, 51, 52, 99, 100, 101, 102, 110, 111, 116,
-                            117, 122, 123, 124, 125, 126, 127, 132, 133, 134,
-                            135, 142, 143, 144, 145, 158, 159, 164, 165, 166,
-                            167, 169, 170, 184, 185, 186, 187, 188, 189, 190,
-                            191, 192, 193, 194, 195, 208, 209, 210, 211, 212,
-                            213, 220, 221, 222, 223, 224, 225, 226, 227, 228,
-                            229, 234, 235, 236, 237, 238, 239, 240, 241, 242,
-                            243, 244, 245])
-    elif cam_id == "F+A":
-        tel_ids = np.array([12, 13, 14, 15, 16, 19, 20, 23, 24,
-                            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 47, 48,
-                            49, 50, 51, 52, 99, 100, 101, 102, 110, 111, 116,
-                            117, 122, 123, 124, 125, 126, 127, 132, 133, 134,
-                            135, 142, 143, 144, 145, 158, 159, 164, 165, 166,
-                            167, 169, 170, 184, 185, 186, 187, 188, 189, 190,
-                            191, 192, 193, 194, 195, 208, 209, 210, 211, 212,
-                            213, 220, 221, 222, 223, 224, 225, 226, 227, 228,
-                            229, 234, 235, 236, 237, 238, 239, 240, 241, 242,
-                            243, 244, 245])
+        elif cam_id == "L+F+A":
+            tel_ids = np.array([4, 5, 6, 11, 12, 13, 14, 15, 16, 19, 20, 23, 24,
+                                25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 47, 48,
+                                49, 50, 51, 52, 99, 100, 101, 102, 110, 111, 116,
+                                117, 122, 123, 124, 125, 126, 127, 132, 133, 134,
+                                135, 142, 143, 144, 145, 158, 159, 164, 165, 166,
+                                167, 169, 170, 184, 185, 186, 187, 188, 189, 190,
+                                191, 192, 193, 194, 195, 208, 209, 210, 211, 212,
+                                213, 220, 221, 222, 223, 224, 225, 226, 227, 228,
+                                229, 234, 235, 236, 237, 238, 239, 240, 241, 242,
+                                243, 244, 245])
+        elif cam_id == "F+A":
+            tel_ids = np.array([12, 13, 14, 15, 16, 19, 20, 23, 24,
+                                25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 47, 48,
+                                49, 50, 51, 52, 99, 100, 101, 102, 110, 111, 116,
+                                117, 122, 123, 124, 125, 126, 127, 132, 133, 134,
+                                135, 142, 143, 144, 145, 158, 159, 164, 165, 166,
+                                167, 169, 170, 184, 185, 186, 187, 188, 189, 190,
+                                191, 192, 193, 194, 195, 208, 209, 210, 211, 212,
+                                213, 220, 221, 222, 223, 224, 225, 226, 227, 228,
+                                229, 234, 235, 236, 237, 238, 239, 240, 241, 242,
+                                243, 244, 245])
+
+        elif cam_id == "L+F+D":
+            tel_ids = np.array([4, 5, 6, 11, 12, 13, 14, 15, 16, 19, 20, 23, 24, 25, 26,
+                                27, 28, 29, 30, 31, 32, 33, 34, 47, 48, 49, 50, 51, 52,
+                                415, 416, 417, 418, 426, 427, 432, 433, 438, 439, 440,
+                                441, 442, 443, 448, 449, 450, 451, 458, 459, 460, 461,
+                                474, 475, 480, 481, 482, 483, 485, 486, 500, 501, 502,
+                                503, 504, 505, 506, 507, 508, 509, 510, 511, 524, 525,
+                                526, 527, 528, 529, 536, 537, 538, 539, 540, 541, 542,
+                                543, 544, 545, 550, 551, 552, 553, 554, 555, 556, 557,
+                                558, 559, 560, 561])
+
+        else:
+            raise ValueError("cam_id {} not supported".format(cam_id))
+    elif site.lower in ["north", "la palma", "lapalma", "spain", "canaries"]:
+        raise ValueError("north site not implemented yet")
+    else:
+        raise ValueError("site {} not known try again".format(site))
+
     return tel_ids
 
 

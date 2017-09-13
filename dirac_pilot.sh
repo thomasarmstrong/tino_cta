@@ -29,7 +29,7 @@ which python
 
 # if the mr_filter executable is copied from the GRID storage, it is not marked as
 # "executable" -- fix this here
-chmod +x mr_filter
+# chmod +x mr_filter
 
 # prevent matplotlib to complain about missing backends
 export MPLBACKEND=Agg

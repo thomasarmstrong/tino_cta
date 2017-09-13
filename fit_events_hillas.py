@@ -27,16 +27,16 @@ except:
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.utils import linalg
+from ctapipe.utils.CutFlow import CutFlow
 
 from ctapipe.image.hillas import HillasParameterizationError, \
                                  hillas_parameters_4 as hillas_parameters
 
 from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopesException
-
+from ctapipe.reco.shower_max import ShowerMaxEstimator
 
 from modules.ImageCleaning import ImageCleaner
-from modules.CutFlow import CutFlow
 
 from modules.prepare_event import EventPreparator
 
@@ -58,6 +58,8 @@ def main():
                         "instead of the PMT signal")
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
+    parser.add_argument('--plot_c',  action='store_true',
+                        help="plot camera-wise displays")
 
     args = parser.parse_args()
 
@@ -91,12 +93,14 @@ def main():
     # the class that does the shower reconstruction
     shower_reco = HillasReconstructor()
 
+    shower_max_estimator = ShowerMaxEstimator("paranal")
+
     preper = EventPreparator(calib=None, cleaner=cleaner,
                              hillas_parameters=hillas_parameters, shower_reco=shower_reco,
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
                              allowed_cam_ids=[],  # means: all
-                             min_ntel=2,
+                             min_ntel=3,
                              min_charge=25,  # args.min_charge,
                              min_pixel=3)
 
@@ -113,6 +117,8 @@ def main():
             xi = tb.Float32Col(dflt=1, pos=3)
             DeltaR = tb.Float32Col(dflt=1, pos=4)
             ErrEstPos = tb.Float32Col(dflt=1, pos=5)
+            ErrEstDir = tb.Float32Col(dflt=1, pos=6)
+            h_max = tb.Float32Col(dflt=1, pos=7)
 
         channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
         if args.out_file:
@@ -142,7 +148,7 @@ def main():
 
     # define here which telescopes to loop over
     allowed_tels = None
-    allowed_tels = prod3b_tel_ids("L+F+A")
+    allowed_tels = prod3b_tel_ids("L+F+D")
     for filename in sorted(filenamelist)[:5][:args.last]:
 
         print("filename = {}".format(filename))
@@ -153,12 +159,16 @@ def main():
 
         # loop that cleans and parametrises the images and performs the reconstruction
         for (event, hillas_dict, n_tels,
-             tot_signal, max_signal, pos_fit, dir_fit,
-             err_est_pos, _) in preper.prepare_event(source):
+             tot_signal, max_signal, pos_fit, dir_fit, h_max,
+             err_est_pos, err_est_dir) in preper.prepare_event(source):
 
             shower = event.mc
-            shower_org = linalg.set_phi_theta(shower.az, 90.*u.deg-shower.alt)
+            shower_org = linalg.set_phi_theta(90*u.deg+shower.az, 90.*u.deg-shower.alt)
             shower_core = convert_astropy_array([shower.core_x, shower.core_y])
+
+            h_shower_max = shower_max_estimator.find_shower_max_height(
+                    energy=shower.energy, h_first_int=shower.h_first_int,
+                    gamma_alt=shower.alt)
 
             xi = linalg.angle(dir_fit, shower_org).to(angle_unit)
             diff = linalg.length(pos_fit[:2]-shower_core)
@@ -167,7 +177,10 @@ def main():
             print()
             print("xi = {:4.3f}".format(xi))
             print("pos = {:4.3f}".format(diff))
+            print("h_max reco:", h_max)
+            print("err_est_dir: {:4.3f}".format(err_est_dir.to(angle_unit)))
             print("err_est_pos: {:4.3f}".format(err_est_pos))
+            # print("h_shower_max:", h_shower_max)
 
             try:
                 # store the reconstruction data in the PyTable
@@ -177,6 +190,8 @@ def main():
                 reco_event["xi"] = xi / angle_unit
                 reco_event["DeltaR"] = diff / dist_unit
                 reco_event["ErrEstPos"] = err_est_pos / dist_unit
+                reco_event["ErrEstDir"] = err_est_dir / angle_unit
+                reco_event["h_max"] = h_max / dist_unit
                 reco_event.append()
                 reco_table.flush()
 
@@ -188,21 +203,36 @@ def main():
             except NoPyTError:
                 pass
 
-            # this plots
-            # • the MC shower core
-            # • the reconstructed shower core
-            # • the used telescopes
-            # • and the trace of the Hillas plane on the ground
-            if False:
+            if args.plot_c:
+                from mpl_toolkits.mplot3d import Axes3D
+                fig = plt.figure()
+                ax = fig.gca(projection='3d')
+                for c in shower_reco.circles.values():
+                    points = [c.pos + t * c.a * u.km for t in np.linspace(0, 15, 3)]
+                    ax.plot(*np.array(points).T, linewidth=np.sqrt(c.weight)/10)
+                    ax.scatter(*c.pos[:, None].value, s=np.sqrt(c.weight))
+                plt.xlabel("x")
+                plt.ylabel("y")
+                plt.pause(.1)
+
+                # this plots
+                # • the MC shower core
+                # • the reconstructed shower core
+                # • the used telescopes
+                # • and the trace of the Hillas plane on the ground
                 plt.figure()
-                for c in fit.circles.values():
-                    plt.scatter(c.pos[0], c.pos[1], c="g", s=c.weight)
+                for c in shower_reco.circles.values():
+                    plt.scatter(c.pos[0], c.pos[1], s=np.sqrt(c.weight))
                     plt.plot([c.pos[0].value-500*c.norm[1], c.pos[0].value+500*c.norm[1]],
-                             [c.pos[1].value+500*c.norm[0], c.pos[1].value-500*c.norm[0]])
-                plt.scatter(*fit_position[:2], c="r")
-                plt.scatter(*shower_core[:2], c="b")
-                plt.xlim(-400, 400)
-                plt.ylim(-400, 400)
+                             [c.pos[1].value+500*c.norm[0], c.pos[1].value-500*c.norm[0]],
+                             linewidth=np.sqrt(c.weight)/10)
+                plt.scatter(*pos_fit[:2], c="black", marker="*", label="fitted")
+                plt.scatter(*shower_core[:2], c="black", marker="P", label="MC")
+                plt.legend()
+                plt.xlabel("x")
+                plt.ylabel("y")
+                plt.xlim(-1400, 1400)
+                plt.ylim(-1400, 1400)
                 plt.show()
 
             if signal_handler.stop: break
@@ -226,12 +256,31 @@ def main():
     # ##        ##       ##     ##    ##    ##    ##
     # ##        ########  #######     ##     ######
 
+    plt.figure()
+    plt.hist(reco_table.cols.h_max, bins=np.linspace(000, 15000, 51, True))
+    plt.title(channel)
+    plt.xlabel("h_max reco")
+    plt.pause(.1)
+
     figure = plt.figure()
     xi_edges = np.linspace(0, 5, 20)
     plt.hist(reco_table.cols.xi, bins=xi_edges, log=True)
     plt.xlabel(r"$\xi$ / deg")
     if args.write:
         save_fig('{}/reco_xi_{}'.format(args.plots_dir, args.mode))
+    plt.pause(.1)
+
+    plt.figure()
+    plt.hist(reco_table.cols.ErrEstDir[:],
+             bins=np.linspace(0, 20, 50))
+    plt.title(channel)
+    plt.xlabel("beta")
+    plt.pause(.1)
+
+    plt.figure()
+    plt.hist(np.log10(reco_table.cols.xi[:] / reco_table.cols.ErrEstDir[:]), bins=50)
+    plt.title(channel)
+    plt.xlabel("log_10(xi / beta)")
     plt.pause(.1)
 
     # convert the xi-list into a dict with the number of used telescopes as keys

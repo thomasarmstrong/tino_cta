@@ -10,6 +10,7 @@ from glob import glob
 from itertools import chain
 
 from ctapipe.utils import linalg
+from ctapipe.utils.CutFlow import CutFlow
 
 from ctapipe.instrument import CameraGeometry
 from ctapipe.io.hessio import hessio_event_source
@@ -17,7 +18,6 @@ from ctapipe.io.hessio import hessio_event_source
 from ctapipe.image.hillas import HillasParameterizationError, \
     hillas_parameters_4 as hillas_parameters
 
-from modules.CutFlow import *
 from modules.ImageCleaning import *
 
 try:
@@ -45,10 +45,11 @@ cam_id_list = [
         # 'GATE',
         # 'HESSII',
         # 'NectarCam',
-        # 'LSTCam',
+        'LSTCam',
+        'DigiCam',
         # 'SST-1m',
         'FlashCam',
-        'ASTRICam',
+        # 'ASTRICam',
         # 'SCTCam',
         ]
 
@@ -64,6 +65,7 @@ ClassifierFeatures = namedtuple("ClassifierFeatures", (
                                 "length",
                                 "skewness",
                                 "kurtosis",
+                                "h_max",
                                 "err_est_pos",
                                 "err_est_dir"))
 
@@ -105,7 +107,7 @@ if __name__ == '__main__':
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
                              allowed_cam_ids=[],  # [] or None means: all
-                             min_ntel=2,
+                             min_ntel=3,
                              min_charge=args.min_charge, min_pixel=3)
     Imagecutflow.add_cut("features nan", lambda x: np.isnan(x).any())
 
@@ -117,13 +119,20 @@ if __name__ == '__main__':
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
+    # in first gamma + first proton file:
+    # number of g:
+    # LSTCam 1392
+    # DigiCam 869
+    # FlashCam 2160
+    # number of p:
+    # LSTCam 314
+    # DigiCam 750
+    # FlashCam 1333
+
     allowed_tels = None  # all telescopes
-    # allowed_tels = range(10)  # smallest ASTRI array
-    # allowed_tels = range(34)  # all ASTRI telescopes
-    # allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    allowed_tels = prod3b_tel_ids("F+A")
-    for filenamelist_class in [filenamelist_gamma[:30],
-                               filenamelist_proton[:30]]:
+    allowed_tels = prod3b_tel_ids("L+F+D")
+    for filenamelist_class in [filenamelist_gamma[:30][:2],
+                               filenamelist_proton[:30][:4]]:
 
         if pckl_load:
             break
@@ -145,7 +154,7 @@ if __name__ == '__main__':
 
             # loop that cleans and parametrises the images and performs the reconstruction
             for (event, hillas_dict, n_tels,
-                 tot_signal, max_signals, pos_fit, dir_fit,
+                 tot_signal, max_signals, pos_fit, dir_fit, h_max,
                  err_est_pos, err_est_dir) in preper.prepare_event(source):
 
                 # now prepare the features for the classifier
@@ -156,10 +165,10 @@ if __name__ == '__main__':
                     moments = hillas_dict[tel_id]
 
                     tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
-                    impact_dist_rec = linalg.length(tel_pos-pos_fit)
+                    impact_dist = linalg.length(tel_pos-pos_fit)
 
                     features_tel = ClassifierFeatures(
-                                impact_dist_rec/u.m,
+                                impact_dist/u.m,
                                 tot_signal,
                                 max_signals[tel_id],
                                 moments.size,
@@ -170,6 +179,7 @@ if __name__ == '__main__':
                                 moments.length/u.m,
                                 moments.skewness,
                                 moments.kurtosis,
+                                h_max/u.m,
                                 err_est_pos/u.m,
                                 err_est_dir/u.deg
                             )
@@ -248,8 +258,12 @@ if __name__ == '__main__':
 
     train_features, train_classes = clf.reshuffle_event_list(trainFeatures, trainClasses)
 
-    print("number of g:", np.count_nonzero(np.array(train_classes["ASTRICam"]) == 'g'))
-    print("number of p:", np.count_nonzero(np.array(train_classes["ASTRICam"]) == 'p'))
+    print("number of g:")
+    for cam_id in cam_id_list:
+        print(cam_id, np.count_nonzero(np.array(train_classes[cam_id]) == 'g'))
+    print("number of p:")
+    for cam_id in cam_id_list:
+        print(cam_id, np.count_nonzero(np.array(train_classes[cam_id]) == 'p'))
     print()
 
     # save the classifier to disk

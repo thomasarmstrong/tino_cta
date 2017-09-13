@@ -123,7 +123,7 @@ def main_xi68_cut(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=
     proton_t_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
             args.events_dir, args.in_file, "proton", "tail"), "reco_events")
 
-    print()
+    print("\n")
     print("gammas present (wavelets):", len(gammas_w_o))
     print("proton present (wavelets):", len(proton_w_o))
     print()
@@ -224,7 +224,7 @@ def main_xi68_cut(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=
                 proton_t_g["off_angle"]
                 < fitfunc_log(proton_t_g["reco_Energy"], *popt_t)*xi_off_scale]
 
-    print()
+    print("\n")
     print("gammas selected (wavelets):", len(gammas_w_rcut))
     print("proton selected (wavelets):", len(proton_w_rcut))
     print()
@@ -283,6 +283,13 @@ def main_xi68_cut(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=
     sensitivities_t = SensCalc_t.get_sensitivity(
             alpha=(xi_on_scale/xi_off_scale)**2,
             sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
+
+    print("\n")
+    print("gammas expected (wavelets):", np.sum(SensCalc_w.event_weights["g"]))
+    print("proton expected (wavelets):", np.sum(SensCalc_w.event_weights["p"]))
+    print()
+    print("gammas expected (tailcuts):", np.sum(SensCalc_t.event_weights["g"]))
+    print("proton expected (tailcuts):", np.sum(SensCalc_t.event_weights["p"]))
 
     # make_performance_plots(gammas_w_o, proton_w_o, gammas_t_o, proton_t_o)
     # make_performance_plots(gammas_w_g, proton_w_g, gammas_t_g, proton_t_g)
@@ -447,16 +454,27 @@ def make_sensitivity_plots(SensCalc, sensitivities, SensCalc_t, sensitivities_t)
                 (0.4, 6.94294e-14), (0.6, 6.69301e-14), (0.8, 7.61169e-14),
                 (1.0, 7.13895e-14), (1.2, 9.49376e-14), (1.4, 1.25208e-13),
                 (1.6, 1.91209e-13), (1.8, 3.11611e-13), (2.0, 4.80354e-13)]).T),
-        plt.loglog(10**ref_loge, ref_sens, marker="s", color="black", ms=3, linewidth=1,
+        plt.loglog(10**ref_loge,
+                   ((ref_sens)*(u.erg*u.cm**2*u.s)**(-1)).to(flux_unit),
+                   marker="s", color="black", ms=3, linewidth=1,
                    label="reference")
 
-        # plt.semilogy(
-        #     sensitivities["Energy"],
-        #     (sensitivities["Sensitivity"].to(flux_unit) *
-        #      sensitivities["Energy"].to(u.erg)**2),
-        #     color="darkred",
-        #     marker="s",
-        #     label="wavelets")
+        sens_low, sens_up = (
+            (sensitivities["Sensitivity"] -
+             sensitivities["Sensitivity_low"]).to(flux_unit) *
+            sensitivities["Energy"].to(u.erg)**2,
+            (sensitivities["Sensitivity_up"] -
+             sensitivities["Sensitivity"]).to(flux_unit) *
+            sensitivities["Energy"].to(u.erg)**2)
+
+        plt.errorbar(
+            sensitivities["Energy"],
+            (sensitivities["Sensitivity"].to(flux_unit) *
+             sensitivities["Energy"].to(u.erg)**2).value,
+            (sens_low.value, sens_up.value),
+            color="darkred",
+            marker="s",
+            label="wavelets")
         plt.semilogy(
             sensitivities["Energy"].to(energy_unit),
             (sensitivities["Sensitivity_base"].to(flux_unit) *
@@ -466,13 +484,22 @@ def make_sensitivity_plots(SensCalc, sensitivities, SensCalc_t, sensitivities_t)
             # ls="",
             label="wavelets (no upscale)")
 
-        # plt.semilogy(
-        #     sensitivities_t["Energy"].to(energy_unit),
-        #     (sensitivities_t["Sensitivity"].to(flux_unit) *
-        #      sensitivities_t["Energy"].to(u.erg)**2),
-        #     color="C0",
-        #     marker="s",
-        #     label="tailcuts")
+        sens_t_low, sens_t_up = (
+            (sensitivities_t["Sensitivity"] -
+             sensitivities_t["Sensitivity_low"]).to(flux_unit) *
+            sensitivities_t["Energy"].to(u.erg)**2,
+            (sensitivities_t["Sensitivity_up"] -
+             sensitivities_t["Sensitivity"]).to(flux_unit) *
+            sensitivities_t["Energy"].to(u.erg)**2)
+
+        plt.errorbar(
+            sensitivities_t["Energy"].to(energy_unit).value,
+            (sensitivities_t["Sensitivity"].to(flux_unit) *
+             sensitivities_t["Energy"].to(u.erg)**2).value,
+            (sens_low.value, sens_up.value),
+            color="C0",
+            marker="s",
+            label="tailcuts")
         plt.semilogy(
             sensitivities_t["Energy"].to(energy_unit),
             (sensitivities_t["Sensitivity_base"].to(flux_unit) *
