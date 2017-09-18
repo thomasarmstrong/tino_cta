@@ -121,15 +121,17 @@ class ImageCleaner:
             # command line parameters for the mr_filter call
             self.wavelet_options = \
                 {"ASTRICam": wavelet_options or "-K -C1 -m3 -s2,2,3,3 -n4",
+                 "DigiCam": wavelet_options or "-K -C1 -m3 -s3,3,4,4 -n4",
                  "FlashCam": wavelet_options or "-K -C1 -m3 -s4,4,5,4 -n4",
+                 "NectarCam": wavelet_options or "-K -C1 -m3 -s3,2.5,4,1 -n4",
                  "LSTCam": wavelet_options or "-K -C1 -m3 -s2,4.5,3.5,3 -n4",
-                 "DigiCam": wavelet_options or "-K -C1 -m3 -s3,3,4,4 -n4"
                  }
             # parameters for poisson + gauß noise injection
             self.noise_model = \
                 {"ASTRICam": EmpDist(cdf.ASTRI_CDF_FILE),
-                 "FlashCam": EmpDist(cdf.FLASHCAM_CDF_FILE),
                  "DigiCam": EmpDist(cdf.DIGICAM_CDF_FILE),
+                 "FlashCam": EmpDist(cdf.FLASHCAM_CDF_FILE),
+                 "NectarCam": EmpDist(cdf.NECTARCAM_CDF_FILE),
                  "LSTCam": EmpDist(cdf.LSTCAM_CDF_FILE)}
 
         elif mode == "tail":

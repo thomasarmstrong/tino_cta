@@ -8,27 +8,21 @@ from helper_functions import *
 from sys import exit
 from glob import glob
 
-from ctapipe.reco.HillasReconstructor import \
-    HillasReconstructor, TooFewTelescopesException
 
 from ctapipe.utils import linalg
+from ctapipe.utils.CutFlow import CutFlow
 
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.image.hillas import HillasParameterizationError, \
     hillas_parameters_4 as hillas_parameters
 
-from modules.CutFlow import *
-from modules.ImageCleaning import *
-
-try:
-    from ctapipe.reco.energy_regressor import *
-    print("using ctapipe energy_regressor")
-except ImportError:
-    from modules.energy_regressor import *
-    print("using tino_cta energy_regressor")
+from ctapipe.reco.energy_regressor import *
+from ctapipe.reco.HillasReconstructor import \
+    HillasReconstructor, TooFewTelescopesException
 
 from modules.prepare_event import EventPreparator
+from modules.ImageCleaning import *
 
 
 pckl_write = True
@@ -38,11 +32,12 @@ pckl_load = not pckl_write
 cam_id_list = [
         # 'GATE',
         # 'HESSII',
-        # 'NectarCam',
-        # 'LSTCam',
+        'NectarCam',
+        'LSTCam',
+        'DigiCam',
         # 'SST-1m',
-        'FlashCam',
-        'ASTRICam',
+        # 'FlashCam',
+        # 'ASTRICam',
         # 'SCTCam',
         ]
 
@@ -59,6 +54,7 @@ EnergyFeatures = namedtuple("EnergyFeatures", (
                                 "length",
                                 "skewness",
                                 "kurtosis",
+                                "h_max",
                                 "err_est_pos",
                                 "err_est_dir"))
 
@@ -110,8 +106,8 @@ if __name__ == '__main__':
     # allowed_tels = range(10)  # smallest ASTRI array
     # allowed_tels = range(34)  # all ASTRI telescopes
     allowed_tels = np.arange(10).tolist() + np.arange(34, 41).tolist()
-    allowed_tels = prod3b_tel_ids("F+A")
-    for filename in filenamelist_gamma[:14][:args.last]:
+    allowed_tels = prod3b_tel_ids("L+N+D")
+    for filename in filenamelist_gamma[:50][:args.last]:
 
         if pckl_load:
             break
@@ -124,7 +120,7 @@ if __name__ == '__main__':
 
         # loop that cleans and parametrises the images and performs the reconstruction
         for (event, hillas_dict, n_tels,
-             tot_signal, max_signals, pos_fit, dir_fit,
+             tot_signal, max_signals, pos_fit, dir_fit, h_max,
              err_est_pos, err_est_dir) in preper.prepare_event(source):
 
             # now prepare the features for the classifier
@@ -135,23 +131,24 @@ if __name__ == '__main__':
                 moments = hillas_dict[tel_id]
 
                 tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
-                impact_dist_rec = linalg.length(tel_pos-pos_fit)
+                impact_dist = linalg.length(tel_pos-pos_fit)
 
                 features_tel = EnergyFeatures(
-                            impact_dist_rec/u.m,
-                            tot_signal,
-                            max_signals[tel_id],
-                            moments.size,
-                            n_tels["LST"],
-                            n_tels["MST"],
-                            n_tels["SST"],
-                            moments.width/u.m,
-                            moments.length/u.m,
-                            moments.skewness,
-                            moments.kurtosis,
-                            err_est_pos/u.m,
-                            err_est_dir/u.deg
-                        )
+                                impact_dist/u.m,
+                                tot_signal,
+                                max_signals[tel_id],
+                                moments.size,
+                                n_tels["LST"],
+                                n_tels["MST"],
+                                n_tels["SST"],
+                                moments.width/u.m,
+                                moments.length/u.m,
+                                moments.skewness,
+                                moments.kurtosis,
+                                h_max/u.m,
+                                err_est_pos/u.m,
+                                err_est_dir/u.deg
+                            )
 
                 if Imagecutflow.cut("features nan", features_tel):
                     continue

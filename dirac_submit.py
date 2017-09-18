@@ -39,7 +39,7 @@ GRID_filelist = open('vo.cta.in2p3.fr-user-t-tmichael.lfns').read()
 #   ######     ##    ######## ######## ##     ## #### ##    ##  ######
 sys.argv.append("tail")
 mode = "tail" if "tail" in sys.argv else "wave"
-cam_id_list = ["ASTRICam", "FlashCam"]
+cam_id_list = ["LSTCam", "NectarCam", "DigiCam"]
 wavelet_args = None  # setting this would overwrite the camera-specific defaults
 
 pilot = 'dirac_pilot.sh'
@@ -61,9 +61,11 @@ prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
                               "Paranal_proton_North_20deg_HB9_merged.list")
 
 
-window_sizes = [20, 20]
+# number of files per job
+window_sizes = [25, 25]
+
 # I used the first few files to train the classifier and regressor -- skip them
-start_runs = [30, 30]
+start_runs = [50, 50]
 
 
 # the pickled classifier and regressor on the GRID

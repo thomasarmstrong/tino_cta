@@ -38,17 +38,18 @@ from modules.prepare_event import EventPreparator
 
 
 pckl_write = True
+# pckl_write = False
 pckl_load = not pckl_write
 
 # for which cam_id to generate a models
 cam_id_list = [
         # 'GATE',
         # 'HESSII',
-        # 'NectarCam',
+        'NectarCam',
         'LSTCam',
         'DigiCam',
         # 'SST-1m',
-        'FlashCam',
+        # 'FlashCam',
         # 'ASTRICam',
         # 'SCTCam',
         ]
@@ -119,20 +120,9 @@ if __name__ == '__main__':
     signal_handler = SignalHandler()
     signal.signal(signal.SIGINT, signal_handler)
 
-    # in first gamma + first proton file:
-    # number of g:
-    # LSTCam 1392
-    # DigiCam 869
-    # FlashCam 2160
-    # number of p:
-    # LSTCam 314
-    # DigiCam 750
-    # FlashCam 1333
-
-    allowed_tels = None  # all telescopes
-    allowed_tels = prod3b_tel_ids("L+F+D")
-    for filenamelist_class in [filenamelist_gamma[:30][:2],
-                               filenamelist_proton[:30][:4]]:
+    allowed_tels = prod3b_tel_ids("L+N+D")
+    for filenamelist_class in [filenamelist_gamma[:50],
+                               filenamelist_proton[:50]]:
 
         if pckl_load:
             break
@@ -221,15 +211,7 @@ if __name__ == '__main__':
 
     trainFeatures = []
     trainClasses = []
-
-    # reduce the number of events by random draw so that they are the same
-    # in gammas and protons; then add them to a single list
-    minEvents = min([len(Features) for Features in Features_event_list.values()])
     for cl in Features_event_list.keys():
-        # trainFeatures = np.append(
-        #                     trainFeatures,
-        #                     np.random.choice(Features_event_list[cl], minEvents, False))
-        # trainClasses += [cl]*minEvents
         trainFeatures += Features_event_list[cl]
         trainClasses += [cl]*len(Features_event_list[cl])
 
@@ -258,24 +240,32 @@ if __name__ == '__main__':
 
     train_features, train_classes = clf.reshuffle_event_list(trainFeatures, trainClasses)
 
-    print("number of g:")
-    for cam_id in cam_id_list:
-        print(cam_id, np.count_nonzero(np.array(train_classes[cam_id]) == 'g'))
-    print("number of p:")
-    for cam_id in cam_id_list:
-        print(cam_id, np.count_nonzero(np.array(train_classes[cam_id]) == 'p'))
+    telescope_weights = {}
+    for cam_id, classes in train_classes.items():
+        print(cam_id)
+        classes = np.array(classes)
+        telescope_weights[cam_id] = np.ones_like(classes, dtype=np.float)
+        telescope_weights[cam_id][classes == 'g'] = \
+            1 / np.count_nonzero(classes == 'g')
+        telescope_weights[cam_id][classes == 'p'] = \
+            1 / np.count_nonzero(classes == 'p')
+
+        print("number of g:", np.count_nonzero(classes == 'g'))
+        print("number of p:", np.count_nonzero(classes == 'p'))
     print()
+
+    # train the classifier
+    if args.store or args.plot:
+        clf.fit(train_features, train_classes, telescope_weights)
 
     # save the classifier to disk
     if args.store:
-        clf.fit(train_features, train_classes)
         clf.save(args.outpath.format(**{"mode": args.mode, "classifier": clf,
                                         "cam_id": "{cam_id}"}))
 
     if args.plot:
         # extract and show the importance of the various training features
         try:
-            clf.fit(train_features, train_classes)
             clf.show_importances(ClassifierFeatures._fields)
             plt.suptitle("{} ** {}".format(
                 "wavelets" if args.mode == "wave" else "tailcuts",
@@ -313,7 +303,17 @@ if __name__ == '__main__':
             clf = EventClassifier(**clf_kwargs)
 
             X_train_flat, y_train_flat = clf.reshuffle_event_list(X_train, y_train)
-            clf.fit(X_train_flat, y_train_flat)
+
+            train_weights = {}
+            for cam_id, classes in y_train_flat.items():
+                classes = np.array(classes)
+                train_weights[cam_id] = np.ones_like(classes, dtype=np.float)
+                train_weights[cam_id][classes == 'g'] = \
+                    1 / np.count_nonzero(classes == 'g')
+                train_weights[cam_id][classes == 'p'] = \
+                    1 / np.count_nonzero(classes == 'p')
+
+            clf.fit(X_train_flat, y_train_flat, train_weights)
 
             y_score = clf.predict_proba_by_event(X_test)[:, 0]
 
@@ -360,7 +360,7 @@ if __name__ == '__main__':
 
                 temp = np.histogram2d(NTels, y_score,
                                       bins=(np.linspace(0, 50, 21),
-                                            np.linspace(0, 1, 11)))[0].T
+                                            np.linspace(0, 1, 51)))[0].T
 
                 if histos[cl] is None:
                     histos[cl] = temp

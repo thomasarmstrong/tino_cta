@@ -233,6 +233,9 @@ def plot_hex_and_violin(abscissa, ordinate, bin_edges, extent=None,
 
 
 def prod3b_tel_ids(cam_id, site="south"):
+    if cam_id in [None, ""]:
+        return None
+
     if site.lower() in ["south", "paranal", "chile"]:
         if cam_id == "LSTCam":
             tel_ids = np.arange(12)
@@ -281,12 +284,23 @@ def prod3b_tel_ids(cam_id, site="south"):
                                 543, 544, 545, 550, 551, 552, 553, 554, 555, 556, 557,
                                 558, 559, 560, 561])
 
+        elif cam_id == "L+N+D":
+            tel_ids = np.array([4, 5, 6, 11, 53, 54, 55, 56, 57, 60, 61, 64, 65, 66, 67,
+                                68, 69, 70, 71, 72, 73, 74, 75, 88, 89, 90, 91, 92, 93,
+                                415, 416, 417, 418, 426, 427, 432, 433, 438, 439, 440,
+                                441, 442, 443, 448, 449, 450, 451, 458, 459, 460, 461,
+                                474, 475, 480, 481, 482, 483, 485, 486, 500, 501, 502,
+                                503, 504, 505, 506, 507, 508, 509, 510, 511, 524, 525,
+                                526, 527, 528, 529, 536, 537, 538, 539, 540, 541, 542,
+                                543, 544, 545, 550, 551, 552, 553, 554, 555, 556, 557,
+                                558, 559, 560, 561])
+
         else:
             raise ValueError("cam_id {} not supported".format(cam_id))
     elif site.lower in ["north", "la palma", "lapalma", "spain", "canaries"]:
         raise ValueError("north site not implemented yet")
     else:
-        raise ValueError("site {} not known try again".format(site))
+        raise ValueError("site '{}' not known -- try again".format(site))
 
     return tel_ids
 

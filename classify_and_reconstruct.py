@@ -15,16 +15,15 @@ from ctapipe.calib import CameraCalibrator
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.utils import linalg
+from ctapipe.utils.CutFlow import CutFlow
 
 from ctapipe.image.hillas import HillasParameterizationError, \
     hillas_parameters_4 as hillas_parameters
 
 from helper_functions import *
-from modules.CutFlow import CutFlow
-from modules.ImageCleaning import ImageCleaner, EdgeEventException
+from modules.ImageCleaning import ImageCleaner, EdgeEvent
 
 try:
-    raise ImportError
     from ctapipe.reco.event_classifier import *
     print("using ctapipe event_classifier")
 except ImportError:
@@ -39,11 +38,13 @@ except:
     print("using tino_cta energy_regressor")
 
 try:
-    from ctapipe.reco.FitGammaHillas import \
-        FitGammaHillas as HillasReconstructor, TooFewTelescopesException
+    from modules.HillasReconstructor import HillasReconstructor, \
+        TooFewTelescopesException
+    print("using tino_cta HillasReconstructor")
 except:
     from ctapipe.reco.HillasReconstructor import \
         HillasReconstructor, TooFewTelescopesException
+    print("using ctapipe.reco.HillasReconstructor")
 
 from modules.prepare_event import EventPreparator
 
@@ -58,13 +59,14 @@ except:
 cam_id_list = [
         # 'GATE',
         # 'HESSII',
-        # 'NectarCam',
-        # 'LSTCam',
+        'NectarCam',
+        'LSTCam',
+        'DigiCam',
         # 'SST-1m',
-        'FlashCam',
-        'ASTRICam',
+        # 'FlashCam',
+        # 'ASTRICam',
         # 'SCTCam',
-        ]
+]
 
 
 def main():
@@ -80,10 +82,10 @@ def main():
     parser = make_argparser()
     parser.add_argument('--classifier', type=str,
                         default='data/classifier_pickle/classifier'
-                                '_{mode}_{wave_args}_{classifier}_{cam_id}.pkl')
+                                '_prod3b_{mode}_{cam_id}_{classifier}.pkl')
     parser.add_argument('--regressor', type=str,
                         default='data/classifier_pickle/regressor'
-                                '_{mode}_{wave_args}_{regressor}_{cam_id}.pkl')
+                                '_prod3b_{mode}_{cam_id}_{regressor}.pkl')
     parser.add_argument('-o', '--out_file', type=str,
                         default="data/reconstructed_events/classified_events_{}_{}.h5",
                         help="location to write the classified events to. placeholders "
@@ -153,34 +155,36 @@ def main():
                     cam_id_list=cam_id_list)
 
     ClassifierFeatures = namedtuple("ClassifierFeatures", (
-                                    "impact_dist",
-                                    "sum_signal_evt",
-                                    "max_signal_cam",
-                                    "sum_signal_cam",
-                                    "N_LST",
-                                    "N_MST",
-                                    "N_SST",
-                                    "width",
-                                    "length",
-                                    "skewness",
-                                    "kurtosis",
-                                    "err_est_pos",
-                                    "err_est_dir"))
+                                "impact_dist",
+                                "sum_signal_evt",
+                                "max_signal_cam",
+                                "sum_signal_cam",
+                                "N_LST",
+                                "N_MST",
+                                "N_SST",
+                                "width",
+                                "length",
+                                "skewness",
+                                "kurtosis",
+                                "h_max",
+                                "err_est_pos",
+                                "err_est_dir"))
 
     EnergyFeatures = namedtuple("EnergyFeatures", (
-                                    "impact_dist",
-                                    "sum_signal_evt",
-                                    "max_signal_cam",
-                                    "sum_signal_cam",
-                                    "N_LST",
-                                    "N_MST",
-                                    "N_SST",
-                                    "width",
-                                    "length",
-                                    "skewness",
-                                    "kurtosis",
-                                    "err_est_pos",
-                                    "err_est_dir"))
+                                "impact_dist",
+                                "sum_signal_evt",
+                                "max_signal_cam",
+                                "sum_signal_cam",
+                                "N_LST",
+                                "N_MST",
+                                "N_SST",
+                                "width",
+                                "length",
+                                "skewness",
+                                "kurtosis",
+                                "h_max",
+                                "err_est_pos",
+                                "err_est_dir"))
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -216,11 +220,7 @@ def main():
     source_orig = None
 
     allowed_tels = None  # all telescopes
-    allowed_tels = range(10)  # smallest ASTRI array
-    # allowed_tels = range(34)  # all ASTRI telescopes
-    allowed_tels = range(34, 39)  # FlashCam telescopes
-    allowed_tels = np.arange(10).tolist() + np.arange(34, 39).tolist()
-    allowed_tels = prod3b_tel_ids("F+A")
+    allowed_tels = prod3b_tel_ids("L+N+D")
     for filename in filenamelist[:args.last]:
         print("filename = {}".format(filename))
 
@@ -230,7 +230,7 @@ def main():
 
         # loop that cleans and parametrises the images and performs the reconstruction
         for (event, hillas_dict, n_tels,
-             tot_signal, max_signals, pos_fit, dir_fit,
+             tot_signal, max_signals, pos_fit, dir_fit, h_max,
              err_est_pos, err_est_dir) in preper.prepare_event(source):
 
             n_lst, n_mst, n_sst = n_tels["LST"], n_tels["MST"], n_tels["SST"]
@@ -245,31 +245,37 @@ def main():
 
                 moments = hillas_dict[tel_id]
 
-                impact_dist_rec = linalg.length(tel_pos-pos_fit)
+                impact_dist = linalg.length(tel_pos-pos_fit)
                 cls_features_tel = ClassifierFeatures(
-                            impact_dist_rec/u.m,
+                            impact_dist/u.m,
                             tot_signal,
                             max_signals[tel_id],
                             moments.size,
-                            n_lst, n_mst, n_sst,
+                            n_tels["LST"],
+                            n_tels["MST"],
+                            n_tels["SST"],
                             moments.width/u.m,
                             moments.length/u.m,
                             moments.skewness,
                             moments.kurtosis,
+                            h_max/u.m,
                             err_est_pos/u.m,
                             err_est_dir/u.deg
                             )
 
                 reg_features_tel = EnergyFeatures(
-                            impact_dist_rec/u.m,
+                            impact_dist/u.m,
                             tot_signal,
                             max_signals[tel_id],
                             moments.size,
-                            n_lst, n_mst, n_sst,
+                            n_tels["LST"],
+                            n_tels["MST"],
+                            n_tels["SST"],
                             moments.width/u.m,
                             moments.length/u.m,
                             moments.skewness,
                             moments.kurtosis,
+                            h_max/u.m,
                             err_est_pos/u.m,
                             err_est_dir/u.deg
                             )
