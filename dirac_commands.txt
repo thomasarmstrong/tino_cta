@@ -28,3 +28,7 @@ dirac-wms-select-jobs --Owner='tmichael' --Status='Failed'
 
 # get job output
 dirac-wms-job-get-output [JobID]
+
+
+# to update dirac client, in the  dirac directory
+python dirac-install -V CTA -v

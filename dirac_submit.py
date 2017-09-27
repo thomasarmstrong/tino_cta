@@ -37,14 +37,13 @@ GRID_filelist = open('vo.cta.in2p3.fr-user-t-tmichael.lfns').read()
 #        ##    ##    ##       ##       ##   ##    ##  ##  #### ##    ##
 #  ##    ##    ##    ##       ##       ##    ##   ##  ##   ### ##    ##
 #   ######     ##    ######## ######## ##     ## #### ##    ##  ######
-sys.argv.append("tail")
 mode = "tail" if "tail" in sys.argv else "wave"
 cam_id_list = ["LSTCam", "NectarCam", "DigiCam"]
-wavelet_args = None  # setting this would overwrite the camera-specific defaults
 
-pilot = 'dirac_pilot.sh'
-execute = 'classify_and_reconstruct.py'
-pilot_args = ' '.join([execute,
+source_ctapipe = '/cvmfs/cta.in2p3.fr/software/miniconda/bin/activate ctapipe_v0.5.2'
+execute = './classify_and_reconstruct.py'
+pilot_args = ' '.join([
+        source_ctapipe, '&&', execute,
         '--classifier ./{classifier}',
         '--regressor ./{regressor}',
         '--out_file {out_file}',
@@ -62,7 +61,7 @@ prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
 
 
 # number of files per job
-window_sizes = [25, 25]
+window_sizes = [1, 25, 25]
 
 # I used the first few files to train the classifier and regressor -- skip them
 start_runs = [50, 50]
@@ -100,8 +99,8 @@ input_sandbox = ['modules', 'helper_functions.py', 'snippets/append_tables.py',
                  '/local/home/tmichael/software/jeremie_cta/'
                  'sap-cta-data-pipeline/datapipe/',
 
-                 # sets up the environment + script that is being run
-                 pilot, execute,
+                 # script that is being run
+                 execute,
 
                  # the executable for the wavelet cleaning
                  'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter',
@@ -214,6 +213,8 @@ for i, filelist in enumerate([
 
         # mr_filter loses its executable property by uploading it to the GRID SE; reset
         j.setExecutable('chmod', '+x mr_filter')
+        # also set the script as executable
+        j.setExecutable('chmod', '+x ' + execute)
 
         for run_file in run_filelist:
             run_token = re.split('_', run_file)[3]
@@ -229,9 +230,9 @@ for i, filelist in enumerate([
             # and goes on to the next input file; afterwards, the output files are merged
             j.setExecutable('dirac-dms-get-file', "LFN:"+run_file)
 
-            # the pilot script sets up the environment, i.e. ctapipe through miniconda
-            # and then executes the `pilot_args` through python
-            j.setExecutable(pilot,
+            # source the miniconda ctapipe environment and run the python script with all
+            # its arguments
+            j.setExecutable("source",
                             pilot_args.format(out_file=output_filename_temp,
                                               regressor=basename(regressor_LFN),
                                               classifier=basename(classifier_LFN)))
@@ -240,12 +241,14 @@ for i, filelist in enumerate([
         j.setExecutable('ls', '-lh')
 
         # pilot necessary again to run the python script
-        j.setExecutable(pilot, ' '.join([
-            'append_tables.py',
-            '--events_dir ./',
-            '--no_auto',
-            '--out_file', output_filename
-        ]))
+        j.setExecutable('source',
+                        ' '.join([
+                            source_ctapipe, '&&',
+                            './append_tables.py',
+                            '--events_dir ./',
+                            '--no_auto',
+                            '--out_file', output_filename
+                            ]))
 
         print("\nOutputData: {}{}".format(output_path, output_filename))
         j.setOutputData([output_filename], outputSE=None, outputPath=output_path)
@@ -258,7 +261,7 @@ for i, filelist in enumerate([
         # this sends the job to the GRID and uploads all the
         # files into the input sandbox in the process
         print("\nsubmitting job")
-        # print('Submission Result: {}\n'.format(dirac.submit(j)['Value']))
+        print('Submission Result: {}\n'.format(dirac.submit(j)['Value']))
 
         # break if this is only a test submission
         if "test" in sys.argv:

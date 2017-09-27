@@ -107,14 +107,13 @@ def main():
             filenamelist += glob("{}/{}".format(args.indir, f))
         filenamelist.sort()
     elif args.proton:
-        filenamelist = sorted(glob("{}/proton/*gz".format(args.indir)))[100:]
+        filenamelist = sorted(glob("{}/proton/*gz".format(args.indir)))
     else:
-        filenamelist = sorted(glob("{}/gamma/*gz".format(args.indir)))[14:]
+        filenamelist = sorted(glob("{}/gamma/*gz".format(args.indir)))
 
     if not filenamelist:
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
-
 
     # keeping track of events and where they were rejected
     Eventcutflow = CutFlow("EventCutFlow")

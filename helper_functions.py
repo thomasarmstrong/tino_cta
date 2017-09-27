@@ -309,3 +309,11 @@ def ipython_shell():
     # doesn't actually work, needs to be put inline, here only as a reminder
     from IPython import embed
     embed()
+
+
+import inspect
+def lineno():
+    """Returns the current filename and line number"""
+    frameinfo = inspect.getframeinfo(inspect.currentframe().f_back)
+    return ", ".join([frameinfo.filename,
+                      str(frameinfo.lineno)])
