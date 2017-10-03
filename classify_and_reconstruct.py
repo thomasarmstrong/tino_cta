@@ -232,8 +232,6 @@ def main():
              tot_signal, max_signals, pos_fit, dir_fit, h_max,
              err_est_pos, err_est_dir) in preper.prepare_event(source):
 
-            n_lst, n_mst, n_sst = n_tels["LST"], n_tels["MST"], n_tels["SST"]
-
             # now prepare the features for the classifier
             cls_features_evt = {}
             reg_features_evt = {}
@@ -312,9 +310,9 @@ def main():
 
             reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
             reco_event["NTels_reco"] = len(hillas_dict)
-            reco_event["NTels_reco_lst"] = n_lst
-            reco_event["NTels_reco_mst"] = n_mst
-            reco_event["NTels_reco_sst"] = n_sst
+            reco_event["NTels_reco_lst"] = n_tels["LST"]
+            reco_event["NTels_reco_mst"] = n_tels["MST"]
+            reco_event["NTels_reco_sst"] = n_tels["SST"]
             reco_event["MC_Energy"] = event.mc.energy.to(energy_unit).value
             reco_event["reco_Energy"] = predict_energ.to(energy_unit).value
             reco_event["phi"] = phi / angle_unit

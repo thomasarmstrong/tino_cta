@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from os.path import expandvars
 import argparse
 
@@ -16,26 +18,25 @@ except:
     pass
 
 
-def merge_list_of_pytables_as_pandas(filename_list, destination, do_return=True):
+def merge_list_of_pytables_as_pandas(filename_list, destination):
     pyt_table = None
     outfile = tb.open_file(destination, mode="w")
     for i, filename in enumerate(sorted(filename_list)):
 
+        pyt_infile = tb.open_file(filename, mode='r')
+
         if i == 0:
-            pyt_infile = tb.open_file(filename, mode='r')
-            pyt_table = pyt_infile.copy_node('/', name='reco_events',
+            pyt_table = pyt_infile.copy_node('/reco_events/', name='table',
                                              newparent=outfile.root)
 
         else:
-            pyt_infile = tb.open_file(filename, mode='r')
-            pyt_table_t = pyt_infile.root.reco_events
+            pyt_table_t = pyt_infile.root.reco_events.table
             pyt_table_t.append_where(dstTable=pyt_table)
 
-    if do_return:
-        return pd.DataFrame(pyt_table[:])
+    return pd.DataFrame(pyt_table[:])
 
 
-def merge_list_of_tables_as_pandas(filename_list, destination, do_return=True):
+def merge_list_of_tables_as_pandas(filename_list, destination):
     store = pd.HDFStore(destination)
     for i, filename in enumerate(sorted(filename_list)):
         s = pd.HDFStore(filename)
@@ -44,8 +45,7 @@ def merge_list_of_tables_as_pandas(filename_list, destination, do_return=True):
             store.put('reco_events', df, format='table', data_columns=True)
         else:
             store.append(key='reco_events', value=df, format='table')
-    if do_return:
-        return store['reco_events']
+    return store['reco_events']
 
 
 if __name__ == "__main__":
@@ -67,6 +67,5 @@ if __name__ == "__main__":
                 merge_list_of_tables_as_pandas(glob.glob(filename),
                                                filename.replace("_*", ""))
     else:
-        merge_list_of_pytables_as_pandas(
-                glob.glob(args.events_dir+args.in_files_base+"*.h5"),
-                args.out_file, do_return=False)
+        merge_list_of_tables_as_pandas(
+                glob.glob(args.events_dir+args.in_files_base+"*.h5"), args.out_file)

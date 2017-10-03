@@ -43,7 +43,7 @@ cam_id_list = ["LSTCam", "NectarCam", "DigiCam"]
 source_ctapipe = '/cvmfs/cta.in2p3.fr/software/miniconda/bin/activate ctapipe_v0.5.2'
 execute = './classify_and_reconstruct.py'
 pilot_args = ' '.join([
-        source_ctapipe, '&&', execute,
+        source_ctapipe, '&&', 'PATH=$PATH:./', execute, '-m 20',
         '--classifier ./{classifier}',
         '--regressor ./{regressor}',
         '--out_file {out_file}',
@@ -61,7 +61,7 @@ prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
 
 
 # number of files per job
-window_sizes = [1, 25, 25]
+window_sizes = [25, 25]
 
 # I used the first few files to train the classifier and regressor -- skip them
 start_runs = [50, 50]
@@ -124,17 +124,18 @@ for cam_id in cam_id_list:
 # get jobs from today and yesterday...
 import datetime as d
 days = []
-for i in range(2):  # how many days do you want to look back?
+for i in range(1):  # how many days do you want to look back?
     days.append((d.date.today()-d.timedelta(days=i)).isoformat())
 
 # get list of run_tokens that are currently running / waiting
-running_ids = []
+running_ids = set()
 running_tokens = []
 for status in ["Waiting", "Running"]:
     for day in days:
         try:
-            running_ids += dirac.selectJobs(status=status,  date=day,
-                                            owner="tmichael")['Value']
+            [running_ids.add(id) for id in dirac.selectJobs(
+                        status=status, date=day,
+                        owner="tmichael")['Value']]
         except KeyError:
             pass
 

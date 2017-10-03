@@ -1,6 +1,8 @@
 import numpy as np
 from astropy import units as u
 
+import warnings
+
 from ctapipe.calib import CameraCalibrator
 
 from ctapipe.image import hillas
@@ -122,8 +124,10 @@ class EventPreparator():
 
                 # clean the image
                 try:
-                    pmt_signal, new_geom = \
-                        self.cleaner.clean(pmt_signal.copy(), camera)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        pmt_signal, new_geom = \
+                            self.cleaner.clean(pmt_signal.copy(), camera)
 
                     if self.image_cutflow.cut("min pixel", pmt_signal) or \
                        self.image_cutflow.cut("min charge", np.sum(pmt_signal)):
@@ -207,13 +211,15 @@ class EventPreparator():
                 continue
 
             try:
-                # telescope loop done, now do the core fit
-                self.shower_reco.get_great_circles(hillas_dict, event.inst.subarray,
-                                                   tel_phi, tel_theta)
-                pos_fit, err_est_pos = self.shower_reco.fit_core_crosses()
-                dir_fit, err_est_dir = self.shower_reco.fit_origin_crosses()
-                h_max = self.shower_reco.fit_h_max(
-                        hillas_dict, event.inst.subarray, tel_phi, tel_theta)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    # telescope loop done, now do the core fit
+                    self.shower_reco.get_great_circles(
+                            hillas_dict, event.inst.subarray, tel_phi, tel_theta)
+                    pos_fit, err_est_pos = self.shower_reco.fit_core_crosses()
+                    dir_fit, err_est_dir = self.shower_reco.fit_origin_crosses()
+                    h_max = self.shower_reco.fit_h_max(
+                            hillas_dict, event.inst.subarray, tel_phi, tel_theta)
             except Exception as e:
                 print(e)
                 continue

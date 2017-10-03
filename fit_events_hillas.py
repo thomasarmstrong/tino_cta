@@ -177,10 +177,9 @@ def main():
             print()
             print("xi = {:4.3f}".format(xi))
             print("pos = {:4.3f}".format(diff))
-            print("h_max reco:", h_max)
+            print("h_max reco: {:4.3f}".format(h_max.to(u.km)))
             print("err_est_dir: {:4.3f}".format(err_est_dir.to(angle_unit)))
             print("err_est_pos: {:4.3f}".format(err_est_pos))
-            # print("h_shower_max:", h_shower_max)
 
             try:
                 # store the reconstruction data in the PyTable

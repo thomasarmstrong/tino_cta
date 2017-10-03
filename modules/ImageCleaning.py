@@ -11,10 +11,12 @@ from ctapipe.utils.CutFlow import CutFlow
 
 
 try:
+    from .geometry_converter import convert_geometry_1d_to_2d, convert_geometry_back
+    print("using tino_cta geometry_converter")
+except:
     from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, \
                                                  convert_geometry_back
-except:
-    print("something missing from ctapipe.image.geometry_converter -- numba?")
+    print("using ctapipe geometry_converter")
 
 try:
     from datapipe.denoising.wavelets_mrfilter import WaveletTransform
@@ -126,7 +128,7 @@ class ImageCleaner:
                  "NectarCam": wavelet_options or "-K -C1 -m3 -s3,2.5,4,1 -n4",
                  "LSTCam": wavelet_options or "-K -C1 -m3 -s2,4.5,3.5,3 -n4",
                  }
-            # parameters for poisson + gauß noise injection
+            # camera models for noise injection
             self.noise_model = \
                 {"ASTRICam": EmpDist(cdf.ASTRI_CDF_FILE),
                  "DigiCam": EmpDist(cdf.DIGICAM_CDF_FILE),
