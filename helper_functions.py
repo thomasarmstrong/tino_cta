@@ -60,6 +60,9 @@ def make_argparser():
                         default=expandvars("$HOME/Data/cta/Prod3b/Paranal"))
     parser.add_argument('-f', '--infile_list',   type=str, default="", nargs='*',
                         help="give a specific list of files to run on")
+    parser.add_argument('--cam_ids',   type=str,
+                        default=["LSTCam", "NectarCam", "DigiCam"], nargs='*',
+                        help="give a specific list of files to run on")
     parser.add_argument('--plots_dir', type=str, default="plots",
                         help="path to store plots")
     parser.add_argument('--tail', dest="mode", action='store_const',
