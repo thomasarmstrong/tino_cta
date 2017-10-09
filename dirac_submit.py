@@ -47,10 +47,9 @@ pilot_args = ' '.join([
         '--classifier ./{classifier}',
         '--regressor ./{regressor}',
         '--out_file {out_file}',
-        '--store',
         '--indir ./ --infile_list *.simtel.gz',
         '--tail' if "tail" in sys.argv else '',
-        ])
+        '--cam_ids'] + cam_id_list)
 
 
 # files containing lists of the Prod3b files on the GRID
@@ -58,14 +57,18 @@ prod3b_filelist_gamma = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
                              "Paranal_gamma_North_20deg_HB9_merged.list")
 prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
                               "Paranal_proton_North_20deg_HB9_merged.list")
+prod3b_filelist_electron = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
+                              "Paranal_electron_North_20deg_HB9_merged.list")
 
 
 # number of files per job
-window_sizes = [25, 25]
+window_sizes = [25, 25, 25]
 
 # I used the first few files to train the classifier and regressor -- skip them
-start_runs = [50, 50]
+start_runs = [50, 50, 0]
 
+# how many jobs to submit at once
+NJobs = -100  # put at < 0 to deactivate
 
 # the pickled classifier and regressor on the GRID
 model_path_template = \
@@ -88,7 +91,7 @@ regressor_LFN = model_path_template.format(
 
 # define a template name for the file that's going to be written out.
 # the placeholder braces are going to get set during the file-loop
-output_filename_template = 'classified_events_{}_{}_{}.h5'
+output_filename_template = 'classified_events_{}.h5'
 output_path = "cta/prod3b/paranal/"
 
 # sets all the local files that are going to be uploaded with the job plus the pickled
@@ -129,8 +132,8 @@ for i in range(1):  # how many days do you want to look back?
 
 # get list of run_tokens that are currently running / waiting
 running_ids = set()
-running_tokens = []
-for status in ["Waiting", "Running"]:
+running_names = []
+for status in ["Waiting", "Running", "Checking"]:
     for day in days:
         try:
             [running_ids.add(id) for id in dirac.selectJobs(
@@ -147,9 +150,7 @@ if n_jobs > 0:
         if ((100*i)/n_jobs) % 5 == 0:
             print("\r{} %".format(((20*i)/n_jobs)*5)),
         jobname = dirac.attributes(id)["Value"]["JobName"]
-        if mode not in jobname:
-            continue
-        running_tokens.append(jobname.split('_')[-1])
+        running_names.append(jobname)
     else:
         print("\n... done")
 
@@ -159,16 +160,24 @@ print(pilot_args)
 print("\nwith input_sandbox:")
 print(input_sandbox)
 print("\nwith output file:")
-print(output_filename_template.format(
-        '{particle-type}', '{cleaning-mode}', '{run-token}'))
+print(output_filename_template.format('{job_name}'))
 
 for i, filelist in enumerate([
         prod3b_filelist_gamma,
-        prod3b_filelist_proton]):
+        prod3b_filelist_proton,
+        prod3b_filelist_electron]):
     for run_filelist in sliding_window([l.strip() for l in filelist],
                                        window_sizes[i], start=start_runs[i]):
 
-        channel = "gamma" if "gamma" in " ".join(run_filelist) else "proton"
+        if "gamma" in " ".join(run_filelist):
+            channel = "gamma"
+        elif "proton" in " ".join(run_filelist):
+            channel = "proton"
+        elif "electron" in " ".join(run_filelist):
+            channel = "electron"
+        else:
+            print("no known channel ... skipping this filelist:")
+            break
 
         # this selects the `runxxx` part of the first and last file in the run
         # list and joins them with a dash so that we get a nice identifier in
@@ -180,34 +189,43 @@ for i, filelist in enumerate([
         print("-" * 20)
 
         # setting output name
-        output_filename = output_filename_template.format(channel, mode, run_token)
+        job_name = '_'.join([channel, mode, run_token])
+        output_filename = output_filename_template.format(job_name)
 
         # if job already running / waiting, skip
-        if run_token in running_tokens:
-            print("\n{} still running\n".format(run_token))
+        if job_name in running_names:
+            print("\n{} still running\n".format(job_name))
             continue
 
         # if file already in GRID storage, skip
         # (you cannot overwrite it there, delete it and resubmit)
         if output_filename in GRID_filelist:
-            print("\n{} already on GRID SE\n".format(run_token))
+            print("\n{} already on GRID SE\n".format(job_name))
             continue
+
+        if NJobs == 0:
+            print("maximum number of jobs to submit reached")
+            print("breaking loop now")
+            break
+        else:
+            NJobs -= 1
 
         j = Job()
         # runtime in seconds times 8 (CPU normalisation factor)
         j.setCPUTime(6 * 3600 * 8)
-        j.setName('_'.join([channel, mode, run_token]))
+        j.setName(job_name)
         j.setInputSandbox(input_sandbox)
 
         # bad sites
         j.setBannedSites([
+            'LCG.CPPM.fr',   # LFN connection problems
             # 'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
             'LCG.CAMK.pl',      # no miniconda (bad vo configuration?)
-            'LCG.Prague.cz',    # no miniconda (bad vo configuration?)
-            'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
-            'LCG.OBSPM.fr',
+            # 'LCG.Prague.cz',    # no miniconda (bad vo configuration?)
+            # 'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
+            # 'LCG.OBSPM.fr',
             # 'LCG.LAPP.fr',      # no miniconda (bad vo configuration?)
-            # 'LCG.PIC.es',       #
+            'LCG.PIC.es',       #
             # 'LCG.M3PEC.fr',     #
             # 'LCG.CETA.es'
         ])
@@ -241,15 +259,13 @@ for i, filelist in enumerate([
 
         j.setExecutable('ls', '-lh')
 
-        # pilot necessary again to run the python script
-        j.setExecutable('source',
-                        ' '.join([
-                            source_ctapipe, '&&',
-                            './append_tables.py',
-                            '--events_dir ./',
-                            '--no_auto',
-                            '--out_file', output_filename
-                            ]))
+        if window_sizes[i] > 1:
+            j.setExecutable('source',
+                            ' '.join([
+                                source_ctapipe, '&&',
+                                './append_tables.py',
+                                '--out_file', output_filename
+                                ]))
 
         print("\nOutputData: {}{}".format(output_path, output_filename))
         j.setOutputData([output_filename], outputSE=None, outputPath=output_path)
@@ -273,6 +289,11 @@ for i, filelist in enumerate([
     if "dry" in sys.argv or "test" in sys.argv:
         break
 
+try:
+    os.remove("datapipe.tar.gz")
+    os.remove("modules.tar.gz")
+except:
+    pass
 
 print("\nall done -- exiting now")
 exit()
