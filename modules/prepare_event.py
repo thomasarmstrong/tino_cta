@@ -64,8 +64,6 @@ class EventPreparator():
 
         self.image_cutflow.set_cuts(OrderedDict([
                     ("noCuts", None),
-                    ("camera type", lambda id: allowed_cam_ids and
-                                               id not in allowed_cam_ids),
                     ("min pixel", lambda s: np.count_nonzero(s) < min_pixel),
                     ("min charge", lambda x: x < min_charge),
                     ("poor moments", lambda m: m.width <= 0 or m.length <= 0)
@@ -102,11 +100,6 @@ class EventPreparator():
                 # count the current telescope according to its size
                 tel_type = event.inst.subarray.tel[tel_id].optics.tel_type
                 n_tels[tel_type] += 1
-
-                # temporary hack to have `FlashCam`s counted `n_tels`
-                # but not used during the reconstruction
-                if self.image_cutflow.cut("camera type", camera.cam_id):
-                    continue
 
                 # the camera image as a 1D array
                 pmt_signal = event.dl1.tel[tel_id].image
