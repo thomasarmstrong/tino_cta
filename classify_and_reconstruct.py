@@ -55,20 +55,6 @@ except:
     print("no pytables installed")
 
 
-# which models to load for classifier/regressor
-cam_id_list = [
-        # 'GATE',
-        # 'HESSII',
-        'NectarCam',
-        'LSTCam',
-        'DigiCam',
-        # 'SST-1m',
-        # 'FlashCam',
-        # 'ASTRICam',
-        # 'SCTCam',
-]
-
-
 def main():
 
     # your favourite units here
@@ -86,10 +72,8 @@ def main():
     parser.add_argument('--regressor', type=str,
                         default='data/classifier_pickle/regressor'
                                 '_prod3b_{mode}_{cam_id}_{regressor}.pkl')
-    parser.add_argument('-o', '--out_file', type=str,
-                        default="data/reconstructed_events/classified_events_{}_{}.h5",
-                        help="location to write the classified events to. placeholders "
-                             "are meant as {particle type} and {cleaning mode}")
+    parser.add_argument('-o', '--out_file', type=str, default="",
+                        help="location to write the classified events to.")
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
     parser.add_argument('--wave_dir',  type=str, default=None,
@@ -142,7 +126,7 @@ def main():
                             "wave_args": "mixed",
                             "classifier": 'RandomForestClassifier',
                             "cam_id": "{cam_id}"}),
-                    cam_id_list=cam_id_list)
+                    cam_id_list=args.cam_ids)
 
     # wrapper for the scikit-learn regressor
     regressor = EnergyRegressor.load(
@@ -151,7 +135,7 @@ def main():
                             "wave_args": "mixed",
                             "regressor": "RandomForestRegressor",
                             "cam_id": "{cam_id}"}),
-                    cam_id_list=cam_id_list)
+                    cam_id_list=args.cam_ids)
 
     ClassifierFeatures = namedtuple("ClassifierFeatures", (
                                 "impact_dist",
@@ -209,10 +193,10 @@ def main():
             # trying to put particle type and cleaning mode into the filename
             # `format` puts in each argument as long as there is a free "{}" token
             # if `out_file` was set without any "{}", nothing will be replaced
-            args.out_file.format(channel, args.mode), mode="w",
+            args.out_file, mode="w",
             # if we don't want to write the event list to disk, need to add more arguments
-            **({} if args.store else {"driver": "H5FD_CORE",
-                                      "driver_core_backing_store": False}))
+            **({} if args.out_file else {"driver": "H5FD_CORE",
+                                         "driver_core_backing_store": False}))
     reco_table = reco_outfile.create_table("/", "reco_events", RecoEvent)
     reco_event = reco_table.row
 
@@ -328,17 +312,22 @@ def main():
         if signal_handler.stop:
             break
 
-    print()
-    Eventcutflow()
-    print()
-    Imagecutflow()
+    try:
+        print()
+        Eventcutflow()
+        print()
+        Imagecutflow()
 
-    # do some simple event selection and print the corresponding selection efficiency
-    N_selected = len([x for x in reco_table.where(
-        """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
-    N_total = len(reco_table)
-    print("\nfraction selected events:")
-    print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
+        # do some simple event selection
+        # and print the corresponding selection efficiency
+        N_selected = len([x for x in reco_table.where(
+            """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
+        N_total = len(reco_table)
+        print("\nfraction selected events:")
+        print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
+
+    except ZeroDivisionError:
+        pass
 
     print("\nlength filenamelist:", len(filenamelist[:args.last]))
 
