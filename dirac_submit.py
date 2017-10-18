@@ -5,6 +5,7 @@ import sys
 import glob
 import re
 import random
+import datetime
 
 from DIRAC.Core.Base import Script
 Script.parseCommandLine()
@@ -43,7 +44,7 @@ cam_id_list = ["LSTCam", "NectarCam", "DigiCam"]
 source_ctapipe = '/cvmfs/cta.in2p3.fr/software/miniconda/bin/activate ctapipe_v0.5.2'
 execute = './classify_and_reconstruct.py'
 pilot_args = ' '.join([
-        source_ctapipe, '&&', 'PATH=$PATH:./', execute, '-m 20',
+        source_ctapipe, '&&', 'PATH=$PATH:./', execute,
         '--classifier ./{classifier}',
         '--regressor ./{regressor}',
         '--out_file {out_file}',
@@ -58,17 +59,17 @@ prod3b_filelist_gamma = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
 prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
                               "Paranal_proton_North_20deg_HB9_merged.list")
 prod3b_filelist_electron = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
-                              "Paranal_electron_North_20deg_HB9_merged.list")
+                                "Paranal_electron_North_20deg_HB9_merged.list")
 
 
 # number of files per job
-window_sizes = [25, 25, 25]
+window_sizes = [25] * 3
 
 # I used the first few files to train the classifier and regressor -- skip them
 start_runs = [50, 50, 0]
 
 # how many jobs to submit at once
-NJobs = -100  # put at < 0 to deactivate
+NJobs = 200  # put at < 0 to deactivate
 
 # the pickled classifier and regressor on the GRID
 model_path_template = \
@@ -92,7 +93,7 @@ regressor_LFN = model_path_template.format(
 # define a template name for the file that's going to be written out.
 # the placeholder braces are going to get set during the file-loop
 output_filename_template = 'classified_events_{}.h5'
-output_path = "cta/prod3b/paranal/"
+output_path = "cta/prod3b/paranal_LND/"
 
 # sets all the local files that are going to be uploaded with the job plus the pickled
 # classifier (if the file name starts with `LFN:`, it will be copied from the GRID itself)
@@ -125,10 +126,9 @@ for cam_id in cam_id_list:
 # ##     ##  #######  ##    ## ##    ## #### ##    ##  ######
 
 # get jobs from today and yesterday...
-import datetime as d
 days = []
-for i in range(1):  # how many days do you want to look back?
-    days.append((d.date.today()-d.timedelta(days=i)).isoformat())
+for i in range(2):  # how many days do you want to look back?
+    days.append((datetime.date.today()-datetime.timedelta(days=i)).isoformat())
 
 # get list of run_tokens that are currently running / waiting
 running_ids = set()
@@ -222,7 +222,7 @@ for i, filelist in enumerate([
             # 'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
             'LCG.CAMK.pl',      # no miniconda (bad vo configuration?)
             # 'LCG.Prague.cz',    # no miniconda (bad vo configuration?)
-            # 'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
+            'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
             # 'LCG.OBSPM.fr',
             # 'LCG.LAPP.fr',      # no miniconda (bad vo configuration?)
             'LCG.PIC.es',       #
@@ -238,7 +238,7 @@ for i, filelist in enumerate([
         for run_file in run_filelist:
             run_token = re.split('_', run_file)[3]
             output_filename_temp = \
-                output_filename_template.format(channel, mode, run_token)
+                output_filename_template.format("_".join([channel, mode, run_token]))
 
             # wait for a random number of seconds (up to five minutes) before starting
             # to add a bit more entropy in the starting times of the dirac querries
@@ -251,7 +251,7 @@ for i, filelist in enumerate([
 
             # source the miniconda ctapipe environment and run the python script with all
             # its arguments
-            j.setExecutable("source",
+            j.setExecutable('source',
                             pilot_args.format(out_file=output_filename_temp,
                                               regressor=basename(regressor_LFN),
                                               classifier=basename(classifier_LFN)))

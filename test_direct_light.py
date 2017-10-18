@@ -3,17 +3,25 @@
 from glob import glob
 import warnings
 
+from astropy import units as u
+
 import matplotlib.pyplot as plt
 
 from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.calib import CameraCalibrator
 
+from ctapipe.utils import linalg
+
 from ctapipe.visualization import CameraDisplay
 
 from helper_functions import *
 
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
+
+from IPython import embed
+
+import matplotlib.animation as animation
 
 
 # use this in the selection of the gain channels
@@ -26,20 +34,11 @@ pe_thresh = {
 if __name__ == "__main__":
 
     parser = make_argparser()
-    parser.add_argument('--gamma',  action='store_false', dest='proton', default=True,
-                        help="do gammas instead of protons")
+    parser.add_argument('--type', default="helium")
 
     args = parser.parse_args()
 
-    if args.infile_list:
-        filenamelist = []
-        for f in args.infile_list:
-            filenamelist += glob("{}/{}".format(args.indir, f))
-        filenamelist.sort()
-    elif args.proton:
-        filenamelist = sorted(glob("{}/proton/*gz".format(args.indir)))
-    else:
-        filenamelist = sorted(glob("{}/gamma/*gz".format(args.indir)))
+    filenamelist = sorted(glob("{}/CR_{}/*gz".format(args.indir, args.type)))
 
     if not filenamelist:
         print("no files found; check indir: {}".format(args.indir))
@@ -55,7 +54,7 @@ if __name__ == "__main__":
                                 wavelet_options=args.raw,
                                 skip_edge_events=False, island_cleaning=False)
 
-    allowed_tels = prod3b_tel_ids(args.cam_ids[0])
+    allowed_tels = None
     for filename in filenamelist:
         print("filename = {}".format(filename))
 
@@ -65,9 +64,18 @@ if __name__ == "__main__":
 
         for event in source:
 
-            if event.mc.energy.to("TeV").value < 1:
+            # if event.mc.energy.to("TeV").value < 1:
+            #     continue
+
+            if (event.mc.alt.degree-70)**2 + (event.mc.az.degree-180)**2 > 3:
                 continue
+
+            print()
             print(event.mc.energy)
+
+            DeltaAlt = (event.mc.alt)
+            DeltaAz = (event.mc.az)
+            print(DeltaAz.degree, DeltaAlt.degree)
 
             # calibrate the event
             calib.calibrate(event)
@@ -75,6 +83,18 @@ if __name__ == "__main__":
             for tel_id in event.dl0.tels_with_data:
 
                 camera = event.inst.subarray.tel[tel_id].camera
+
+                foclen = event.inst.subarray.tel[tel_id].optics.effective_focal_length
+
+                shower_pos = np.array([event.mc.core_x/u.m, event.mc.core_y/u.m])*u.m
+                tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
+
+                print(linalg.length(tel_pos-shower_pos))
+
+                pmt_simu = event.mc.tel[tel_id].photo_electron_image
+
+                # embed()
+
                 # the camera image as a 1D array
                 pmt_signal = event.dl1.tel[tel_id].image
 
@@ -93,29 +113,52 @@ if __name__ == "__main__":
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        pmt_wave, geom_wave = cleaner_wave.clean(pmt_signal.copy(), camera)
-                        pmt_tail, geom_tail = cleaner_tail.clean(pmt_signal.copy(), camera)
+                        pmt_wave, geom_wave = \
+                            cleaner_wave.clean(pmt_signal.copy(), camera)
+                        pmt_tail, geom_tail = \
+                            cleaner_tail.clean(pmt_signal.copy(), camera)
                 except:
                     continue
 
-                fig = plt.figure(figsize=(18, 12))
+                fig = plt.figure(figsize=(20, 12))
 
-                ax = fig.add_subplot(221)
+                ax = fig.add_subplot(222)
                 disp_uncl = CameraDisplay(camera, image=pmt_signal, ax=ax)
                 ax.set_aspect('equal', adjustable='box')
                 plt.title("noisy, calibr. image")
                 disp_uncl.add_colorbar()
 
+                ax = fig.add_subplot(221)
+                disp_simu = CameraDisplay(camera, image=pmt_simu, ax=ax)
+                ax.set_aspect('equal', adjustable='box')
+                plt.title("photo-electron image")
+                disp_simu.add_colorbar()
+
                 ax = fig.add_subplot(223)
-                disp_wave = CameraDisplay(camera, image=pmt_wave, ax=ax)
+                disp_wave = CameraDisplay(geom_wave, image=pmt_wave, ax=ax)
                 ax.set_aspect('equal', adjustable='box')
                 plt.title("wave cleaned image")
                 disp_wave.add_colorbar()
 
                 ax = fig.add_subplot(224)
-                disp_tail = CameraDisplay(camera, image=pmt_tail, ax=ax)
-                ax.set_aspect('equal', adjustable='box')
-                plt.title("tail cleaned image")
-                disp_tail.add_colorbar()
+                # disp_tail = CameraDisplay(geom_tail, image=pmt_tail, ax=ax)
+                # ax.set_aspect('equal', adjustable='box')
+                # plt.title("tail cleaned image")
+                # disp_tail.add_colorbar()
+                #
+                # fig2 = plt.figure()
+                samples = event.dl0.tel[tel_id].pe_samples[0, :, :]
+                disp_anim = CameraDisplay(camera, image=samples[:, 0])
+                txt = ax.text(1, 1, "frame {}".format(0))
 
+                def updatefig(frame_number):
+                    global disp_anim, txt
+                    index = frame_number % samples.shape[-1]
+                    disp_anim.image = samples[:, index]
+                    txt.set_text("frame {}".format(index))
+
+                anim = animation.FuncAnimation(fig, updatefig, interval=50)
+                plt.tight_layout()
+                plt.tight_layout()
+                # anim.save("plots/iron/event_1/{}.mp4".format(tel_id))
                 plt.show()

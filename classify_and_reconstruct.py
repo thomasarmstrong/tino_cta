@@ -49,10 +49,7 @@ except:
 from modules.prepare_event import EventPreparator
 
 # PyTables
-try:
-    import tables as tb
-except:
-    print("no pytables installed")
+import tables as tb
 
 
 def main():
@@ -283,12 +280,11 @@ def main():
             gammaness = predict_proba[0, 0]
 
             # the MC direction of origin of the simulated particle
-            source_orig = linalg.set_phi_theta(
-                event.mc.tel[tel_id].azimuth_raw * u.rad,
-                (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad)
+            shower = event.mc
+            shower_org = linalg.set_phi_theta(90*u.deg+shower.az, 90.*u.deg-shower.alt)
 
             # and how the reconstructed direction compares to that
-            off_angle = linalg.angle(dir_fit, source_orig)
+            off_angle = linalg.angle(dir_fit, shower_org)
             phi, theta = linalg.get_phi_theta(dir_fit)
             phi = (phi if phi > 0 else phi+360*u.deg)
 

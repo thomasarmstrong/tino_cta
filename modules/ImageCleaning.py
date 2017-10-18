@@ -115,7 +115,7 @@ class ImageCleaner:
             self.wavelet_cleaning = \
                 lambda *arg, **kwargs: WaveletTransform().clean_image(
                                 *arg, **kwargs,
-                                kill_isolated_pixels=True,
+                                kill_isolated_pixels=island_cleaning,
                                 tmp_files_directory=tmp_files_directory,
                                 mrfilter_directory=mrfilter_directory)
             self.island_threshold = 1.5

@@ -19,6 +19,13 @@ from helper_functions import *
 from ctapipe.analysis.sensitivity import (SensitivityPointSource, e_minus_2,
                                           crab_source_rate, cr_background_rate)
 
+from os.path import expandvars
+import yaml
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+except ImportError:
+    from yaml import Loader, Dumper
+
 import matplotlib.pyplot as plt
 # plt.style.use('seaborn-poster')
 # plt.style.use('t_slides')
@@ -59,10 +66,10 @@ observation_time = 50*u.h
 # NProton_simulated = NProton_per_File * (6998-100)
 
 
-NGammas_per_File = 20000
-NProton_per_File = 100000
-NGammas_simulated = NGammas_per_File * (5000-30)
-NProton_simulated = NProton_per_File * (40000-30)
+# NGammas_per_File = 20000
+# NProton_per_File = 100000
+# NGammas_simulated = NGammas_per_File * (5000-30)
+# NProton_simulated = NProton_per_File * (40000-30)
 
 
 def fitfunc(x, a, b, c, d, e=0, f=0, g=0, h=0):
@@ -87,16 +94,25 @@ def percentiles(values, bin_values, bin_edges, percentile):
     return percentiles_binned.T
 
 
+def correct_off_angle(data, origin=None):
+    import ctapipe.utils.linalg as linalg
+    origin = origin or linalg.set_phi_theta(90*u.deg, 20*u.deg)
+
+    reco_dirs = linalg.set_phi_theta(data["phi"]*u.deg.to(u.rad),
+                                     data["theta"]*u.deg.to(u.rad)).T
+    off_angles = np.arccos(np.clip(np.dot(reco_dirs, origin), -1., 1.))*u.rad
+    data["off_angle"] = off_angles.to(u.deg)
+
+
 def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
          ga_percentile={'w': 99, 't': 99}):
-
-    def selection_mask(event_table, gammaness=.75, ntels=3):
-        return ((event_table["NTels_reco"] >= ntels) &
-                (event_table["gammaness"] > gammaness))
 
     apply_cuts = True
     gammaness_wave = .95
     gammaness_tail = .95
+
+    NGammas_simulated = meta_gammas["n_files"] * meta_gammas["n_events_per_file"]
+    NProton_simulated = meta_proton["n_files"] * meta_proton["n_events_per_file"]
 
     print()
     print("gammas simulated:", NGammas_simulated)
@@ -115,6 +131,10 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
 
     proton_t_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
             args.indir, args.infile, "proton", "tail"), "reco_events")
+
+    # FUCK FUCK FUCK FUCK
+    correct_off_angle(gammas_w_o)
+    correct_off_angle(proton_w_o)
 
     print("\n")
     print("gammas present (wavelets):", len(gammas_w_o))
@@ -158,18 +178,18 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
         plt.pause(.1)
 
     gammas_w_g = gammas_w_o[
-            gammas_w_o["gammaness"] > fitfunc_log(gammas_w_o["reco_Energy"],
-                                                  *popt_g_w)]
+            gammas_w_o["gammaness"] >
+            fitfunc_log(gammas_w_o["reco_Energy"], *popt_g_w)]
     proton_w_g = proton_w_o[
-            proton_w_o["gammaness"] > fitfunc_log(proton_w_o["reco_Energy"],
-                                                  *popt_g_w)]
+            proton_w_o["gammaness"] >
+            fitfunc_log(proton_w_o["reco_Energy"], *popt_g_w)]
 
     gammas_t_g = gammas_t_o[
-            gammas_t_o["gammaness"] > fitfunc_log(gammas_t_o["reco_Energy"],
-                                                  *popt_g_w)]
+            gammas_t_o["gammaness"] >
+            fitfunc_log(gammas_t_o["reco_Energy"], *popt_g_w)]
     proton_t_g = proton_t_o[
-            proton_t_o["gammaness"] > fitfunc_log(proton_t_o["reco_Energy"],
-                                                  *popt_g_w)]
+            proton_t_o["gammaness"] >
+            fitfunc_log(proton_t_o["reco_Energy"], *popt_g_w)]
 
     # ##     ## ####     ######  ##     ## ########
     #  ##   ##   ##     ##    ## ##     ##    ##
@@ -211,22 +231,21 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
         plt.legend()
         plt.pause(.1)
 
-    if apply_cuts:
-        gammas_w_rcut = gammas_w_g[
-                gammas_w_g["off_angle"]
-                < fitfunc_log(gammas_w_g["reco_Energy"], *popt_w)*xi_on_scale]
+    gammas_w_rcut = gammas_w_g[
+            gammas_w_g["off_angle"]
+            < fitfunc_log(gammas_w_g["reco_Energy"], *popt_w)*xi_on_scale]
 
-        proton_w_rcut = proton_w_g[
-                proton_w_g["off_angle"]
-                < fitfunc_log(proton_w_g["reco_Energy"], *popt_w)*xi_off_scale]
+    proton_w_rcut = proton_w_g[
+            proton_w_g["off_angle"]
+            < fitfunc_log(proton_w_g["reco_Energy"], *popt_w)*xi_off_scale]
 
-        gammas_t_rcut = gammas_t_g[
-                gammas_t_g["off_angle"]
-                < fitfunc_log(gammas_t_g["reco_Energy"], *popt_t)*xi_on_scale]
+    gammas_t_rcut = gammas_t_g[
+            gammas_t_g["off_angle"]
+            < fitfunc_log(gammas_t_g["reco_Energy"], *popt_t)*xi_on_scale]
 
-        proton_t_rcut = proton_t_g[
-                proton_t_g["off_angle"]
-                < fitfunc_log(proton_t_g["reco_Energy"], *popt_t)*xi_off_scale]
+    proton_t_rcut = proton_t_g[
+            proton_t_g["off_angle"]
+            < fitfunc_log(proton_t_g["reco_Energy"], *popt_t)*xi_off_scale]
 
     print("\n")
     print("gammas selected (wavelets):", len(gammas_w_rcut))
@@ -236,10 +255,10 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
     print("proton selected (tailcuts):", len(proton_t_rcut))
 
     SensCalc_w = SensitivityPointSource(
-            reco_energies={'g': gammas_w_g['reco_Energy'].values*u.TeV,
-                           'p': proton_w_g['reco_Energy'].values*u.TeV},
-            mc_energies={'g': gammas_w_g['MC_Energy'].values*u.TeV,
-                         'p': proton_w_g['MC_Energy'].values*u.TeV},
+            reco_energies={'g': gammas_w_rcut['reco_Energy'].values*u.TeV,
+                           'p': proton_w_rcut['reco_Energy'].values*u.TeV},
+            mc_energies={'g': gammas_w_rcut['MC_Energy'].values*u.TeV,
+                         'p': proton_w_rcut['MC_Energy'].values*u.TeV},
             energy_bin_edges={'g': edges_gammas,
                               'p': edges_proton},
             flux_unit=flux_unit)
@@ -249,25 +268,26 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
                                 'p': NProton_simulated},
             generator_spectra={'g': e_minus_2,
                                'p': e_minus_2},
-            generator_areas={'g': np.pi * (2500*u.m)**2,
-                             'p': np.pi * (3000*u.m)**2},
+            generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
+                             'p': np.pi * (meta_proton["gen_radius"] * u.m)**2},
     )
 
     SensCalc_w.generate_event_weights(
             n_simulated_events={'g': NGammas_simulated,
                                 'p': NProton_simulated},
-            generator_areas={'g': np.pi * (2500*u.m)**2,
-                             'p': np.pi * (3000*u.m)**2},
+            generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
+                             'p': np.pi * (meta_proton["gen_radius"] * u.m)**2},
             observation_time=observation_time,
             spectra={'g': crab_source_rate,
                      'p': cr_background_rate},
-            e_min_max={"g": (0.003, 330)*u.TeV,
-                       "p": (0.004, 600)*u.TeV},
-            extensions={'p': 10 * u.deg},
+            e_min_max={"g": (meta_gammas["e_min"], meta_gammas["e_max"])*u.TeV,
+                       "p": (meta_proton["e_min"], meta_proton["e_max"])*u.TeV},
+            extensions={'p': meta_proton["diff_cone"] * u.deg},
             generator_gamma={"g": 2, "p": 2})
 
     sensitivities_w = SensCalc_w.get_sensitivity(
-            alpha=(xi_on_scale/xi_off_scale)**2,
+            alpha=(xi_on_scale/xi_off_scale)**2, n_draws=1000,
+            max_background_ratio=.01,
             sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
 
     # sensitvity for tail cuts
@@ -285,24 +305,25 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
                                 'p': NProton_simulated},
             generator_spectra={'g': e_minus_2,
                                'p': e_minus_2},
-            generator_areas={'g': np.pi * (2500*u.m)**2,
-                             'p': np.pi * (3000*u.m)**2},
+            generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
+                             'p': np.pi * (meta_proton["gen_radius"] * u.m)**2},
     )
     SensCalc_t.generate_event_weights(
             n_simulated_events={'g': NGammas_simulated,
                                 'p': NProton_simulated},
-            generator_areas={'g': np.pi * (2500*u.m)**2,
-                             'p': np.pi * (3000*u.m)**2},
+            generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
+                             'p': np.pi * (meta_proton["gen_radius"] * u.m)**2},
             observation_time=observation_time,
             spectra={'g': crab_source_rate,
                      'p': cr_background_rate},
-            e_min_max={"g": (0.003, 330)*u.TeV,
-                       "p": (0.004, 600)*u.TeV},
-            extensions={'p': 10 * u.deg},
+            e_min_max={"g": (meta_gammas["e_min"], meta_gammas["e_max"])*u.TeV,
+                       "p": (meta_proton["e_min"], meta_proton["e_max"])*u.TeV},
+            extensions={'p': meta_proton["diff_cone"] * u.deg},
             generator_gamma={"g": 2, "p": 2})
 
     sensitivities_t = SensCalc_t.get_sensitivity(
-            alpha=(xi_on_scale/xi_off_scale)**2,
+            alpha=(xi_on_scale/xi_off_scale)**2, n_draws=1000,
+            max_background_ratio=.01,
             sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
 
     print("\n")
@@ -690,21 +711,22 @@ def make_performance_plots(gammas_w, proton_w,
                            e_bin_edges.value, 68)
 
     plt.figure()
-    # plt.semilogx(e_bin_centres, xi_68_gt,
+    # plt.plot(e_bin_centres, xi_68_gt,
     #              color="darkorange", marker="^", ls="-",
     #              label="gamma -- tail")
-    # plt.semilogx(e_bin_centres, xi_68_pt,
+    # plt.plot(e_bin_centres, xi_68_pt,
     #              color="darkorange", marker="o", ls=":",
     #              label="proton -- tail")
-    plt.semilogx(e_bin_centres, xi_68_gw,
-                 color="darkred", marker="^", ls="-",
-                 label="gamma -- wave")
-    # plt.semilogx(e_bin_centres, xi_68_pw,
+    plt.plot(e_bin_centres, xi_68_gw,
+             color="darkred", marker="^", ls="-",
+             label="gamma -- wave")
+    # plt.plot(e_bin_centres, xi_68_pw,
     #              color="darkred", marker="o", ls=":",
     #              label="proton -- wave")
     plt.title("angular resolution")
     plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
     plt.ylabel(r"$\xi_\mathrm{68} / ^\circ$")
+    plt.gca().set_xscale("log")
     plt.gca().set_yscale("log")
     plt.grid()
     plt.legend()
@@ -801,16 +823,25 @@ if __name__ == "__main__":
     parser.add_argument('--infile', type=str, default="classified_events")
     args = parser.parse_args()
 
+    # load meta data from disk
+    meta_data_file = expandvars("$CTA_SOFT/tino_cta/data/"
+                                "prod3b/paranal_LND/meta_data.yml")
+    meta_data_file = "{}/meta_data.yml".format(args.indir)
+    meta_data = yaml.load(open(meta_data_file), Loader=Loader)
+    meta_units = meta_data["units"]
+    meta_gammas = meta_data["gamma"]
+    meta_proton = meta_data["proton"]
+
     main(xi_percentile={'w': 68, 't': 68},
-         ga_percentile={'w': 99, 't': 99})
+         ga_percentile={'w': 99.995, 't': 99.995})
 
     # for xi in np.arange(50, 90, 3):
     #     for ga in 100*(1-np.logspace(-3, 0, 10)):
-    # for xi in [50, 68]:
-    #     for ga in [90, 95, 99]:
+    # for xi in [68, 50, 40]:
+    #     for ga in [99.995, 99.999, 99.9]:
     #         main(xi_percentile={'w': xi, 't': xi},
     #              ga_percentile={'w': ga, 't': ga})
-    #         plt.suptitle("{} -- {}".format(xi, ga))
+    #         plt.suptitle("xi{} -- ga{}".format(xi, ga))
     #         plt.pause(.1)
     if args.plot:
         plt.show()
