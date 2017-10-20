@@ -78,6 +78,75 @@ def kill_isolpix(array, neighbours=None, threshold=.2):
     return filtered_array
 
 
+def get_edge_pixels(camera, rows=1, n_neigh=None):
+    """collects a list of pixel IDs that are considered to be "the edge" of the image.
+
+    Parameters
+    ----------
+    camera : ctapipe CameraGeometry object
+        the camera geometry object
+    rows : integer, optional (default: 1)
+        width of the edge in pixel-rows
+    n_neigh : integer, optional (default: None)
+        number of nominal number of neighbours for each pixels
+        gets set to 6 for hexagonal and 4 for rectangular pixels
+        ... you probably don't need to worry about this ...
+
+    Returns
+    -------
+        python set of pixel IDs to consider "the edge" of the image
+        edge_pixels : set
+
+    Note
+    ----
+    `edge_pixels` is stored as a member of `camera`, since the same camera geometry will
+    show up many times
+    """
+    if not hasattr(camera, "edge_pixels"):
+        # the first row consists of all pixels that have less than the nominal number of
+        # neighbours -- which is 6 for hexagonal pixels and 4 for rectangular ones
+        n_neigh = n_neigh or (6 if "hex" in camera.pix_type else 4)
+        edge_pixels = set(id for id, neigh in zip(camera.pix_id, camera.neighbors)
+                          if len(neigh) < n_neigh)
+
+        # add more rows by joining `edge_pixels` with the sets of the neighbours of all
+        # pixels in `edge_pixels`
+        for i in range(rows-1):
+            for j in list(edge_pixels):
+                edge_pixels |= set(camera.neighbors[j])
+
+        camera.edge_pixels = np.array(list(edge_pixels), dtype=int)
+    return camera.edge_pixels
+
+
+def reject_edge_event(img, geom, rel_thresh=5., abs_thresh=None):
+    """determines whether any pixel at the edge (defined by `get_edge_pixels`) has a
+    too high signal. The threshold is given either by `abs_thresh` or the highest signal
+    divided by `rel_thresh`.
+
+    Parameters
+    ----------
+    img : ndarray
+        the camera image
+    geom : ctapipe CameraGeometry object
+        the camera geometry object
+    rel_thresh : float, optional (default: 5.)
+        divide the maximum signal by this number to get the threshold for a "too high
+        signal at the edge"
+    abs_thresh : float, optional (default: None)
+        absolute value to consider a "too high signal at the edge"
+        if given, overrides `rel_thresh` method
+
+    Returns
+    -------
+    reject : bool
+        whether or not any of the edge pixels has a signal higher than the threshold
+    """
+    edge_thresh = abs_thresh or (np.max(img)/rel_thresh)
+    edge_pixels = get_edge_pixels(geom, rows=1)
+    return (img[edge_pixels] > edge_thresh).any()
+
+
 def remove_plateau(img):
     img -= np.mean(img)
     img[img < 0] = 0
@@ -212,6 +281,11 @@ class ImageCleaner:
 
         unrot_geom, unrot_img = convert_geometry_back(rot_geom, cleaned_img,
                                                       cam_geom.cam_id)
+
+        if self.skip_edge_events:
+            if reject_edge_event(unrot_img, unrot_geom):
+                raise EdgeEvent
+            self.cutflow.count("wavelet edge")
 
         new_img = unrot_img
         new_geom = unrot_geom
