@@ -86,7 +86,7 @@ if __name__ == '__main__':
     # the class that does the shower reconstruction
     shower_reco = HillasReconstructor()
 
-    preper = EventPreparator(calib=None, cleaner=cleaner,
+    preper = EventPreparator(cleaner=cleaner,
                              hillas_parameters=hillas_parameters, shower_reco=shower_reco,
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
