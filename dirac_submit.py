@@ -69,7 +69,7 @@ window_sizes = [25] * 3
 start_runs = [50, 50, 0]
 
 # how many jobs to submit at once
-NJobs = 200  # put at < 0 to deactivate
+NJobs = 300  # put at < 0 to deactivate
 
 # the pickled classifier and regressor on the GRID
 model_path_template = \

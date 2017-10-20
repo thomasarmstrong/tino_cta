@@ -35,6 +35,7 @@ def raise_error(message):
 
 class EventPreparator():
 
+    # for gain channel selection
     pe_thresh = {
         "ASTRICam": 14,
         "LSTCam": 100,
