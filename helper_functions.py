@@ -8,10 +8,10 @@ import signal
 
 class SignalHandler():
     ''' handles ctrl+c signals; set up via
-        signal_handler = SignalHandler()
-        signal.signal(signal.SIGINT, signal_handler)
+        `signal_handler = SignalHandler()
+        `signal.signal(signal.SIGINT, signal_handler)`
         # or for two step interupt:
-        signal.signal(signal.SIGINT, signal_handler.stop_drawing)
+        `signal.signal(signal.SIGINT, signal_handler.stop_drawing)`
     '''
     def __init__(self):
         self.stop = False
@@ -55,8 +55,6 @@ def make_argparser():
     parser.add_argument('-c', '--min_charge', type=int, default=0,
                         help="minimum charge per telescope after cleaning")
     parser.add_argument('-i', '--indir',   type=str,
-                        # default="/media/tmichael/Transcend/Data/cta/ASTRI9/")
-                        # default=expandvars("$HOME/Data/cta/ASTRI9/"))
                         default=expandvars("$HOME/Data/cta/Prod3b/Paranal"))
     parser.add_argument('-f', '--infile_list',   type=str, default="", nargs='*',
                         help="give a specific list of files to run on")

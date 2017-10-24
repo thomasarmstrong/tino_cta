@@ -53,21 +53,21 @@ def merge_list_of_pandas(filename_list, destination):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--events_dir', type=str, default="./")
-    parser.add_argument('--in_files_base', type=str, default="classified_events")
+    parser.add_argument('-i', '--indir', type=str, default="./")
+    parser.add_argument('--infiles_base', type=str, default="classified_events")
     parser.add_argument('--auto', action='store_true', dest='auto', default=False)
-    parser.add_argument('--out_file', type=str)
+    parser.add_argument('-o', '--outfile', type=str)
     args = parser.parse_args()
 
     if args.auto:
         for channel in ["gamma", "proton"]:
             for mode in ["wave", "tail"]:
                 filename = "{}/{}/{}_{}_{}_*.h5".format(
-                        args.events_dir, mode,
-                        args.in_files_base,
+                        args.indir, mode,
+                        args.infiles_base,
                         channel, mode)
                 merge_list_of_pandas(glob.glob(filename),
                                      filename.replace("_*", ""))
     else:
         merge_list_of_pytables(
-                glob.glob(args.events_dir+args.in_files_base+"*.h5"), args.out_file)
+                glob.glob(args.indir+args.infiles_base+"*.h5"), args.outfile)

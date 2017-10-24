@@ -69,7 +69,7 @@ def main():
     parser.add_argument('--regressor', type=str,
                         default='data/classifier_pickle/regressor'
                                 '_prod3b_{mode}_{cam_id}_{regressor}.pkl')
-    parser.add_argument('-o', '--out_file', type=str, default="",
+    parser.add_argument('-o', '--outfile', type=str, default="",
                         help="location to write the classified events to.")
     parser.add_argument('--proton',  action='store_true',
                         help="do protons instead of gammas")
@@ -109,7 +109,8 @@ def main():
     shower_reco = HillasReconstructor()
 
     preper = EventPreparator(calib=None, cleaner=cleaner,
-                             hillas_parameters=hillas_parameters, shower_reco=shower_reco,
+                             hillas_parameters=hillas_parameters,
+                             shower_reco=shower_reco,
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
                              allowed_cam_ids=[],
@@ -189,15 +190,13 @@ def main():
     reco_outfile = tb.open_file(
             # trying to put particle type and cleaning mode into the filename
             # `format` puts in each argument as long as there is a free "{}" token
-            # if `out_file` was set without any "{}", nothing will be replaced
-            args.out_file, mode="w",
+            # if `outfile` was set without any "{}", nothing will be replaced
+            args.outfile, mode="w",
             # if we don't want to write the event list to disk, need to add more arguments
-            **({} if args.out_file else {"driver": "H5FD_CORE",
-                                         "driver_core_backing_store": False}))
+            **({} if args.outfile else {"driver": "H5FD_CORE",
+                                        "driver_core_backing_store": False}))
     reco_table = reco_outfile.create_table("/", "reco_events", RecoEvent)
     reco_event = reco_table.row
-
-    source_orig = None
 
     allowed_tels = None  # all telescopes
     allowed_tels = prod3b_tel_ids("L+N+D")
@@ -223,40 +222,40 @@ def main():
 
                 moments = hillas_dict[tel_id]
 
-                impact_dist = linalg.length(tel_pos-pos_fit)
+                impact_dist = linalg.length(tel_pos - pos_fit)
                 cls_features_tel = ClassifierFeatures(
-                            impact_dist/u.m,
-                            tot_signal,
-                            max_signals[tel_id],
-                            moments.size,
-                            n_tels["LST"],
-                            n_tels["MST"],
-                            n_tels["SST"],
-                            moments.width/u.m,
-                            moments.length/u.m,
-                            moments.skewness,
-                            moments.kurtosis,
-                            h_max/u.m,
-                            err_est_pos/u.m,
-                            err_est_dir/u.deg
-                            )
+                    impact_dist / u.m,
+                    tot_signal,
+                    max_signals[tel_id],
+                    moments.size,
+                    n_tels["LST"],
+                    n_tels["MST"],
+                    n_tels["SST"],
+                    moments.width / u.m,
+                    moments.length / u.m,
+                    moments.skewness,
+                    moments.kurtosis,
+                    h_max / u.m,
+                    err_est_pos / u.m,
+                    err_est_dir / u.deg
+                )
 
                 reg_features_tel = EnergyFeatures(
-                            impact_dist/u.m,
-                            tot_signal,
-                            max_signals[tel_id],
-                            moments.size,
-                            n_tels["LST"],
-                            n_tels["MST"],
-                            n_tels["SST"],
-                            moments.width/u.m,
-                            moments.length/u.m,
-                            moments.skewness,
-                            moments.kurtosis,
-                            h_max/u.m,
-                            err_est_pos/u.m,
-                            err_est_dir/u.deg
-                            )
+                    impact_dist / u.m,
+                    tot_signal,
+                    max_signals[tel_id],
+                    moments.size,
+                    n_tels["LST"],
+                    n_tels["MST"],
+                    n_tels["SST"],
+                    moments.width / u.m,
+                    moments.length / u.m,
+                    moments.skewness,
+                    moments.kurtosis,
+                    h_max / u.m,
+                    err_est_pos / u.m,
+                    err_est_dir / u.deg
+                )
 
                 if np.isnan(cls_features_tel).any() or np.isnan(reg_features_tel).any():
                     continue
@@ -281,12 +280,13 @@ def main():
 
             # the MC direction of origin of the simulated particle
             shower = event.mc
-            shower_org = linalg.set_phi_theta(90*u.deg+shower.az, 90.*u.deg-shower.alt)
+            shower_org = linalg.set_phi_theta(shower.az + 90 * u.deg,
+                                              90. * u.deg - shower.alt)
 
             # and how the reconstructed direction compares to that
             off_angle = linalg.angle(dir_fit, shower_org)
             phi, theta = linalg.get_phi_theta(dir_fit)
-            phi = (phi if phi > 0 else phi+360*u.deg)
+            phi = (phi if phi > 0 else phi + 360 * u.deg)
 
             reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
             reco_event["NTels_reco"] = len(hillas_dict)
@@ -320,7 +320,7 @@ def main():
             """(NTels_reco > min_tel) & (gammaness > agree_threshold)""")])
         N_total = len(reco_table)
         print("\nfraction selected events:")
-        print("{} / {} = {} %".format(N_selected, N_total, N_selected/N_total*100))
+        print("{} / {} = {} %".format(N_selected, N_total, N_selected / N_total * 100))
 
     except ZeroDivisionError:
         pass
@@ -331,7 +331,7 @@ def main():
     if args.plot:
         gammaness = [x['gammaness'] for x in reco_table]
         NTels_rec = [x['NTels_reco'] for x in reco_table]
-        NTel_bins = np.arange(np.min(NTels_rec), np.max(NTels_rec)+2) - .5
+        NTel_bins = np.arange(np.min(NTels_rec), np.max(NTels_rec) + 2) - .5
 
         NTels_rec_lst = [x['NTels_reco_lst'] for x in reco_table]
         NTels_rec_mst = [x['NTels_reco_mst'] for x in reco_table]

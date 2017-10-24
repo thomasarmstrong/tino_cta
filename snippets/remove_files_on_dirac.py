@@ -10,7 +10,7 @@ file_collection = []
 for line in open('vo.cta.in2p3.fr-user-t-tmichael.lfns'):
     line = line.strip()
 
-    if "prod3b/paranal/classified_events" not in line:
+    if "prod3b/paranal_LND/classified_events_electron_tail" not in line:
         continue
 
     if len(file_collection) < 100:
@@ -20,7 +20,8 @@ for line in open('vo.cta.in2p3.fr-user-t-tmichael.lfns'):
         print(file_collection)
         dirac.removeFile(file_collection, True)
         file_collection = []
-else:
+
+if file_collection:
     print("removing:")
     print(file_collection)
     dirac.removeFile(file_collection, True)

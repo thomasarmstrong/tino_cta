@@ -88,20 +88,20 @@ def main():
     # takes care of image cleaning
     cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
                            wavelet_options=args.raw,
-                           skip_edge_events=False, island_cleaning=True)
+                           skip_edge_events=args.skip_edge_events, island_cleaning=True)
 
     # the class that does the shower reconstruction
     shower_reco = HillasReconstructor()
 
     shower_max_estimator = ShowerMaxEstimator("paranal")
 
-    preper = EventPreparator(calib=None, cleaner=cleaner,
+    preper = EventPreparator(cleaner=cleaner,
                              hillas_parameters=hillas_parameters, shower_reco=shower_reco,
                              event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
                              # event/image cuts:
                              allowed_cam_ids=[],  # means: all
                              min_ntel=3,
-                             min_charge=25,  # args.min_charge,
+                             min_charge=args.min_charge,
                              min_pixel=3)
 
     # a signal handler to abort the event loop but still do the post-processing

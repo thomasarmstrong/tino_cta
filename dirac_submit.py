@@ -47,7 +47,7 @@ pilot_args = ' '.join([
         source_ctapipe, '&&', 'PATH=$PATH:./', execute,
         '--classifier ./{classifier}',
         '--regressor ./{regressor}',
-        '--out_file {out_file}',
+        '--outfile {outfile}',
         '--indir ./ --infile_list *.simtel.gz',
         '--tail' if "tail" in sys.argv else '',
         '--cam_ids'] + cam_id_list)
@@ -252,7 +252,7 @@ for i, filelist in enumerate([
             # source the miniconda ctapipe environment and run the python script with all
             # its arguments
             j.setExecutable('source',
-                            pilot_args.format(out_file=output_filename_temp,
+                            pilot_args.format(outfile=output_filename_temp,
                                               regressor=basename(regressor_LFN),
                                               classifier=basename(classifier_LFN)))
             j.setExecutable('rm', basename(run_file))
@@ -264,7 +264,7 @@ for i, filelist in enumerate([
                             ' '.join([
                                 source_ctapipe, '&&',
                                 './append_tables.py',
-                                '--out_file', output_filename
+                                '--outfile', output_filename
                                 ]))
 
         print("\nOutputData: {}{}".format(output_path, output_filename))

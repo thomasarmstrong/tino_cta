@@ -147,15 +147,6 @@ def reject_edge_event(img, geom, rel_thresh=5., abs_thresh=None):
     return (img[edge_pixels] > edge_thresh).any()
 
 
-def remove_plateau(img):
-    img -= np.mean(img)
-    img[img < 0] = 0
-
-
-def raise_minimum(img):
-    img -= np.min(img)
-
-
 class ImageCleaner:
 
     hex_neighbours_1ring = np.array([[1, 1, 0],
@@ -285,7 +276,7 @@ class ImageCleaner:
         if self.skip_edge_events:
             if reject_edge_event(unrot_img, unrot_geom):
                 raise EdgeEvent
-            self.cutflow.count("wavelet edge")
+            self.cutflow.count("clean edge")
 
         new_img = unrot_img
         new_geom = unrot_geom
