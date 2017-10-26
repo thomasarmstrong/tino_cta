@@ -9,7 +9,7 @@ from astropy import units as u
 
 from itertools import chain
 
-from scipy.optimize import minimize
+from scipy import optimize
 from scipy import interpolate
 
 from helper_functions import *
@@ -108,47 +108,16 @@ def correct_off_angle(data, origin=None):
     off_angles = np.arccos(np.clip(np.dot(reco_dirs, origin), -1., 1.))*u.rad
     data["off_angle"] = off_angles.to(u.deg)
 
-def find_optimal_cuts(cuts, events, energy_bin_edges, xi_on_scale=1, xi_off_scale=20):
-    """ throw this into a minimiser """
-    ga_cut = cuts[0]
-    xi_cut = cuts[1]
 
-    gammas = events['g'][
-        (events['g']["gammaness"] > ga_cut) &
-        (events['g']["off_angle"] < xi_cut)]
-    electr = events['e'][
-        (events['e']["gammaness"] > ga_cut) &
-        (events['e']["off_angle"] < xi_cut)]
-    proton = events['p'][
-        (events['p']["gammaness"] > ga_cut) &
-        (events['p']["off_angle"] < xi_cut)]
-
-    if len(events['g']) < 10:
-        return 1
-
+def calculate_sensitivities(events, energy_bin_edges, xi_on_scale=1, xi_off_scale=20):
     SensCalc = SensitivityPointSource(
-            reco_energies={'g': gammas['reco_Energy'].values*u.TeV,
-                           'p': proton['reco_Energy'].values*u.TeV,
-                           'e': electr['reco_Energy'].values*u.TeV},
-            mc_energies={'g': gammas['MC_Energy'].values*u.TeV,
-                         'p': proton['MC_Energy'].values*u.TeV,
-                         'e': electr['MC_Energy'].values*u.TeV},
-            energy_bin_edges={'g': edges_gammas,
-                              'p': edges_proton,
-                              'e': edges_electr},
+            reco_energies={'g': events['g']['reco_Energy'].values*u.TeV,
+                           'p': events['p']['reco_Energy'].values*u.TeV,
+                           'e': events['e']['reco_Energy'].values*u.TeV},
+            mc_energies={'g': events['g']['MC_Energy'].values*u.TeV,
+                         'p': events['p']['MC_Energy'].values*u.TeV,
+                         'e': events['e']['MC_Energy'].values*u.TeV},
             flux_unit=flux_unit)
-
-    SensCalc.get_effective_areas(
-            n_simulated_events={'g': meta_gammas["n_simulated"],
-                                'p': meta_proton["n_simulated"],
-                                'e': meta_electr["n_simulated"]},
-            generator_spectra={'g': e_minus_2,
-                               'p': e_minus_2,
-                               'e': e_minus_2},
-            generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
-                             'p': np.pi * (meta_proton["gen_radius"] * u.m)**2,
-                             'e': np.pi * (meta_electr["gen_radius"] * u.m)**2},
-    )
 
     SensCalc.generate_event_weights(
             n_simulated_events={'g': meta_gammas["n_simulated"],
@@ -170,13 +139,34 @@ def find_optimal_cuts(cuts, events, energy_bin_edges, xi_on_scale=1, xi_off_scal
                              'p': meta_proton["gen_gamma"],
                              'e': meta_electr["gen_gamma"]})
 
-    sens = SensCalc.get_sensitivity(
+    SensCalc.get_sensitivity(
             alpha=(xi_on_scale/xi_off_scale)**2, n_draws=-1,
             max_background_ratio=.05,
             sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
 
-    if len(sens):
-        return sens["Sensitivity"][0]
+    return SensCalc
+
+
+def find_optimal_cuts(cuts, events, energy_bin_edges, xi_on_scale=1, xi_off_scale=20):
+    """ throw this into a minimiser """
+    ga_cut = cuts[0]
+    # xi_cut = 10**cuts[1]
+
+    cut_events = {}
+    for key in events:
+        cut_events[key] = events[key][
+            (events[key]["gammaness"] > ga_cut)]
+            # (events[key]["off_angle"] < xi_cut)]
+
+    if len(events['g']) < 10:
+        return 1
+
+    SensCalc = calculate_sensitivities(
+            cut_events, energy_bin_edges,
+            xi_on_scale=xi_on_scale, xi_off_scale=xi_off_scale)
+
+    if len(SensCalc.sensitivities):
+        return SensCalc.sensitivities["Sensitivity"][0]
     else:
         return 1
 
@@ -185,16 +175,16 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
          ga_percentile={'w': 99, 't': 99}):
 
     print()
-    print("gammas simulated:", NGammas_simulated)
-    print("proton simulated:", NProton_simulated)
-    print("electr simulated:", NElectr_simulated)
+    print("gammas simulated:", meta_gammas["n_simulated"])
+    print("proton simulated:", meta_proton["n_simulated"])
+    print("electr simulated:", meta_electr["n_simulated"])
     print()
     print("observation time:", observation_time)
 
     print("\n")
-    print("gammas present (wavelets):", len(gammas_w_o))
-    print("proton present (wavelets):", len(proton_w_o))
-    print("electr present (wavelets):", len(electr_w_o))
+    print("gammas present (wavelets):", len(gammas_o))
+    print("proton present (wavelets):", len(proton_o))
+    print("electr present (wavelets):", len(electr_o))
     # print()
     # print("gammas present (tailcuts):", len(gammas_t_o))
     # print("proton present (tailcuts):", len(proton_t_o))
@@ -209,23 +199,23 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
     #  ######   ##     ## ##     ## ##     ## ##     ## ##    ##  ######
 
     g_cuts_w = percentiles(
-            proton_w_o["gammaness"], proton_w_o["reco_Energy"],
+            proton_o["gammaness"], proton_o["reco_Energy"],
             e_bin_edges.value, ga_percentile['w'])
 
     spline_g = interpolate.splrep((e_bin_edges[1:]+e_bin_edges[:-1]).value / 2, g_cuts_w)
 
     # perform gammaness selection
-    gammas_w_g = gammas_w_o[
-            gammas_w_o["gammaness"] >
-            interpolate.splev(gammas_w_o["reco_Energy"], spline_g)]
-    proton_w_g = proton_w_o[
-            proton_w_o["gammaness"] >
-            interpolate.splev(proton_w_o["reco_Energy"], spline_g)]
-    electr_w_g = electr_w_o[
-            electr_w_o["gammaness"] >
-            interpolate.splev(electr_w_o["reco_Energy"], spline_g)]
+    gammas_g = gammas_o[
+            gammas_o["gammaness"] >
+            interpolate.splev(gammas_o["reco_Energy"], spline_g)]
+    proton_g = proton_o[
+            proton_o["gammaness"] >
+            interpolate.splev(proton_o["reco_Energy"], spline_g)]
+    electr_g = electr_o[
+            electr_o["gammaness"] >
+            interpolate.splev(electr_o["reco_Energy"], spline_g)]
 
-    if True:
+    if False:
         plt.figure()
         plt.semilogx(e_bin_centres, g_cuts_w, ls="", marker="^",
                      label="crit. values -- {} \%".format(ga_percentile['w']))
@@ -238,7 +228,7 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
         plt.pause(.1)
 
         plt.figure()
-        plt.hist2d(np.log10(gammas_w_g["reco_Energy"]), gammas_w_g["gammaness"],
+        plt.hist2d(np.log10(gammas_g["reco_Energy"]), gammas_g["gammaness"],
                    bins=50)
         plt.plot(np.log10(e_bin_fine_centres.value),
                  interpolate.splev(e_bin_fine_centres.value, spline_g),
@@ -252,7 +242,7 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
     #  ##   ##   ##     ##    ## ##     ##    ##
     # ##     ## ####     ######   #######     ##
 
-    xi_cuts = percentiles(gammas_w_g["off_angle"], gammas_w_g["reco_Energy"],
+    xi_cuts = percentiles(gammas_g["off_angle"], gammas_g["reco_Energy"],
                           e_bin_edges.value, xi_percentile['w'])
 
     # fit a spline to the cut values in xi
@@ -273,37 +263,37 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
         plt.legend()
         plt.pause(.1)
 
-    gammas_w_rcut = gammas_w_g[
-            gammas_w_g["off_angle"] <
-            interpolate.splev(gammas_w_g["reco_Energy"], spline_x)*xi_on_scale]
-    proton_w_rcut = proton_w_g[
-            proton_w_g["off_angle"] <
-            interpolate.splev(proton_w_g["reco_Energy"], spline_x)*xi_off_scale]
-    electr_w_rcut = electr_w_g[
-            electr_w_g["off_angle"] <
-            interpolate.splev(electr_w_g["reco_Energy"], spline_x)*xi_off_scale]
+    gammas_rcut = gammas_g[
+            gammas_g["off_angle"] <
+            interpolate.splev(gammas_g["reco_Energy"], spline_x)*xi_on_scale]
+    proton_rcut = proton_g[
+            proton_g["off_angle"] <
+            interpolate.splev(proton_g["reco_Energy"], spline_x)*xi_off_scale]
+    electr_rcut = electr_g[
+            electr_g["off_angle"] <
+            interpolate.splev(electr_g["reco_Energy"], spline_x)*xi_off_scale]
 
     print("\n")
-    print("gammas selected (wavelets):", len(gammas_w_rcut))
-    print("proton selected (wavelets):", len(proton_w_rcut))
-    print("electr selected (wavelets):", len(electr_w_rcut))
+    print("gammas selected (wavelets):", len(gammas_rcut))
+    print("proton selected (wavelets):", len(proton_rcut))
+    print("electr selected (wavelets):", len(electr_rcut))
 
     SensCalc = SensitivityPointSource(
-            reco_energies={'g': gammas_w_rcut['reco_Energy'].values*u.TeV,
-                           'p': proton_w_rcut['reco_Energy'].values*u.TeV,
-                           'e': electr_w_rcut['reco_Energy'].values*u.TeV},
-            mc_energies={'g': gammas_w_rcut['MC_Energy'].values*u.TeV,
-                         'p': proton_w_rcut['MC_Energy'].values*u.TeV,
-                         'e': electr_w_rcut['MC_Energy'].values*u.TeV},
+            reco_energies={'g': gammas_rcut['reco_Energy'].values*u.TeV,
+                           'p': proton_rcut['reco_Energy'].values*u.TeV,
+                           'e': electr_rcut['reco_Energy'].values*u.TeV},
+            mc_energies={'g': gammas_rcut['MC_Energy'].values*u.TeV,
+                         'p': proton_rcut['MC_Energy'].values*u.TeV,
+                         'e': electr_rcut['MC_Energy'].values*u.TeV},
             energy_bin_edges={'g': edges_gammas,
                               'p': edges_proton,
                               'e': edges_gammas},
             flux_unit=flux_unit)
 
     SensCalc.get_effective_areas(
-            n_simulated_events={'g': NGammas_simulated,
-                                'p': NProton_simulated,
-                                'e': NElectr_simulated},
+            n_simulated_events={'g': meta_gammas["n_simulated"],
+                                'p': meta_proton["n_simulated"],
+                                'e': meta_electr["n_simulated"]},
             generator_spectra={'g': e_minus_2,
                                'p': e_minus_2,
                                'e': e_minus_2},
@@ -313,9 +303,9 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
     )
 
     SensCalc.generate_event_weights(
-            n_simulated_events={'g': NGammas_simulated,
-                                'p': NProton_simulated,
-                                'e': NElectr_simulated},
+            n_simulated_events={'g': meta_gammas["n_simulated"],
+                                'p': meta_proton["n_simulated"],
+                                'e': meta_electr["n_simulated"]},
             generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
                              'p': np.pi * (meta_proton["gen_radius"] * u.m)**2,
                              'e': np.pi * (meta_electr["gen_radius"] * u.m)**2},
@@ -342,7 +332,7 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
     print("proton expected (wavelets):", np.sum(SensCalc.event_weights["p"]))
     print("electr expected (wavelets):", np.sum(SensCalc.event_weights["e"]))
 
-    return SensCalc
+    return SensCalc, gammas_rcut, proton_rcut, electr_rcut
 
     # make_performance_plots(gammas_w_o, proton_w_o, gammas_t_o, proton_t_o)
     # make_performance_plots(gammas_w_g, proton_w_g, gammas_t_g, proton_t_g)
@@ -350,8 +340,6 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
 
     # show_gammaness(gammas_w_rcut, proton_w_rcut, "wave")
     # show_gammaness(gammas_t_rcut, proton_t_rcut, "tail")
-
-    # make_sensitivity_plots(SensCalc_w, sensitivities_w)
 
 
 # ########  ##        #######  ########  ######
@@ -362,121 +350,14 @@ def main(xi_percentile={'w': 68, 't': 68}, xi_on_scale=1, xi_off_scale=20,
 # ##        ##       ##     ##    ##    ##    ##
 # ##        ########  #######     ##     ######
 
-def make_sensitivity_plots(SensCalc, sensitivities):
+def make_sensitivity_plots(SensCalc, sensitivities,
+                           SensCalc_t, sensitivities_t):
+
     bin_centres_g = (edges_gammas[1:]+edges_gammas[:-1])/2.
     bin_centres_p = (edges_proton[1:]+edges_proton[:-1])/2.
 
     bin_widths_g = np.diff(edges_gammas.value)
     bin_widths_p = np.diff(edges_proton.value)
-
-    if args.verbose:
-        # plot MC generator spectrum and selected spectrum
-        # plt.figure()
-        # plt.subplot(121)
-        # plt.bar(bin_centres_g.value,
-        #         SensCalc_t.generator_energy_hists['g'], label="generated",
-        #         align="center", width=bin_widths_g)
-        # plt.bar(bin_centres_g.value,
-        #         SensCalc_t.selected_events['g'], label="selected",
-        #         align="center", width=bin_widths_g)
-        # plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
-        # plt.ylabel("number of events")
-        # plt.gca().set_xscale("log")
-        # plt.gca().set_yscale("log")
-        # plt.title("gammas -- tailcuts")
-        # plt.legend()
-        #
-        # plt.subplot(122)
-        # plt.bar(bin_centres_p.value,
-        #         SensCalc_t.generator_energy_hists['p'], label="generated",
-        #         align="center", width=bin_widths_p)
-        # plt.bar(bin_centres_p.value,
-        #         SensCalc_t.selected_events['p'], label="selected",
-        #         align="center", width=bin_widths_p)
-        # plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
-        # plt.ylabel("number of events")
-        # plt.gca().set_xscale("log")
-        # plt.gca().set_yscale("log")
-        # plt.title("protons -- tailcuts")
-        # plt.legend()
-
-        # plot the number of expected events in each energy bin
-        plt.figure()
-        plt.bar(
-                bin_centres_p.value,
-                SensCalc.exp_events_per_energy_bin['p'], label="proton",
-                align="center", width=np.diff(edges_proton.value), alpha=.75)
-        plt.bar(
-                bin_centres_g.value,
-                SensCalc.exp_events_per_energy_bin['g'], label="gamma",
-                align="center", width=np.diff(edges_gammas.value), alpha=.75)
-        plt.gca().set_xscale("log")
-        plt.gca().set_yscale("log")
-
-        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
-        plt.ylabel("expected events in {}".format(observation_time))
-        plt.legend()
-
-        # plot effective area
-        plt.figure()  # figsize=(16, 8))
-        plt.suptitle("Effective Areas")
-        # plt.subplot(121)
-        plt.loglog(
-            bin_centres_g,
-            SensCalc.effective_areas['g'], label="wavelets", color="darkred", marker="^")
-        # plt.loglog(
-        #     bin_centres_g,
-        #     SensCalc_t.effective_areas['g'], label="tailcuts")
-        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
-        plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
-        plt.title("gammas")
-        plt.legend()
-
-        # plt.subplot(122)
-        # plt.loglog(
-        #     bin_centres_p,
-        #     SensCalc.effective_areas['p'], label="wavelets")
-        # plt.loglog(
-        #     bin_centres_p,
-        #     SensCalc_t.effective_areas['p'], label="tailcuts")
-        # plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_p.unit)+"}$")
-        # plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
-        # plt.title("protons")
-        # plt.legend()
-
-        # plot the angular distance of the reconstructed shower direction
-        # from the pseudo-source
-
-        # figure = plt.figure()
-        # bins = 60
-        #
-        # plt.subplot(211)
-        # plt.hist([proton_t['off_angle']**2,
-        #           gammas_t["off_angle"]**2],
-        #          weights=[weights_t['p'], weights_t['g']],
-        #          rwidth=1, stacked=True,
-        #          range=(0, .3), label=("protons", "gammas"),
-        #          log=False, bins=bins)
-        # plt.xlabel(r"$(\vartheta/^\circ)^2$")
-        # plt.ylabel("expected events in {}".format(observation_time))
-        # plt.xlim([0, .3])
-        # plt.legend(loc="upper right", title="tailcuts")
-        #
-        # plt.subplot(212)
-        # plt.hist([proton['off_angle']**2,
-        #           gammas["off_angle"]**2],
-        #          weights=[weights['p'], weights['g']],
-        #          rwidth=1, stacked=True,
-        #          range=(0, .3), label=("protons", "gammas"),
-        #          log=False, bins=bins)
-        # plt.xlabel(r"$(\vartheta/^\circ)^2$")
-        # plt.ylabel("expected events in {}".format(observation_time))
-        # plt.xlim([0, .3])
-        # plt.legend(loc="upper right", title="wavelets")
-        # plt.tight_layout()
-        #
-        # if args.write:
-        #     save_fig("plots/theta_square")
 
     # the point-source sensitivity binned in energy
 
@@ -536,30 +417,59 @@ def make_sensitivity_plots(SensCalc, sensitivities):
         ls="",
         label="wavelets (no upscale)")
 
+    # tailcuts
+    sens_low_t, sens_up_t = (
+        (sensitivities_t["Sensitivity"] -
+         sensitivities_t["Sensitivity_low"]).to(flux_unit) *
+        sensitivities_t["Energy"].to(u.erg)**2,
+        (sensitivities_t["Sensitivity_up"] -
+         sensitivities_t["Sensitivity"]).to(flux_unit) *
+        sensitivities_t["Energy"].to(u.erg)**2)
+
+    plt.errorbar(
+        sensitivities_t["Energy"],
+        (sensitivities_t["Sensitivity"].to(flux_unit) *
+         sensitivities_t["Energy"].to(u.erg)**2).value,
+        (sens_low_t.value, sens_up_t.value),
+        color="darkorange",
+        marker="s", ls="--",
+        label="tailcuts")
+    plt.semilogy(
+        sensitivities_t["Energy"].to(energy_unit),
+        (sensitivities_t["Sensitivity_base"].to(flux_unit) *
+         sensitivities_t["Energy"].to(u.erg)**2),
+        color="darkblue",
+        marker="v",
+        ls="",
+        label="tailcuts (no upscale)")
+
     plt.legend(title="Obsetvation Time: {}".format(observation_time), loc=1)
     plt.xlabel(r'$E_\mathrm{reco}$' + ' / {:latex}'.format(energy_unit))
     plt.ylabel(r'$E^2 \Phi /$ {:latex}'.format(sensitivity_unit))
     plt.gca().set_xscale("log")
     plt.grid()
     plt.xlim([1e-2, 2e2])
-    # plt.ylim([5e-15, 5e-10])
+    plt.ylim([5e-15, 5e-10])
 
     # plot the sensitivity ratios
-    # plt.figure()
-    # plt.semilogx(sensitivities_t["Energy"].to(energy_unit),
-    #              (sensitivities["Sensitivity"].to(flux_unit) *
-    #               sensitivities["Energy"].to(u.erg)**2) /
-    #              (sensitivities_t["Sensitivity"].to(flux_unit) *
-    #               sensitivities_t["Energy"].to(u.erg)**2),
-    #              label=r"Sens$_{wave}$ / Sens$_{tail}$"
-    #              )
-    # plt.legend()
-    # plt.semilogx(sensitivities_t["Energy"].to(energy_unit)[[0, -1]],
-    #              [1, 1], ls="--", color="gray")
-    # plt.xlim(sensitivities_t["Energy"].to(energy_unit)[[0, -1]].value)
-    # plt.ylim([.25, 1.1])
-    # plt.xlabel('E / {:latex}'.format(energy_unit))
-    # plt.ylabel("ratio")
+    try:
+        plt.figure()
+        plt.semilogx(sensitivities_t["Energy"].to(energy_unit)[:-2],
+                     (sensitivities_t["Sensitivity"].to(flux_unit) *
+                      sensitivities_t["Energy"].to(u.erg)**2)[:-2] /
+                     (sensitivities["Sensitivity"].to(flux_unit) *
+                      sensitivities["Energy"].to(u.erg)**2)[1:-2],
+                     label=r"Sens$_\text{tail} / Sens$_\text{wave}$$"
+                     )
+        plt.legend()
+        plt.semilogx(sensitivities_t["Energy"].to(energy_unit)[[0, -1]],
+                     [1, 1], ls="--", color="gray")
+        plt.xlim(sensitivities_t["Energy"].to(energy_unit)[[0, -1]].value)
+        # plt.ylim([.25, 1.1])
+        plt.xlabel('E / {:latex}'.format(energy_unit))
+        plt.ylabel("ratio")
+    except:
+        plt.close()
 
     # plot a sky image of the events
     # useless since too few MC background events left
@@ -666,8 +576,8 @@ def show_gammaness(gammas, proton, suptitle=None):
     # plt.legend()
 
 
-def make_performance_plots(gammas_w, proton_w,
-                           gammas_t, proton_t):
+def make_performance_plots(SensCalc_w, gammas_w, proton_w,
+                           SensCalc_t, gammas_t, proton_t):
 
     fig, axes = plt.subplots(1, 2)
     n_tel_max = 50  # np.max(gammas_w["NTels_reco"])
@@ -697,7 +607,7 @@ def make_performance_plots(gammas_w, proton_w,
 
     plt.figure()
     plt.plot(e_bin_centres, xi_68_gt,
-             color="darkorange", marker="^", ls="-",
+             color="darkorange", marker="v", ls="-",
              label="gamma -- tail")
     # plt.plot(e_bin_centres, xi_68_pt,
     #              color="darkorange", marker="o", ls=":",
@@ -767,7 +677,7 @@ def make_performance_plots(gammas_w, proton_w,
 
     plt.figure()
     plt.plot(e_bin_centres, DeltaE68_t_ebinned, label="gamma -- tail",
-             marker='^', color="darkorange")
+             marker='v', color="darkorange")
     plt.plot(e_bin_centres, DeltaE68_w_ebinned, label="gamma -- wave",
              marker='^', color="darkred")
     plt.title("Energy Resolution")
@@ -789,7 +699,7 @@ def make_performance_plots(gammas_w, proton_w,
 
     plt.figure()
     plt.plot(e_bin_centres, Ebias_t_medians, label="gamma -- tail",
-             marker='^', color="darkorange")
+             marker='v', color="darkorange")
     plt.plot(e_bin_centres, Ebias_w_medians, label="gamma -- wave",
              marker='^', color="darkred")
     plt.title("Energy Bias")
@@ -799,6 +709,141 @@ def make_performance_plots(gammas_w, proton_w,
     plt.gca().set_xscale("log")
     plt.legend()
     plt.grid()
+
+
+    if args.verbose or True:
+        bin_centres_g = (edges_gammas[:-1] + edges_gammas[1:])/2
+        bin_centres_p = (edges_proton[:-1] + edges_proton[1:])/2
+
+        bin_widths_g = (edges_gammas[1:] - edges_gammas[:-1])
+        bin_widths_p = (edges_proton[1:] - edges_proton[:-1])
+
+        # plot MC generator spectrum and selected spectrum
+        plt.figure()
+        plt.subplot(121)
+        plt.bar(bin_centres_g.value,
+                SensCalc_w.generator_energy_hists['g'], label="generated",
+                align="center", width=bin_widths_g.value)
+        plt.bar(bin_centres_g.value,
+                SensCalc_w.selected_events['g'], label="selected",
+                align="center", width=bin_widths_g.value)
+        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
+        plt.ylabel("number of events")
+        plt.gca().set_xscale("log")
+        plt.gca().set_yscale("log")
+        plt.title("gammas -- wavelets")
+        plt.legend()
+
+        plt.subplot(122)
+        plt.bar(bin_centres_p.value,
+                SensCalc_w.generator_energy_hists['p'], label="generated",
+                align="center", width=bin_widths_p.value)
+        plt.bar(bin_centres_p.value,
+                SensCalc_w.selected_events['p'], label="selected",
+                align="center", width=bin_widths_p.value)
+        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
+        plt.ylabel("number of events")
+        plt.gca().set_xscale("log")
+        plt.gca().set_yscale("log")
+        plt.title("protons -- wavelets")
+        plt.legend()
+
+        # plot the number of expected events in each energy bin
+        plt.figure()
+        plt.bar(
+                bin_centres_p.value,
+                SensCalc_w.exp_events_per_energy_bin['p'], label="proton",
+                align="center", width=np.diff(edges_proton.value), alpha=.75)
+        plt.bar(
+                bin_centres_g.value,
+                SensCalc_w.exp_events_per_energy_bin['g'], label="gamma",
+                align="center", width=np.diff(edges_gammas.value), alpha=.75)
+        plt.gca().set_xscale("log")
+        plt.gca().set_yscale("log")
+
+        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
+        plt.ylabel("expected events in {}".format(observation_time))
+        plt.legend()
+
+        # plot effective area
+        kwargs = {"n_simulated_events": {'g': meta_gammas["n_simulated"],
+                                         'p': meta_proton["n_simulated"],
+                                         'e': meta_electr["n_simulated"]},
+                  "generator_spectra": {'g': e_minus_2,
+                                        'p': e_minus_2,
+                                        'e': e_minus_2},
+                  "generator_areas": {'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
+                                      'p': np.pi * (meta_proton["gen_radius"] * u.m)**2,
+                                      'e': np.pi * (meta_electr["gen_radius"] * u.m)**2}}
+        SensCalc_w.energy_bin_edges = {'g': edges_gammas,
+                                       'p': edges_proton,
+                                       'e': edges_electr},
+        SensCalc_t.energy_bin_edges = {'g': edges_gammas,
+                                       'p': edges_proton,
+                                       'e': edges_electr},
+        SensCalc_w.get_effective_areas(**kwargs)
+        SensCalc_t.get_effective_areas(**kwargs)
+        plt.figure()  # figsize=(16, 8))
+        plt.suptitle("Effective Areas")
+        # plt.subplot(121)
+        plt.loglog(
+            bin_centres_g,
+            SensCalc_w.effective_areas['g'],
+            label="wavelets", color="darkred", marker="^")
+        plt.loglog(
+            bin_centres_g,
+            SensCalc_t.effective_areas['g'],
+            label="tailcuts", color="darkorange", marker="v")
+        plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_g.unit)+"}$")
+        plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
+        plt.title("gammas")
+        plt.legend()
+
+        # plt.subplot(122)
+        # plt.loglog(
+        #     bin_centres_p,
+        #     SensCalc.effective_areas['p'], label="wavelets")
+        # plt.loglog(
+        #     bin_centres_p,
+        #     SensCalc_t.effective_areas['p'], label="tailcuts")
+        # plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres_p.unit)+"}$")
+        # plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
+        # plt.title("protons")
+        # plt.legend()
+
+        # plot the angular distance of the reconstructed shower direction
+        # from the pseudo-source
+
+        # figure = plt.figure()
+        # bins = 60
+        #
+        # plt.subplot(211)
+        # plt.hist([proton_t['off_angle']**2,
+        #           gammas_t["off_angle"]**2],
+        #          weights=[weights_t['p'], weights_t['g']],
+        #          rwidth=1, stacked=True,
+        #          range=(0, .3), label=("protons", "gammas"),
+        #          log=False, bins=bins)
+        # plt.xlabel(r"$(\vartheta/^\circ)^2$")
+        # plt.ylabel("expected events in {}".format(observation_time))
+        # plt.xlim([0, .3])
+        # plt.legend(loc="upper right", title="tailcuts")
+        #
+        # plt.subplot(212)
+        # plt.hist([proton['off_angle']**2,
+        #           gammas["off_angle"]**2],
+        #          weights=[weights['p'], weights['g']],
+        #          rwidth=1, stacked=True,
+        #          range=(0, .3), label=("protons", "gammas"),
+        #          log=False, bins=bins)
+        # plt.xlabel(r"$(\vartheta/^\circ)^2$")
+        # plt.ylabel("expected events in {}".format(observation_time))
+        # plt.xlim([0, .3])
+        # plt.legend(loc="upper right", title="wavelets")
+        # plt.tight_layout()
+        #
+        # if args.write:
+        #     save_fig("plots/theta_square")
 
 
 if __name__ == "__main__":
@@ -834,11 +879,16 @@ if __name__ == "__main__":
         correct_off_angle(proton_o)
         correct_off_angle(electr_o)
 
+    # test_ga = 1-np.logspace(-2, -0.5, 15)
+    # test_xi = np.logspace(-3, -0.5, 15)
     cut_energies, ga_cuts, xi_cuts = [], [], []
     for elow, ehigh, emid in zip(sensitivity_energy_bin_edges[:-1],
                                  sensitivity_energy_bin_edges[1:],
                                  np.sqrt(sensitivity_energy_bin_edges[:-1] *
                                          sensitivity_energy_bin_edges[1:])):
+        print()
+        print(emid)
+
         events = {}
         events['g'] = gammas_o[(gammas_o["reco_Energy"] > elow) &
                                (gammas_o["reco_Energy"] < ehigh)]
@@ -847,21 +897,112 @@ if __name__ == "__main__":
         events['e'] = electr_o[(electr_o["reco_Energy"] > elow) &
                                (electr_o["reco_Energy"] < ehigh)]
 
-        res = minimize(find_optimal_cuts, [.95, .1],
-                       args=(events, np.array([elow/energy_unit,
-                                               ehigh/energy_unit])*energy_unit),
-                       method='L-BFGS-B', bounds=[(0.8, 1), (0, 1)],
-                       options={'disp': False,
-                                'eps': .1,
-                                'maxiter': 1e6}
-                       )
-        print()
-        print(emid)
-        print(res)
+        # min_sens = 1
+        # for ga in test_ga:
+        #     for xi in test_xi:
+        #         sens = find_optimal_cuts(
+        #             [ga, xi], events, np.array([elow/energy_unit,
+        #                                         ehigh/energy_unit])*energy_unit)
+        #         if sens < min_sens:
+        #             min_sens = sens
+        #             min_ga = ga
+        #             min_xi = xi
+        #
+        # if min_sens < 1:
+        #     ga_cuts.append(min_ga)
+        #     xi_cuts.append(min_xi)
+        #     cut_energies.append(emid.value)
 
-    exit()
-    main(xi_percentile={'w': 68, 't': 68},
-         ga_percentile={'w': 99.99, 't': 99.99})
+        res = optimize.differential_evolution(
+                    find_optimal_cuts,
+                    bounds=[(.5, 1)],
+                    # bounds=[(-5, -0.1)],
+                    # bounds=[(-5, -0.1), (-5, 0)],
+                    maxiter=2000, popsize=20,
+                    args=(events, np.array([elow/energy_unit,
+                                            ehigh/energy_unit])*energy_unit),
+            )
+
+        if res.success:
+            cut_energies.append(emid.value)
+            ga_cuts.append(1-10**res.x[0])
+            # xi_cuts.append(10**res.x[1])
+            # print(ga_cuts[-1], xi_cuts[-1])
+
+    spline_ga = interpolate.splrep(cut_energies, ga_cuts)
+    # spline_xi = interpolate.splrep(cut_energies, xi_cuts)
+    spline_test_points = np.logspace(*(np.log10(cut_energies)[[0, -1]]), 100)
+    fig = plt.figure(figsize=(10, 5))
+    fig.add_subplot(121)
+    plt.plot(cut_energies, ga_cuts, label="crit. values", ls="", marker="^")
+    plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_ga),
+             label="spline fit")
+
+    plt.xlabel("Energy / TeV")
+    plt.ylabel("gammaness")
+    plt.gca().set_xscale("log")
+    plt.legend()
+
+    # fig.add_subplot(122)
+    # plt.plot(cut_energies, xi_cuts, label="crit. values", ls="", marker="^")
+    # plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_xi),
+    #          label="spline fit")
+    # plt.xlabel("Energy / TeV")
+    # plt.ylabel("xi / degree")
+    # plt.gca().set_xscale("log")
+    # plt.legend()
+
+    plt.pause(.1)
+    plt.show()
+
+    events = {}
+    events['g'] = gammas_o[
+            (gammas_o["gammaness"] >
+             interpolate.splev(gammas_o["reco_Energy"], spline_ga)) &
+            (gammas_o["off_angle"] >
+             interpolate.splev(gammas_o["reco_Energy"], spline_xi))]
+    events['p'] = proton_o[
+            (proton_o["gammaness"] >
+             interpolate.splev(proton_o["reco_Energy"], spline_ga)) &
+            (proton_o["off_angle"] >
+             interpolate.splev(proton_o["reco_Energy"], spline_xi))]
+    events['e'] = electr_o[
+            (electr_o["gammaness"] >
+             interpolate.splev(electr_o["reco_Energy"], spline_ga)) &
+            (electr_o["off_angle"] >
+             interpolate.splev(electr_o["reco_Energy"], spline_xi))]
+
+    sens_w = calculate_sensitivities(events, sensitivity_energy_bin_edges)
+    make_sensitivity_plots(sens_w, sens_w.sensitivities,
+                           sens_w, sens_w.sensitivities)
+
+    plt.show()
+
+    gammas_w, proton_w, electr_w = gammas_o, proton_o, electr_o
+    sens_w, gammas_w_rcut, proton_w_rcut, electr_w_rcut = main(
+                xi_percentile={'w': 68, 't': 68},
+                ga_percentile={'w': 99.99, 't': 99.99})
+
+    gammas_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
+            args.indir, args.infile, "gamma", "tail"), "reco_events")
+    proton_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
+            args.indir, args.infile, "proton", "tail"), "reco_events")
+    electr_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
+            args.indir, args.infile, "electron", "tail"), "reco_events")
+
+    gammas_t, proton_t, electr_t = gammas_o, proton_o, electr_o
+    sens_t, gammas_t_rcut, proton_t_rcut, electr_t_rcut = main(
+                xi_percentile={'w': 68, 't': 68},
+                ga_percentile={'w': 99.99, 't': 99.99})
+
+    make_sensitivity_plots(sens_w, sens_w.sensitivities,
+                           sens_t, sens_t.sensitivities)
+
+    # make_performance_plots(sens_w, gammas_w_rcut, proton_w_rcut,
+    #                        sens_t, gammas_t_rcut, proton_t_rcut)
+
+    # make_performance_plots(sens_w, gammas_w, proton_w,
+    #                        sens_t, gammas_t, proton_t)
 
     if args.plot:
         plt.show()
