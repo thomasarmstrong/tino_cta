@@ -150,13 +150,13 @@ def calculate_sensitivities(events, energy_bin_edges, xi_on_scale=1, xi_off_scal
 def find_optimal_cuts(cuts, events, energy_bin_edges, xi_on_scale=1, xi_off_scale=20):
     """ throw this into a minimiser """
     ga_cut = cuts[0]
-    # xi_cut = 10**cuts[1]
+    xi_cut = cuts[1]
 
     cut_events = {}
     for key in events:
         cut_events[key] = events[key][
-            (events[key]["gammaness"] > ga_cut)]
-            # (events[key]["off_angle"] < xi_cut)]
+            (events[key]["gammaness"] > ga_cut) &
+            (events[key]["off_angle"] < xi_cut)]
 
     if len(events['g']) < 10:
         return 1
@@ -915,9 +915,7 @@ if __name__ == "__main__":
 
         res = optimize.differential_evolution(
                     find_optimal_cuts,
-                    bounds=[(.5, 1)],
-                    # bounds=[(-5, -0.1)],
-                    # bounds=[(-5, -0.1), (-5, 0)],
+                    bounds=[(.5, 1), (0, 0.5)],
                     maxiter=2000, popsize=20,
                     args=(events, np.array([elow/energy_unit,
                                             ehigh/energy_unit])*energy_unit),
