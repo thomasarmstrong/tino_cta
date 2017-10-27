@@ -903,7 +903,7 @@ if __name__ == "__main__":
                  "rand2exp", "randtobest1bin", "best2bin", "rand2bin", "rand1bin"]
         res = optimize.differential_evolution(
                     cut_and_sensitivity,
-                    bounds=[(.5, 1), (0, 0.5)],
+                    bounds=[(.5, 1), (0, 0.5), (1, 10)],
                     strategy=strat[0],
                     maxiter=2000, popsize=20,
                     args=(events, np.array([elow/energy_unit,
@@ -914,12 +914,15 @@ if __name__ == "__main__":
             cut_energies.append(emid.value)
             ga_cuts.append(res.x[0])
             xi_cuts.append(res.x[1])
+            nt_cuts.append(res.x[2])
 
     spline_ga = interpolate.splrep(cut_energies, ga_cuts)
     spline_xi = interpolate.splrep(cut_energies, xi_cuts)
+    spline_nt = interpolate.splrep(cut_energies, nt_cuts)
     spline_test_points = np.logspace(*(np.log10(cut_energies)[[0, -1]]), 100)
-    fig = plt.figure(figsize=(10, 5))
-    fig.add_subplot(121)
+
+    fig = plt.figure(figsize=(15, 5))
+    fig.add_subplot(131)
     plt.plot(cut_energies, ga_cuts, label="crit. values", ls="", marker="^")
     plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_ga),
              label="spline fit")
@@ -929,12 +932,21 @@ if __name__ == "__main__":
     plt.gca().set_xscale("log")
     plt.legend()
 
-    fig.add_subplot(122)
+    fig.add_subplot(132)
     plt.plot(cut_energies, xi_cuts, label="crit. values", ls="", marker="^")
     plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_xi),
              label="spline fit")
     plt.xlabel("Energy / TeV")
     plt.ylabel("xi / degree")
+    plt.gca().set_xscale("log")
+    plt.legend()
+
+    fig.add_subplot(133)
+    plt.plot(cut_energies, nt_cuts, label="crit. values", ls="", marker="^")
+    plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_nt),
+             label="spline fit")
+    plt.xlabel("Energy / TeV")
+    plt.ylabel("number telescopes")
     plt.gca().set_xscale("log")
     plt.legend()
 
@@ -944,16 +956,22 @@ if __name__ == "__main__":
     events['g'] = gammas_o[
             (gammas_o["gammaness"] >
              interpolate.splev(gammas_o["reco_Energy"], spline_ga)) &
+            (gammas_o["NTels_reco"] >
+             interpolate.splev(gammas_o["reco_Energy"], spline_nt)) &
             (gammas_o["off_angle"] <
              interpolate.splev(gammas_o["reco_Energy"], spline_xi))]
     events['p'] = proton_o[
             (proton_o["gammaness"] >
              interpolate.splev(proton_o["reco_Energy"], spline_ga)) &
+            (proton_o["NTels_reco"] >
+             interpolate.splev(proton_o["reco_Energy"], spline_nt)) &
             (proton_o["off_angle"] <
              interpolate.splev(proton_o["reco_Energy"], spline_xi))]
     events['e'] = electr_o[
             (electr_o["gammaness"] >
              interpolate.splev(electr_o["reco_Energy"], spline_ga)) &
+            (electr_o["NTels_reco"] >
+             interpolate.splev(electr_o["reco_Energy"], spline_nt)) &
             (electr_o["off_angle"] <
              interpolate.splev(electr_o["reco_Energy"], spline_xi))]
 
