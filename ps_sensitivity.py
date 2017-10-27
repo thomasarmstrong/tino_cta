@@ -151,14 +151,17 @@ def cut_and_sensitivity(cuts, events, energy_bin_edges, xi_on_scale=1, xi_off_sc
     """ throw this into a minimiser """
     ga_cut = cuts[0]
     xi_cut = cuts[1]
+    nt_cut = cuts[2]
 
     cut_events = {}
     for key in events:
         cut_events[key] = events[key][
             (events[key]["gammaness"] > ga_cut) &
+            (events[key]["NTels_reco"] > nt_cut) &
             (events[key]["off_angle"] < xi_cut)]
 
-    if len(events['g']) < 10:
+    if len(events['g']) < 10 or \
+            len(events['g']) < (len(events['p'])+len(events['e'])) * 0.05:
         return 1
 
     SensCalc = calculate_sensitivities(
@@ -964,11 +967,12 @@ if __name__ == "__main__":
     electr_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
             args.indir, args.infile, "electron", "tail"), "reco_events")
 
-    cut_energies, ga_cuts, xi_cuts = [], [], []
-    for elow, ehigh, emid in zip(sensitivity_energy_bin_edges[:-1],
-                                 sensitivity_energy_bin_edges[1:],
-                                 np.sqrt(sensitivity_energy_bin_edges[:-1] *
-                                         sensitivity_energy_bin_edges[1:])):
+    cut_energies, ga_cuts, xi_cuts, nt_cuts = [], [], [], []
+    optimise_bin_edges = sensitivity_energy_bin_edges[::2]
+    for elow, ehigh, emid in zip(optimise_bin_edges[:-1],
+                                 optimise_bin_edges[1:],
+                                 np.sqrt(optimise_bin_edges[:-1] *
+                                         optimise_bin_edges[1:])):
 
         events = {}
         events['g'] = gammas_o[(gammas_o["reco_Energy"] > elow) &
@@ -982,7 +986,7 @@ if __name__ == "__main__":
                  "rand2exp", "randtobest1bin", "best2bin", "rand2bin", "rand1bin"]
         res = optimize.differential_evolution(
                     cut_and_sensitivity,
-                    bounds=[(.5, 1), (0, 0.5)],
+                    bounds=[(.5, 1), (0, 0.5), (1, 10)],
                     strategy=strat[0],
                     maxiter=2000, popsize=20,
                     args=(events, np.array([elow/energy_unit,
@@ -993,12 +997,14 @@ if __name__ == "__main__":
             cut_energies.append(emid.value)
             ga_cuts.append(res.x[0])
             xi_cuts.append(res.x[1])
+            nt_cuts.append(res.x[2])
 
     spline_ga = interpolate.splrep(cut_energies, ga_cuts)
     spline_xi = interpolate.splrep(cut_energies, xi_cuts)
+    spline_nt = interpolate.splrep(cut_energies, nt_cuts)
     spline_test_points = np.logspace(*(np.log10(cut_energies)[[0, -1]]), 100)
-    fig = plt.figure(figsize=(10, 5))
-    fig.add_subplot(121)
+    fig = plt.figure(figsize=(15, 5))
+    fig.add_subplot(131)
     plt.plot(cut_energies, ga_cuts, label="crit. values", ls="", marker="^")
     plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_ga),
              label="spline fit")
@@ -1008,12 +1014,21 @@ if __name__ == "__main__":
     plt.gca().set_xscale("log")
     plt.legend()
 
-    fig.add_subplot(122)
+    fig.add_subplot(132)
     plt.plot(cut_energies, xi_cuts, label="crit. values", ls="", marker="^")
     plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_xi),
              label="spline fit")
     plt.xlabel("Energy / TeV")
     plt.ylabel("xi / degree")
+    plt.gca().set_xscale("log")
+    plt.legend()
+
+    fig.add_subplot(133)
+    plt.plot(cut_energies, nt_cuts, label="crit. values", ls="", marker="^")
+    plt.plot(spline_test_points, interpolate.splev(spline_test_points, spline_nt),
+             label="spline fit")
+    plt.xlabel("Energy / TeV")
+    plt.ylabel("number telescopes")
     plt.gca().set_xscale("log")
     plt.legend()
 
