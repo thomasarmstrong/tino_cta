@@ -1038,16 +1038,22 @@ if __name__ == "__main__":
     events['g'] = gammas_o[
             (gammas_o["gammaness"] >
              interpolate.splev(gammas_o["reco_Energy"], spline_ga)) &
+            (gammas_o["NTels_reco"] >
+             interpolate.splev(gammas_o["reco_Energy"], spline_nt)) &
             (gammas_o["off_angle"] <
              interpolate.splev(gammas_o["reco_Energy"], spline_xi))]
     events['p'] = proton_o[
             (proton_o["gammaness"] >
              interpolate.splev(proton_o["reco_Energy"], spline_ga)) &
+            (proton_o["NTels_reco"] >
+             interpolate.splev(proton_o["reco_Energy"], spline_nt)) &
             (proton_o["off_angle"] <
              interpolate.splev(proton_o["reco_Energy"], spline_xi))]
     events['e'] = electr_o[
             (electr_o["gammaness"] >
              interpolate.splev(electr_o["reco_Energy"], spline_ga)) &
+            (electr_o["NTels_reco"] >
+             interpolate.splev(electr_o["reco_Energy"], spline_nt)) &
             (electr_o["off_angle"] <
              interpolate.splev(electr_o["reco_Energy"], spline_xi))]
 
