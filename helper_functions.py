@@ -61,7 +61,7 @@ def make_argparser():
     parser.add_argument('--cam_ids',   type=str,
                         default=["LSTCam", "NectarCam", "DigiCam"], nargs='*',
                         help="give a specific list of files to run on")
-    parser.add_argument('--plots_dir', type=str, default="plots",
+    parser.add_argument('--plots_dir', type=str, default="plots/",
                         help="path to store plots")
     parser.add_argument('--tail', dest="mode", action='store_const',
                         const="tail", default="wave",
@@ -318,3 +318,12 @@ def lineno():
     frameinfo = inspect.getframeinfo(inspect.currentframe().f_back)
     return ", ".join([frameinfo.filename,
                       str(frameinfo.lineno)])
+
+
+def sliding_window(my_list, window_size, step_size=None, start=0):
+    step_size = step_size or window_size
+    while start+window_size < len(my_list):
+        yield my_list[start:start+window_size]
+        start += step_size
+    else:
+        yield my_list[start:]
