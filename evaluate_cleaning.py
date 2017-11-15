@@ -156,7 +156,7 @@ if __name__ == '__main__':
 
                 pmt_signal = event.dl1.tel[tel_id].image
                 if pmt_signal.shape[0] > 1:
-                    pick = (pmt_signal > 14).any(axis=0) != np_true_false
+                    pick = (pmt_signal > 100).any(axis=0) != np_true_false
                     pmt_signal = pmt_signal.T[pick.T]
                 else:
                     pmt_signal = pmt_signal.ravel()
@@ -179,11 +179,9 @@ if __name__ == '__main__':
                     # hillas['p'] = hillas_parameters(camera.pix_x,
                     #                                 camera.pix_y,
                     #                                 pmt_signal_p)
-                    hillas['w'] = hillas_parameters(new_geom_w.pix_x,
-                                                    new_geom_w.pix_y,
+                    hillas['w'] = hillas_parameters(new_geom_w,
                                                     pmt_signal_w)
-                    hillas['t'] = hillas_parameters(new_geom_t.pix_x,
-                                                    new_geom_t.pix_y,
+                    hillas['t'] = hillas_parameters(new_geom_t,
                                                     pmt_signal_t)
                 except HillasParameterizationError as e:
                     print(e)
@@ -241,18 +239,19 @@ if __name__ == '__main__':
                 '''
                 do some plotting '''
                 if args.plot_c and signal_handler.draw:
-                    fig = plt.figure(figsize=(10, 10))
+                    fig = plt.figure(figsize=(15, 5))
 
-                    ax1 = fig.add_subplot(221)
-                    disp1 = CameraDisplay(camera,
-                                          image=pmt_signal_p,
-                                          ax=ax1)
-                    disp1.cmap = plt.cm.inferno
-                    disp1.add_colorbar()
-                    # disp1.overlay_moments(hillas['p'], color='seagreen', linewidth=3)
-                    # plt.title("PE image ; alpha = {:4.3f}".format(alpha['p']))
+                    # ax1 = fig.add_subplot(221)
+                    # disp1 = CameraDisplay(camera,
+                    #                       image=pmt_signal_p,
+                    #                       ax=ax1)
+                    # disp1.cmap = plt.cm.inferno
+                    # disp1.add_colorbar()
+                    # # disp1.overlay_moments(hillas['p'], color='seagreen', linewidth=3)
+                    # # plt.title("PE image ; alpha = {:4.3f}".format(alpha['p']))
 
-                    ax2 = fig.add_subplot(222)
+                    # ax2 = fig.add_subplot(222)
+                    ax2 = fig.add_subplot(131)
                     disp2 = CameraDisplay(camera,
                                           image=pmt_signal,
                                           ax=ax2)
@@ -260,19 +259,21 @@ if __name__ == '__main__':
                     disp2.add_colorbar()
                     plt.title("calibrated noisy image")
 
-                    ax3 = fig.add_subplot(223)
+                    # ax3 = fig.add_subplot(223)
+                    ax3 = fig.add_subplot(132)
                     disp3 = CameraDisplay(new_geom_t,
                                           image=np.sqrt(pmt_signal_t),
                                           ax=ax3)
                     disp3.cmap = plt.cm.inferno
                     disp3.add_colorbar(label="sqrt(signal)")
-                    disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
-                    plt.title("tail cleaned ({},{}) ; alpha = {:4.3f}"
+                    # disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
+                    plt.title("tailcut cleaned ({},{})"  # ; alpha = {:4.3f}"
                               .format(Cleaner['t'].tail_thresholds[new_geom_t.cam_id][0],
                                       Cleaner['t'].tail_thresholds[new_geom_t.cam_id][1],
                                       alpha['t']))
 
-                    ax4 = fig.add_subplot(224)
+                    # ax4 = fig.add_subplot(224)
+                    ax4 = fig.add_subplot(133)
                     disp4 = CameraDisplay(new_geom_w,
                                           image=np.sqrt(
                                               np.sum(pmt_signal_w, axis=1)
@@ -280,12 +281,11 @@ if __name__ == '__main__':
                                               else pmt_signal_w),
                                           ax=ax4)
                     hw = hillas['w']
-                    plt.scatter([hw.cen_x/u.m, (hw.cen_x+hw.length*np.cos(hw.psi))/u.m],
-                                [hw.cen_y/u.m, (hw.cen_y+hw.length*np.sin(hw.psi))/u.m])
                     disp4.cmap = plt.cm.inferno
                     disp4.add_colorbar(label="sqrt(signal)")
-                    disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
-                    plt.title("wave slant cleaned ; alpha = {:4.3f}".format(alpha['w']))
+                    # disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
+                    plt.title("wavelet cleaned")
+                    # ; alpha = {:4.3f}".format(alpha['w']))
                     plt.suptitle("Camera {}".format(tel_id))
                     plt.show()
 

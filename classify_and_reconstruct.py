@@ -135,37 +135,39 @@ def main():
                             "cam_id": "{cam_id}"}),
                     cam_id_list=args.cam_ids)
 
-    ClassifierFeatures = namedtuple("ClassifierFeatures", (
-                                "impact_dist",
-                                "sum_signal_evt",
-                                "max_signal_cam",
-                                "sum_signal_cam",
-                                "N_LST",
-                                "N_MST",
-                                "N_SST",
-                                "width",
-                                "length",
-                                "skewness",
-                                "kurtosis",
-                                "h_max",
-                                "err_est_pos",
-                                "err_est_dir"))
+    ClassifierFeatures = namedtuple(
+        "ClassifierFeatures", (
+            "impact_dist",
+            "sum_signal_evt",
+            "max_signal_cam",
+            "sum_signal_cam",
+            "N_LST",
+            "N_MST",
+            "N_SST",
+            "width",
+            "length",
+            "skewness",
+            "kurtosis",
+            "h_max",
+            "err_est_pos",
+            "err_est_dir"))
 
-    EnergyFeatures = namedtuple("EnergyFeatures", (
-                                "impact_dist",
-                                "sum_signal_evt",
-                                "max_signal_cam",
-                                "sum_signal_cam",
-                                "N_LST",
-                                "N_MST",
-                                "N_SST",
-                                "width",
-                                "length",
-                                "skewness",
-                                "kurtosis",
-                                "h_max",
-                                "err_est_pos",
-                                "err_est_dir"))
+    EnergyFeatures = namedtuple(
+        "EnergyFeatures", (
+            "impact_dist",
+            "sum_signal_evt",
+            "max_signal_cam",
+            "sum_signal_cam",
+            "N_LST",
+            "N_MST",
+            "N_SST",
+            "width",
+            "length",
+            "skewness",
+            "kurtosis",
+            "h_max",
+            "err_est_pos",
+            "err_est_dir"))
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()
@@ -180,11 +182,14 @@ def main():
         NTels_reco_sst = tb.Int16Col(dflt=1, pos=4)
         MC_Energy = tb.Float32Col(dflt=1, pos=5)
         reco_Energy = tb.Float32Col(dflt=1, pos=6)
-        phi = tb.Float32Col(dflt=1, pos=7)
-        theta = tb.Float32Col(dflt=1, pos=8)
+        reco_phi = tb.Float32Col(dflt=1, pos=7)
+        reco_theta = tb.Float32Col(dflt=1, pos=8)
         off_angle = tb.Float32Col(dflt=1, pos=9)
-        ErrEstPos = tb.Float32Col(dflt=1, pos=10)
-        gammaness = tb.Float32Col(dflt=1, pos=11)
+        xi = tb.Float32Col(dflt=1, pos=10)
+        DeltaR = tb.Float32Col(dflt=1, pos=11)
+        ErrEstPos = tb.Float32Col(dflt=1, pos=12)
+        ErrEstDir = tb.Float32Col(dflt=1, pos=13)
+        gammaness = tb.Float32Col(dflt=1, pos=14)
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
     reco_outfile = tb.open_file(
@@ -224,37 +229,37 @@ def main():
 
                 impact_dist = linalg.length(tel_pos - pos_fit)
                 cls_features_tel = ClassifierFeatures(
-                    impact_dist / u.m,
-                    tot_signal,
-                    max_signals[tel_id],
-                    moments.size,
-                    n_tels["LST"],
-                    n_tels["MST"],
-                    n_tels["SST"],
-                    moments.width / u.m,
-                    moments.length / u.m,
-                    moments.skewness,
-                    moments.kurtosis,
-                    h_max / u.m,
-                    err_est_pos / u.m,
-                    err_est_dir / u.deg
+                    impact_dist=impact_dist / u.m,
+                    sum_signal_evt=tot_signal,
+                    max_signal_cam=max_signals[tel_id],
+                    sum_signal_cam=moments.size,
+                    N_LST=n_tels["LST"],
+                    N_MST=n_tels["MST"],
+                    N_SST=n_tels["SST"],
+                    width=moments.width / u.m,
+                    length=moments.length / u.m,
+                    skewness=moments.skewness,
+                    kurtosis=moments.kurtosis,
+                    h_max=h_max / u.m,
+                    err_est_pos=err_est_pos / u.m,
+                    err_est_dir=err_est_dir / u.deg
                 )
 
                 reg_features_tel = EnergyFeatures(
-                    impact_dist / u.m,
-                    tot_signal,
-                    max_signals[tel_id],
-                    moments.size,
-                    n_tels["LST"],
-                    n_tels["MST"],
-                    n_tels["SST"],
-                    moments.width / u.m,
-                    moments.length / u.m,
-                    moments.skewness,
-                    moments.kurtosis,
-                    h_max / u.m,
-                    err_est_pos / u.m,
-                    err_est_dir / u.deg
+                    impact_dist=impact_dist / u.m,
+                    sum_signal_evt=tot_signal,
+                    max_signal_cam=max_signals[tel_id],
+                    sum_signal_cam=moments.size,
+                    N_LST=n_tels["LST"],
+                    N_MST=n_tels["MST"],
+                    N_SST=n_tels["SST"],
+                    width=moments.width / u.m,
+                    length=moments.length / u.m,
+                    skewness=moments.skewness,
+                    kurtosis=moments.kurtosis,
+                    h_max=h_max / u.m,
+                    err_est_pos=err_est_pos / u.m,
+                    err_est_dir=err_est_dir / u.deg
                 )
 
                 if np.isnan(cls_features_tel).any() or np.isnan(reg_features_tel).any():
@@ -280,13 +285,21 @@ def main():
 
             # the MC direction of origin of the simulated particle
             shower = event.mc
+            shower_core = np.array([shower.core_x / u.m, shower.core_y / u.m]) * u.m
             shower_org = linalg.set_phi_theta(shower.az + 90 * u.deg,
                                               90. * u.deg - shower.alt)
 
             # and how the reconstructed direction compares to that
-            off_angle = linalg.angle(dir_fit, shower_org)
+            xi = linalg.angle(dir_fit, shower_org)
             phi, theta = linalg.get_phi_theta(dir_fit)
             phi = (phi if phi > 0 else phi + 360 * u.deg)
+
+            DeltaR = linalg.length(pos_fit[:2] - shower_core)
+
+            # TODO: replace with actual array pointing direction
+            array_pointing = linalg.set_phi_theta(0 * u.deg, 20. * u.deg)
+            # angular offset between the reconstructed direction and the array pointing
+            off_angle = linalg.angle(dir_fit, array_pointing)
 
             reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
             reco_event["NTels_reco"] = len(hillas_dict)
@@ -295,10 +308,13 @@ def main():
             reco_event["NTels_reco_sst"] = n_tels["SST"]
             reco_event["MC_Energy"] = event.mc.energy.to(energy_unit).value
             reco_event["reco_Energy"] = predict_energ.to(energy_unit).value
-            reco_event["phi"] = phi / angle_unit
-            reco_event["theta"] = theta / angle_unit
+            reco_event["reco_phi"] = phi / angle_unit
+            reco_event["reco_theta"] = theta / angle_unit
             reco_event["off_angle"] = off_angle / angle_unit
+            reco_event["xi"] = xi / angle_unit
+            reco_event["DeltaR"] = DeltaR / dist_unit
             reco_event["ErrEstPos"] = err_est_pos / dist_unit
+            reco_event["ErrEstDir"] = err_est_dir / angle_unit
             reco_event["gammaness"] = gammaness
             reco_event.append()
             reco_table.flush()

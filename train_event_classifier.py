@@ -54,21 +54,24 @@ cam_id_list = [
         # 'SCTCam',
         ]
 
-ClassifierFeatures = namedtuple("ClassifierFeatures", (
-                                "impact_dist",
-                                "sum_signal_evt",
-                                "max_signal_cam",
-                                "sum_signal_cam",
-                                "N_LST",
-                                "N_MST",
-                                "N_SST",
-                                "width",
-                                "length",
-                                "skewness",
-                                "kurtosis",
-                                "h_max",
-                                "err_est_pos",
-                                "err_est_dir"))
+
+ClassifierFeatures = namedtuple(
+    "ClassifierFeatures", (
+        "impact_dist",
+        "sum_signal_evt",
+        "max_signal_cam",
+        "sum_signal_cam",
+        "N_LST",
+        "N_MST",
+        "N_SST",
+        "width",
+        "length",
+        "skewness",
+        "kurtosis",
+        "h_max",
+        "err_est_pos",
+        "err_est_dir"
+    ))
 
 
 if __name__ == '__main__':
@@ -155,24 +158,24 @@ if __name__ == '__main__':
                     moments = hillas_dict[tel_id]
 
                     tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
-                    impact_dist = linalg.length(tel_pos-pos_fit)
+                    impact_dist = linalg.length(tel_pos - pos_fit)
 
                     features_tel = ClassifierFeatures(
-                                impact_dist/u.m,
-                                tot_signal,
-                                max_signals[tel_id],
-                                moments.size,
-                                n_tels["LST"],
-                                n_tels["MST"],
-                                n_tels["SST"],
-                                moments.width/u.m,
-                                moments.length/u.m,
-                                moments.skewness,
-                                moments.kurtosis,
-                                h_max/u.m,
-                                err_est_pos/u.m,
-                                err_est_dir/u.deg
-                            )
+                        impact_dist=impact_dist / u.m,
+                        sum_signal_evt=tot_signal,
+                        max_signal_cam=max_signals[tel_id],
+                        sum_signal_cam=moments.size,
+                        N_LST=n_tels["LST"],
+                        N_MST=n_tels["MST"],
+                        N_SST=n_tels["SST"],
+                        width=moments.width / u.m,
+                        length=moments.length / u.m,
+                        skewness=moments.skewness,
+                        kurtosis=moments.kurtosis,
+                        h_max=h_max / u.m,
+                        err_est_pos=err_est_pos / u.m,
+                        err_est_dir=err_est_dir / u.deg
+                    )
 
                     if Imagecutflow.cut("features nan", features_tel):
                         continue
@@ -213,7 +216,7 @@ if __name__ == '__main__':
     trainClasses = []
     for cl in Features_event_list.keys():
         trainFeatures += Features_event_list[cl]
-        trainClasses += [cl]*len(Features_event_list[cl])
+        trainClasses += [cl] * len(Features_event_list[cl])
 
     # use default random forest classifier
     clf_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,

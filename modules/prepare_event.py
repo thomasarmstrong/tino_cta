@@ -138,8 +138,7 @@ class EventPreparator():
 
                 # do the hillas reconstruction of the images
                 try:
-                    moments = self.hillas_parameters(new_geom.pix_x,
-                                                     new_geom.pix_y, pmt_signal)
+                    moments = self.hillas_parameters(new_geom, pmt_signal)
 
                     # import matplotlib.pyplot as plt
                     # from mpl_toolkits.mplot3d import Axes3D
