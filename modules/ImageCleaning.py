@@ -25,7 +25,7 @@ try:
         EmpiricalDistribution as EmpDist
 
 except:
-    print("something missing from datapipe.denoising.wavelets_mrfilter -- skimage?")
+    print("something missing from datapipe.denoising")
 
 from datapipe.io.geometry_converter import astri_to_2d_array, array_2d_to_astri
 
@@ -183,10 +183,13 @@ class ImageCleaner:
             # command line parameters for the mr_filter call
             self.wavelet_options = \
                 {"ASTRICam": wavelet_options or "-K -C1 -m3 -s2,2,3,3 -n4",
-                 "DigiCam": wavelet_options or "-K -C1 -m3 -s3,3,4,4 -n4",
+                 "DigiCam": wavelet_options or "-K -C1 -m3 -s6.274,2.629,7.755,0.076 -n4",
+                 # 3,3,4,4
                  "FlashCam": wavelet_options or "-K -C1 -m3 -s4,4,5,4 -n4",
-                 "NectarCam": wavelet_options or "-K -C1 -m3 -s3,2.5,4,1 -n4",
-                 "LSTCam": wavelet_options or "-K -C1 -m3 -s2,4.5,3.5,3 -n4",
+                 "NectarCam": wavelet_options or "-K -C1 -m3 -s13.013,2.549,6.559,1.412 -n4",
+                 # 3,2.5,4,1
+                 "LSTCam": wavelet_options or "-K -C1 -m3 -s23.343,2.490,-2.856,-0.719 -n4",
+                 # 2,4.5,3.5,3
                  }
             # camera models for noise injection
             self.noise_model = \

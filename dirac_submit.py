@@ -49,7 +49,8 @@ pilot_args = ' '.join([
         '--regressor ./{regressor}',
         '--outfile {outfile}',
         '--indir ./ --infile_list *.simtel.gz',
-        '--tail' if "tail" in sys.argv else '',
+        # '--tail' if "tail" in sys.argv else '',
+        '{tail}',
         '--cam_ids'] + cam_id_list)
 
 
@@ -75,15 +76,15 @@ NJobs = 300  # put at < 0 to deactivate
 model_path_template = \
     "LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/meta/ml_models/{}/{}_{}_{}_{}.pkl"
 classifier_LFN = model_path_template.format(
-    # "astri_mini",
     "prod3b/paranal",
+    # "prod3b/paranal_LND_edge_cut",
     "classifier",
     mode,
     "{cam_id}",
     "RandomForestClassifier")
 regressor_LFN = model_path_template.format(
-    # "astri_mini",
     "prod3b/paranal",
+    # "prod3b/paranal_LND_edge_cut",
     "regressor",
     mode,
     "{cam_id}",
@@ -93,7 +94,7 @@ regressor_LFN = model_path_template.format(
 # define a template name for the file that's going to be written out.
 # the placeholder braces are going to get set during the file-loop
 output_filename_template = 'classified_events_{}.h5'
-output_path = "cta/prod3b/paranal_LND/"
+output_path = "cta/prod3b/paranal_LND_edge_cut/"
 
 # sets all the local files that are going to be uploaded with the job plus the pickled
 # classifier (if the file name starts with `LFN:`, it will be copied from the GRID itself)
@@ -189,8 +190,11 @@ for i, filelist in enumerate([
         print("-" * 20)
 
         # setting output name
-        job_name = '_'.join([channel, mode, run_token])
-        output_filename = output_filename_template.format(job_name)
+        job_name = '_'.join([channel, run_token])
+        output_filename_wave = output_filename_template.format(
+                    '_'.join(["wave", channel, run_token]))
+        output_filename_tail = output_filename_template.format(
+                    '_'.join(["tail", channel, run_token]))
 
         # if job already running / waiting, skip
         if job_name in running_names:
@@ -199,7 +203,8 @@ for i, filelist in enumerate([
 
         # if file already in GRID storage, skip
         # (you cannot overwrite it there, delete it and resubmit)
-        if output_filename in GRID_filelist:
+        # (assumes will always be written out together)
+        if output_filename_wave in GRID_filelist:
             print("\n{} already on GRID SE\n".format(job_name))
             continue
 
@@ -237,8 +242,6 @@ for i, filelist in enumerate([
 
         for run_file in run_filelist:
             run_token = re.split('_', run_file)[3]
-            output_filename_temp = \
-                output_filename_template.format("_".join([channel, mode, run_token]))
 
             # wait for a random number of seconds (up to five minutes) before starting
             # to add a bit more entropy in the starting times of the dirac querries
@@ -251,10 +254,22 @@ for i, filelist in enumerate([
 
             # source the miniconda ctapipe environment and run the python script with all
             # its arguments
+            output_filename_temp = \
+                output_filename_template.format("_".join(["wave", channel, run_token]))
             j.setExecutable('source',
                             pilot_args.format(outfile=output_filename_temp,
                                               regressor=basename(regressor_LFN),
-                                              classifier=basename(classifier_LFN)))
+                                              classifier=basename(classifier_LFN),
+                                              tail=""))
+
+            output_filename_temp = \
+                output_filename_template.format("_".join(["tail", channel, run_token]))
+            j.setExecutable('source',
+                            pilot_args.format(outfile=output_filename_temp,
+                                              regressor=basename(regressor_LFN),
+                                              classifier=basename(classifier_LFN),
+                                              tail="--tail"))
+
             j.setExecutable('rm', basename(run_file))
 
         j.setExecutable('ls', '-lh')
@@ -264,11 +279,22 @@ for i, filelist in enumerate([
                             ' '.join([
                                 source_ctapipe, '&&',
                                 './append_tables.py',
-                                '--outfile', output_filename
+                                '--infiles_base', 'classified_events_wave',
+                                '--outfile', output_filename_wave
+                                ]))
+            j.setExecutable('source',
+                            ' '.join([
+                                source_ctapipe, '&&',
+                                './append_tables.py',
+                                '--infiles_base', 'classified_events_tail',
+                                '--outfile', output_filename_tail
                                 ]))
 
-        print("\nOutputData: {}{}".format(output_path, output_filename))
-        j.setOutputData([output_filename], outputSE=None, outputPath=output_path)
+        print
+        print("OutputData: {}{}".format(output_path, output_filename_wave))
+        print("OutputData: {}{}".format(output_path, output_filename_tail))
+        j.setOutputData([output_filename_wave, output_filename_tail],
+                        outputSE=None, outputPath=output_path)
 
         # check if we should somehow stop doing what we are doing
         if "dry" in sys.argv:
