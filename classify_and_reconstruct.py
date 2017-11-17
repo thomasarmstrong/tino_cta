@@ -193,9 +193,6 @@ def main():
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
     reco_outfile = tb.open_file(
-            # trying to put particle type and cleaning mode into the filename
-            # `format` puts in each argument as long as there is a free "{}" token
-            # if `outfile` was set without any "{}", nothing will be replaced
             args.outfile, mode="w",
             # if we don't want to write the event list to disk, need to add more arguments
             **({} if args.outfile else {"driver": "H5FD_CORE",

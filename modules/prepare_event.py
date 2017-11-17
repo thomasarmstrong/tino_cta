@@ -3,6 +3,8 @@ from astropy import units as u
 
 import warnings
 
+from collections import namedtuple, OrderedDict
+
 from ctapipe.calib import CameraCalibrator
 
 from ctapipe.image import hillas
@@ -11,8 +13,8 @@ from ctapipe.utils.linalg import rotation_matrix_2d
 
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
 from ctapipe.utils.CutFlow import CutFlow
-
-from collections import namedtuple, OrderedDict
+from ctapipe.utils.coordinate_transformations import (
+            az_to_phi, alt_to_theta, transf_array_position)
 
 PreparedEvent = namedtuple("PreparedEvent",
                            ["event", "hillas_dict", "n_tels",
@@ -20,6 +22,7 @@ PreparedEvent = namedtuple("PreparedEvent",
                             "pos_fit", "dir_fit", "h_max",
                             "err_est_pos", "err_est_dir"
                             ])
+
 
 tel_phi = {}
 tel_theta = {}
@@ -70,6 +73,22 @@ class EventPreparator():
                     ("poor moments", lambda m: m.width <= 0 or m.length <= 0)
                 ]))
 
+    @classmethod
+    def pick_gain_channel(cls, pmt_signal, cam_id):
+        '''the PMTs on some (most?) cameras have 2 gain channels. select one
+        according to a threshold. ultimately, this will be done IN the
+        camera/telescope itself but until then, do it here
+        '''
+
+        if pmt_signal.shape[0] > 1:
+            pmt_signal = np.squeeze(pmt_signal)
+            pick = (cls.pe_thresh[cam_id]
+                    < pmt_signal).any(axis=0) != np_true_false
+            pmt_signal = pmt_signal.T[pick.T]
+        else:
+            pmt_signal = np.squeeze(pmt_signal)
+        return pmt_signal
+
     def prepare_event(self, source):
 
         for event in source:
@@ -95,8 +114,9 @@ class EventPreparator():
 
                 # can this be improved?
                 if tel_id not in tel_phi:
-                    tel_phi[tel_id] = (np.pi/2+event.mc.tel[tel_id].azimuth_raw)*u.rad
-                    tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
+                    tel_phi[tel_id] = az_to_phi(event.mc.tel[tel_id].azimuth_raw * u.rad)
+                    tel_theta[tel_id] = \
+                        alt_to_theta(event.mc.tel[tel_id].altitude_raw*u.rad)
 
                 # count the current telescope according to its size
                 tel_type = event.inst.subarray.tel[tel_id].optics.tel_type
@@ -105,16 +125,7 @@ class EventPreparator():
                 # the camera image as a 1D array
                 pmt_signal = event.dl1.tel[tel_id].image
 
-                # the PMTs on some (most?) cameras have 2 gain channels. select one
-                # according to a threshold. ultimately, this will be done IN the
-                # camera/telescope itself but until then, do it here
-                if pmt_signal.shape[0] > 1:
-                    pmt_signal = np.squeeze(pmt_signal)
-                    pick = (self.pe_thresh[camera.cam_id]
-                            < pmt_signal).any(axis=0) != np_true_false
-                    pmt_signal = pmt_signal.T[pick.T]
-                else:
-                    pmt_signal = np.squeeze(pmt_signal)
+                pmt_signal = self.pick_gain_channel(pmt_signal, camera.cam_id)
 
                 # clean the image
                 try:
@@ -147,13 +158,13 @@ class EventPreparator():
                     # p2_x = moments.cen_x + moments.length * np.cos(moments.psi)
                     # p2_y = moments.cen_y + moments.length * np.sin(moments.psi)
                     # foclen = \
-                    # event.inst.subarray.tel[tel_id].optics.effective_focal_length
+                    #     event.inst.subarray.tel[tel_id].optics.effective_focal_length
                     #
                     # dir_c, dir_1, dir_2 = guess_pix_direction(
                     #     np.array([0, moments.cen_x / u.m, p2_x / u.m]) * u.m,
                     #     np.array([0, moments.cen_y / u.m, p2_y / u.m]) * u.m,
-                    #     90*u.deg-event.mc.tel[tel_id].azimuth_raw * u.rad,
-                    #     (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad,
+                    #     az_to_phi(event.mc.tel[tel_id].azimuth_raw * u.rad),
+                    #     alt_to_theta(event.mc.tel[tel_id].altitude_raw*u.rad),
                     #     foclen)
                     #
                     # pos = event.inst.subarray.positions[tel_id]
@@ -173,8 +184,9 @@ class EventPreparator():
                     # plt.xlabel("x")
                     # plt.ylabel("y")
                     # plt.legend()
-                    #
-                    #
+                    # plt.title(tel_id)
+
+                    # # camera display
                     # from ctapipe.visualization import CameraDisplay
                     # fig = plt.figure()
                     # disp4 = CameraDisplay(new_geom, image=pmt_signal, ax=fig.gca())
@@ -183,6 +195,8 @@ class EventPreparator():
                     # plt.scatter([hw.cen_x/u.m], [hw.cen_y/u.m], color="r")
                     # plt.scatter([(hw.cen_x+hw.length*np.cos(hw.psi))/u.m],
                     #             [(hw.cen_y+hw.length*np.sin(hw.psi))/u.m], color="b")
+                    # plt.title(tel_id)
+
                     # plt.show()
 
                     # if width and/or length are zero (e.g. when there is only only one

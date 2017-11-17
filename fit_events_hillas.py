@@ -13,9 +13,9 @@ from astropy import units as u
 try:
     import tables as tb
 except:
-    # if pytables are not install, build a class that mimicks the interface but
-    # immediately throws an exception that we can catch. this way, we get still thrown off
-    # by e.g. naming errors but not by a missing "reco_event"
+    # if pytables are not installed, build a class that mimicks the interface but
+    # immediately throws an exception that we can catch. this way, we get still thrown
+    # off by e.g. naming errors but not by a missing "reco_event"
     class NoPyTError(Exception):
         pass
 
@@ -33,8 +33,11 @@ from ctapipe.image.hillas import HillasParameterizationError, \
                                  hillas_parameters_4 as hillas_parameters
 
 from ctapipe.reco.HillasReconstructor import \
-    HillasReconstructor, TooFewTelescopesException
+    HillasReconstructor, TooFewTelescopes
 from ctapipe.reco.shower_max import ShowerMaxEstimator
+
+from ctapipe.utils.coordinate_transformations import (
+            az_to_phi, alt_to_theta, transf_array_position)
 
 from modules.ImageCleaning import ImageCleaner
 
@@ -46,20 +49,20 @@ from helper_functions import *
 def main():
 
     # your favourite units here
-    energy_unit = u.GeV
+    energy_unit = u.TeV
     angle_unit = u.deg
     dist_unit = u.m
 
     parser = make_argparser()
     parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
     parser.add_argument('-o', '--out_file', type=str, default="rec_events")
-    parser.add_argument('--photon',  action='store_true',
-                        help="use the mc photo-electrons container "
-                        "instead of the PMT signal")
-    parser.add_argument('--proton',  action='store_true',
-                        help="do protons instead of gammas")
     parser.add_argument('--plot_c',  action='store_true',
                         help="plot camera-wise displays")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--proton',  action='store_true',
+                       help="do protons instead of gammas")
+    group.add_argument('--electron',  action='store_true',
+                       help="do electrons instead of gammas")
 
     args = parser.parse_args()
 
@@ -69,6 +72,8 @@ def main():
             filenamelist += glob("{}/{}".format(args.indir, f))
     elif args.proton:
         filenamelist = glob("{}/proton/*gz".format(args.indir))
+    elif args.electron:
+        filenamelist = glob("{}/electron/*gz".format(args.indir))
     else:
         filenamelist = glob("{}/gamma/*gz".format(args.indir))
     filenamelist.sort()
@@ -79,7 +84,6 @@ def main():
 
     tel_phi = {}
     tel_theta = {}
-    tel_orientation = (tel_phi, tel_theta)
 
     # keeping track of events and where they were rejected
     Eventcutflow = CutFlow("EventCutFlow")
@@ -163,12 +167,23 @@ def main():
              err_est_pos, err_est_dir) in preper.prepare_event(source):
 
             shower = event.mc
-            shower_org = linalg.set_phi_theta(90*u.deg+shower.az, 90.*u.deg-shower.alt)
-            shower_core = convert_astropy_array([shower.core_x, shower.core_y])
 
-            h_shower_max = shower_max_estimator.find_shower_max_height(
-                    energy=shower.energy, h_first_int=shower.h_first_int,
-                    gamma_alt=shower.alt)
+            org_alt = u.Quantity(shower.alt).to(u.deg)
+            org_az = u.Quantity(shower.az).to(u.deg)
+            if org_az > 180*u.deg:
+                org_az -= 360*u.deg
+
+            org_the = alt_to_theta(org_alt)
+            org_phi = az_to_phi(org_az)
+            if org_phi > 180*u.deg:
+                org_phi -= 360*u.deg
+            if org_phi < -180*u.deg:
+                org_phi += 360*u.deg
+
+            shower_org = linalg.set_phi_theta(org_phi, org_the)
+            shower_core = convert_astropy_array([shower.core_x, shower.core_y])
+            shower_core[0], shower_core[1] = transf_array_position(shower_core[0],
+                                                                   shower_core[1])
 
             xi = linalg.angle(dir_fit, shower_org).to(angle_unit)
             diff = linalg.length(pos_fit[:2]-shower_core)
@@ -199,6 +214,9 @@ def main():
                       .format(np.percentile(reco_table.cols.xi, 68), angle_unit))
                 print("core res (68-percentile) = {:4.3f} {}"
                       .format(np.percentile(reco_table.cols.DeltaR, 68), dist_unit))
+                print("h_max (median) = {:4.3f} {}"
+                      .format(np.percentile(reco_table.cols.h_max, 50), dist_unit))
+
             except NoPyTError:
                 pass
 
@@ -220,8 +238,9 @@ def main():
                 # • the used telescopes
                 # • and the trace of the Hillas plane on the ground
                 plt.figure()
-                for c in shower_reco.circles.values():
+                for tel_id, c in shower_reco.circles.items():
                     plt.scatter(c.pos[0], c.pos[1], s=np.sqrt(c.weight))
+                    plt.gca().annotate(tel_id, (c.pos[0].value, c.pos[1].value))
                     plt.plot([c.pos[0].value-500*c.norm[1], c.pos[0].value+500*c.norm[1]],
                              [c.pos[1].value+500*c.norm[0], c.pos[1].value-500*c.norm[0]],
                              linewidth=np.sqrt(c.weight)/10)
@@ -237,6 +256,14 @@ def main():
             if signal_handler.stop: break
         if signal_handler.stop: break
 
+    print("\n" + "="*35 + "\n")
+    print("xi res (68-percentile) = {:4.3f} {}"
+          .format(np.percentile(reco_table.cols.xi, 68), angle_unit))
+    print("core res (68-percentile) = {:4.3f} {}"
+          .format(np.percentile(reco_table.cols.DeltaR, 68), dist_unit))
+    print("h_max (median) = {:4.3f} {}"
+          .format(np.percentile(reco_table.cols.h_max, 50), dist_unit))
+
     # print the cutflows for telescopes and camera images
     print("\n\n")
     Eventcutflow("min2Tels trig")
@@ -245,7 +272,7 @@ def main():
 
     # if we don't want to plot anything, we can exit now
     if not args.plot:
-        exit(0)
+        return
 
     # ########  ##        #######  ########  ######
     # ##     ## ##       ##     ##    ##    ##    ##
