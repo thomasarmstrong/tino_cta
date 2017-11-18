@@ -301,27 +301,33 @@ class ImageCleaner:
             # if set, remove all signal patches but the biggest one
             new_img = self.island_cleaning(img)
 
-            if self.skip_edge_events:
-                edge_thresh = np.max(new_img)/5.
-                mask = np.ones_like(new_img, bool)
-                mask[self.edge_width:-self.edge_width,
-                     self.edge_width:-self.edge_width] = 0
-                if (new_img[mask] > edge_thresh).any():
-                    raise EdgeEven
-                self.cutflow.count("tailcut edge")
-
+            # turn back into 1d array
             new_img = array_2d_to_astri(new_img)
             new_geom = cam_geom
+
+            if self.skip_edge_events:
+                if reject_edge_event(new_img, new_geom):
+                    raise EdgeEvent
+                self.cutflow.count("clean edge")
+
         else:
+            # turn into 2d to apply island cleaning
             rot_geom, rot_img = convert_geometry_1d_to_2d(
                                     cam_geom, img, cam_geom.cam_id)
 
+            # if set, remove all signal patches but the biggest one
             cleaned_img = self.island_cleaning(rot_img, self.hex_neighbours_1ring)
 
+            # turn back into 1d array
             unrot_geom, unrot_img = convert_geometry_back(rot_geom, cleaned_img,
                                                           cam_geom.cam_id)
             new_img = unrot_img
             new_geom = unrot_geom
+
+            if self.skip_edge_events:
+                if reject_edge_event(unrot_img, unrot_geom):
+                    raise EdgeEvent
+                self.cutflow.count("clean edge")
 
         return new_img, new_geom
 
