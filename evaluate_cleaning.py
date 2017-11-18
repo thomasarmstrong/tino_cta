@@ -22,14 +22,12 @@ from ctapipe.utils.CutFlow import CutFlow
 from ctapipe.image.hillas import HillasParameterizationError, \
                                  hillas_parameters_4 as hillas_parameters
 
-try:
-    from ctapipe.reco.FitGammaHillas import \
-        FitGammaHillas as HillasReconstructor, TooFewTelescopesException
-except ImportError:
-    from ctapipe.reco.HillasReconstructor import \
-        HillasReconstructor, TooFewTelescopesException
+from ctapipe.reco.HillasReconstructor import \
+    HillasReconstructor, TooFewTelescopes
+from ctapipe.utils.coordinate_transformations import *
 
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
+from modules.prepare_event import EventPreparator as EP
 
 from ctapipe.calib import CameraCalibrator
 
@@ -52,20 +50,27 @@ dist_unit = u.m
 
 
 if __name__ == '__main__':
+    az_deg = 1
 
     parser = make_argparser()
-    parser.add_argument('--proton',  action='store_true',
-                        help="do protons instead of gammas")
     parser.add_argument('--plot_c',  action='store_true',
                         help="plot camera-wise displays")
     parser.add_argument('--add_offset', action='store_true',
                         help="adds a 15 PE offset to all pixels to supress 'Nbr < 0' "
                              "warnings from mrfilter")
 
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--proton',  action='store_true',
+                       help="do protons instead of gammas")
+    group.add_argument('--electron',  action='store_true',
+                       help="do electrons instead of gammas")
+
     args = parser.parse_args()
 
     if args.proton:
         filenamelist = glob("{}/proton/*gz".format(args.indir))
+    elif args.electron:
+        filenamelist = glob("{}/electron/*gz".format(args.indir))
     else:
         filenamelist = glob("{}/gamma/*gz".format(args.indir))
 
@@ -87,7 +92,7 @@ if __name__ == '__main__':
     np_true_false = np.array([[True], [False]])
 
     island_cleaning = True
-    skip_edge_events = False  # args.skip_edge_events
+    skip_edge_events = args.skip_edge_events
     Cleaner = {"w": ImageCleaner(mode="wave", cutflow=Imagecutflow,
                                  skip_edge_events=skip_edge_events,
                                  island_cleaning=island_cleaning,
@@ -137,6 +142,16 @@ if __name__ == '__main__':
             # getting the MC shower info
             shower = event.mc
             shower_org = linalg.set_phi_theta(shower.az, 90.*u.deg-shower.alt)
+            shower_org = linalg.set_phi_theta(90*u.deg-shower.az, 90.*u.deg-shower.alt)
+
+            org_alt = u.Quantity(shower.alt).to(u.deg)
+            org_az = u.Quantity(shower.az).to(u.deg)
+            if org_az > 180*u.deg:
+                org_az -= 360*u.deg
+
+            org_the = alt_to_theta(org_alt)
+            org_phi = az_to_phi(org_az)
+            shower_org = linalg.set_phi_theta(org_phi, org_the)
 
             # calibrate the event
             calib.calibrate(event)
@@ -151,15 +166,12 @@ if __name__ == '__main__':
                 camera = event.inst.subarray.tel[tel_id].camera
 
                 if tel_id not in tel_phi:
-                    tel_phi[tel_id] = event.mc.tel[tel_id].azimuth_raw * u.rad
-                    tel_theta[tel_id] = (np.pi/2-event.mc.tel[tel_id].altitude_raw)*u.rad
+                    tel_phi[tel_id] = az_to_phi(event.mc.tel[tel_id].azimuth_raw * u.rad)
+                    tel_theta[tel_id] = \
+                        alt_to_theta(event.mc.tel[tel_id].altitude_raw*u.rad)
 
                 pmt_signal = event.dl1.tel[tel_id].image
-                if pmt_signal.shape[0] > 1:
-                    pick = (pmt_signal > 100).any(axis=0) != np_true_false
-                    pmt_signal = pmt_signal.T[pick.T]
-                else:
-                    pmt_signal = pmt_signal.ravel()
+                pmt_signal = EP.pick_gain_channel(pmt_signal, camera.cam_id)
 
                 # now cleaning the image with wavelet and tail cuts
                 try:
@@ -256,7 +268,7 @@ if __name__ == '__main__':
                                           image=pmt_signal,
                                           ax=ax2)
                     disp2.cmap = plt.cm.inferno
-                    disp2.add_colorbar()
+                    disp2.add_colorbar(label="signal")
                     plt.title("calibrated noisy image")
 
                     # ax3 = fig.add_subplot(223)
@@ -266,8 +278,8 @@ if __name__ == '__main__':
                                           ax=ax3)
                     disp3.cmap = plt.cm.inferno
                     disp3.add_colorbar(label="sqrt(signal)")
-                    # disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
-                    plt.title("tailcut cleaned ({},{})"  # ; alpha = {:4.3f}"
+                    disp3.overlay_moments(hillas['t'], color='seagreen', linewidth=3)
+                    plt.title("tailcut cleaned ({},{}) ; alpha = {:4.3f}"
                               .format(Cleaner['t'].tail_thresholds[new_geom_t.cam_id][0],
                                       Cleaner['t'].tail_thresholds[new_geom_t.cam_id][1],
                                       alpha['t']))
@@ -283,14 +295,12 @@ if __name__ == '__main__':
                     hw = hillas['w']
                     disp4.cmap = plt.cm.inferno
                     disp4.add_colorbar(label="sqrt(signal)")
-                    # disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
-                    plt.title("wavelet cleaned")
-                    # ; alpha = {:4.3f}".format(alpha['w']))
+                    disp4.overlay_moments(hillas['w'], color='seagreen', linewidth=3)
+                    plt.title("wavelet cleaned ; alpha = {:4.3f}".format(alpha['w']))
                     plt.suptitle("Camera {}".format(tel_id))
                     plt.show()
 
-                '''
-                if there is any nan values, skip '''
+                # if there is any nan values, skip
                 if np.isnan([Epsilon_intensity_w,
                              Epsilon_intensity_t,
                              alpha['w'].value,

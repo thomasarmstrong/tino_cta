@@ -2,6 +2,8 @@
 *.fits
 *.log
 *~
+*h5
+
 data
 plots
 
