@@ -13,8 +13,8 @@ from ctapipe.utils.linalg import rotation_matrix_2d
 
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
 from ctapipe.utils.CutFlow import CutFlow
-from ctapipe.utils.coordinate_transformations import (
-            az_to_phi, alt_to_theta, transf_array_position)
+from ctapipe.coordinates.coordinate_transformations import (
+            az_to_phi, alt_to_theta, transform_pixel_position)
 
 PreparedEvent = namedtuple("PreparedEvent",
                            ["event", "hillas_dict", "n_tels",
@@ -36,7 +36,7 @@ def raise_error(message):
     raise ValueError(message)
 
 
-class EventPreparator():
+class EventPreparer():
 
     # for gain channel selection
     pe_thresh = {
@@ -117,6 +117,11 @@ class EventPreparator():
                     tel_phi[tel_id] = az_to_phi(event.mc.tel[tel_id].azimuth_raw * u.rad)
                     tel_theta[tel_id] = \
                         alt_to_theta(event.mc.tel[tel_id].altitude_raw*u.rad)
+
+                    # the orientation of the camera (i.e. the pixel positions) needs to
+                    # be corrected
+                    camera.pix_x, camera.pix_y = \
+                        transform_pixel_position(camera.pix_x, camera.pix_y)
 
                 # count the current telescope according to its size
                 tel_type = event.inst.subarray.tel[tel_id].optics.tel_type
