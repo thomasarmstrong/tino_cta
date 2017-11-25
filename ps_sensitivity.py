@@ -122,9 +122,9 @@ def correct_off_angle(data, origin=None):
 
 def calculate_sensitivities(events, energy_bin_edges, alpha):
     SensCalc = SensitivityPointSource(
-            reco_energies={'g': events['g']['reco_Energy'].values * u.TeV,
-                           'p': events['p']['reco_Energy'].values * u.TeV,
-                           'e': events['e']['reco_Energy'].values * u.TeV},
+            reco_energies={'g': events['g']['MC_Energy'].values * u.TeV,
+                           'p': events['p']['MC_Energy'].values * u.TeV,
+                           'e': events['e']['MC_Energy'].values * u.TeV},
             mc_energies={'g': events['g']['MC_Energy'].values * u.TeV,
                          'p': events['p']['MC_Energy'].values * u.TeV,
                          'e': events['e']['MC_Energy'].values * u.TeV},
@@ -194,8 +194,8 @@ def get_optimal_splines(events, optimise_bin_edges, k=3):
 
         for key in events:
             cut_events[key] = events[key][
-                (events[key]["reco_Energy"] > elow) &
-                (events[key]["reco_Energy"] < ehigh)]
+                (events[key]["MC_Energy"] > elow) &
+                (events[key]["MC_Energy"] < ehigh)]
 
         res = optimize.differential_evolution(
                 cut_and_sensitivity,
@@ -828,7 +828,7 @@ def make_performance_plots(events_w, events_t, which=None):
         bin_widths['p'] = np.diff(edges_proton)
         bin_widths['e'] = np.diff(edges_electr)
 
-        for events, mode in zip([events_t], ["tailcuts"]):
+        for events, mode in zip([events_t, events_w], ["tailcuts", "wavelets"]):
             SensCalc = SensitivityPointSource(
                     reco_energies={'g': events['g']['reco_Energy'].values * u.TeV,
                                    'p': events['p']['reco_Energy'].values * u.TeV,
@@ -882,97 +882,98 @@ def make_performance_plots(events_w, events_t, which=None):
                     )
             SensCalc.get_expected_events()
 
-        if not which or "gen_spectrum" in which:
-            # plot MC generator spectrum and selected spectrum
-            fig, axs = plt.subplots(1, 3, figsize=(10, 5), sharey=True)
-            for i, key in enumerate(events):
-                ax = axs[i]
-                plt.sca(ax)
-                plt.plot(bin_centres[key].value,
-                        SensCalc.generator_energy_hists[key], label="generated",
-                        # align="center", width=bin_widths[key].value
-                        )
-                plt.plot(bin_centres[key].value,
-                        SensCalc.selected_events[key], label="selected",
-                        # align="center", width=bin_widths[key].value
-                        )
-                plt.xlabel(r"$E_\mathrm{MC} / \mathrm{"+str(bin_centres[key].unit)+"}$")
-                if i == 0:
-                    plt.ylabel("number of (unweighted) events")
+            if not which or "gen_spectrum" in which:
+                # plot MC generator spectrum and selected spectrum
+                fig, axs = plt.subplots(1, 3, figsize=(10, 5), sharey=True)
+                for i, key in enumerate(events):
+                    ax = axs[i]
+                    plt.sca(ax)
+                    plt.plot(bin_centres[key].value,
+                             SensCalc.generator_energy_hists[key], label="generated",
+                             # align="center", width=bin_widths[key].value
+                             )
+                    plt.plot(bin_centres[key].value,
+                             SensCalc.selected_events[key], label="selected",
+                             # align="center", width=bin_widths[key].value
+                             )
+                    plt.xlabel(
+                        r"$E_\mathrm{MC} / \mathrm{" + str(bin_centres[key].unit) + "}$")
+                    if i == 0:
+                        plt.ylabel("number of (unweighted) events")
+                    plt.gca().set_xscale("log")
+                    plt.gca().set_yscale("log")
+                    plt.title(channel_map[key])
+                    plt.legend()
+                plt.suptitle(mode)
+                plt.subplots_adjust(left=.1, wspace=.1)
+                if args.write:
+                    save_fig(args.plots_dir + "generator_events_" + mode)
+                plt.pause(.1)
+
+            if not which or "expected_events" in which:
+                # plot the number of expected events in each energy bin
+                plt.figure()
+                for key in ['p', 'e', 'g']:
+                    plt.plot(
+                        bin_centres[key] / energy_unit,
+                        SensCalc.exp_events_per_energy_bin[key],
+                        label=channel_map[key],
+                        color=channel_color_map[key],
+                        # align="center", width=bin_widths[key].value, alpha=.75
+                    )
                 plt.gca().set_xscale("log")
                 plt.gca().set_yscale("log")
-                plt.title(channel_map[key])
+
+                plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
+                plt.ylabel("expected events in {}".format(observation_time))
                 plt.legend()
-            plt.suptitle(mode)
-            plt.subplots_adjust(left=.1, wspace=.1)
-            if args.write:
-                save_fig(args.plots_dir + "generator_events_" + mode)
-            plt.pause(.1)
+                if args.write:
+                    save_fig(args.plots_dir + "expected_events_" + mode)
+                plt.pause(.1)
 
-        if not which or "expected_events" in which:
-            # plot the number of expected events in each energy bin
-            plt.figure()
-            for key in ['p', 'e', 'g']:
-                plt.plot(
-                    bin_centres[key] / energy_unit,
-                    SensCalc.exp_events_per_energy_bin[key],
-                    label=channel_map[key],
-                    color=channel_color_map[key],
-                    # align="center", width=bin_widths[key].value, alpha=.75
-                )
-            plt.gca().set_xscale("log")
-            plt.gca().set_yscale("log")
+            if not which or "event_rate" in which:
+                # plot the number of expected events in each energy bin
+                plt.figure()
+                for key in ['p', 'e', 'g']:
+                    plt.plot(
+                        bin_centres[key] / energy_unit,
+                        (SensCalc.exp_events_per_energy_bin[key] /
+                         observation_time).to(u.s**-1).value *
+                        (1 if key == 'g' else alpha),
+                        label=channel_map[key],
+                        marker=channel_marker_map[key],
+                        color=channel_color_map[key],
+                        # align="center", width=bin_widths[key].value, alpha=.75
+                    )
+                plt.gca().set_xscale("log")
+                plt.gca().set_yscale("log")
 
-            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
-            plt.ylabel("expected events in {}".format(observation_time))
-            plt.legend()
-            if args.write:
-                save_fig(args.plots_dir + "expected_events_" + mode)
-            plt.pause(.1)
+                plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
+                plt.ylabel(r"event rate: $\frac{dN}{dt} / \mathrm{s}^{-1}$")
+                plt.legend()
+                if args.write:
+                    save_fig(args.plots_dir + "event_rate_" + mode)
+                plt.pause(.1)
 
-        if not which or "event_rate" in which:
-            # plot the number of expected events in each energy bin
-            plt.figure()
-            for key in ['p', 'e', 'g']:
-                plt.plot(
-                    bin_centres[key] / energy_unit,
-                    (SensCalc.exp_events_per_energy_bin[key] /
-                     observation_time).to(u.s**-1).value *
-                    (1 if key == 'g' else alpha),
-                    label=channel_map[key],
-                    marker=channel_marker_map[key],
-                    color=channel_color_map[key],
-                    # align="center", width=bin_widths[key].value, alpha=.75
-                )
-            plt.gca().set_xscale("log")
-            plt.gca().set_yscale("log")
-
-            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
-            plt.ylabel(r"event rate: $\frac{dN}{dt} / \mathrm{s}^{-1}$")
-            plt.legend()
-            if args.write:
-                save_fig(args.plots_dir + "event_rate_" + mode)
-            plt.pause(.1)
-
-        if not which or "effective_areas" in which:
-            # plot effective area
-            plt.figure()  # figsize=(16, 8))
-            plt.suptitle("Effective Areas")
-            for key in ['p', 'e', 'g']:
-                plt.plot(
-                    bin_centres[key] / energy_unit,
-                    SensCalc.effective_areas[key] / u.m**2,
-                    label=channel_map[key], color=channel_color_map[key],
-                    marker=channel_marker_map[key])
-            plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
-            plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
-            plt.gca().set_xscale("log")
-            plt.gca().set_yscale("log")
-            plt.title(mode)
-            plt.legend()
-            if args.write:
-                save_fig(args.plots_dir + "effective_areas_" + mode)
-            plt.pause(.1)
+            if not which or "effective_areas" in which:
+                # plot effective area
+                plt.figure()  # figsize=(16, 8))
+                plt.suptitle("Effective Areas")
+                for key in ['p', 'e', 'g']:
+                    plt.plot(
+                        bin_centres[key] / energy_unit,
+                        SensCalc.effective_areas[key] / u.m**2,
+                        label=channel_map[key], color=channel_color_map[key],
+                        marker=channel_marker_map[key])
+                plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
+                plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
+                plt.gca().set_xscale("log")
+                plt.gca().set_yscale("log")
+                plt.title(mode)
+                plt.legend()
+                if args.write:
+                    save_fig(args.plots_dir + "effective_areas_" + mode)
+                plt.pause(.1)
 
 
 if __name__ == "__main__":
@@ -1030,7 +1031,7 @@ if __name__ == "__main__":
         spline_t_xi = joblib.load("./data/spline_tail_xi.pkl")
     else:
         print("making splines")
-        cut_energies = sensitivity_energy_bin_edges[::2]
+        cut_energies = sensitivity_energy_bin_edges[::]
         cut_energies_mid = np.sqrt(cut_energies[:-1] * cut_energies[1:])
         (spline_w_ga, ga_cuts_w), (spline_w_xi, xi_cuts_w) = \
             get_optimal_splines(events_w["reco"], cut_energies, k=1)
@@ -1138,12 +1139,12 @@ if __name__ == "__main__":
              interpolate.splev(events_t[from_step][key]["reco_Energy"], spline_t_xi))]
 
     plots_dir_temp = args.plots_dir
-    for step in []:
+    for step in []: #"reco", "gammaness", "theta"]:
         args.plots_dir = "/".join([plots_dir_temp, step, ""])
         if not os.path.exists(args.plots_dir):
             os.makedirs(args.plots_dir)
         make_performance_plots(events_w[step],
-                               events_t[step], which=["event_rate", "expected_events"])
+                               events_t[step], which=["effective_areas"])
 
     # plt.show()
 

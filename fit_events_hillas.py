@@ -36,8 +36,7 @@ from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
 from ctapipe.reco.shower_max import ShowerMaxEstimator
 
-from ctapipe.utils.coordinate_transformations import (
-            az_to_phi, alt_to_theta, transf_array_position)
+from ctapipe.utils.coordinate_transformations import az_to_phi, alt_to_theta
 
 from modules.ImageCleaning import ImageCleaner
 
@@ -182,8 +181,6 @@ def main():
 
             shower_org = linalg.set_phi_theta(org_phi, org_the)
             shower_core = convert_astropy_array([shower.core_x, shower.core_y])
-            shower_core[0], shower_core[1] = transf_array_position(shower_core[0],
-                                                                   shower_core[1])
 
             xi = linalg.angle(dir_fit, shower_org).to(angle_unit)
             diff = linalg.length(pos_fit[:2]-shower_core)

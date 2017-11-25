@@ -222,18 +222,26 @@ class ImageCleaner:
             self.island_cleaning = kill_isolpix
         else:
             # just a pass-through that does nothing
+            # (saves an if-statement in every `clean` call)
             self.island_cleaning = lambda x, *args, **kw: x
 
     def clean_wave(self, img, cam_geom):
         if cam_geom.pix_type.startswith("hex"):
-            return self.clean_wave_hex(img, cam_geom)
+            new_img, new_geom = self.clean_wave_hex(img, cam_geom)
 
         elif "ASTRI" in cam_geom.cam_id:
-            return self.clean_wave_astri(img, cam_geom)
+            new_img, new_geom = self.clean_wave_astri(img, cam_geom)
 
         else:
             raise MissingImplementation(
                     "wavelet cleaning of square-pixel images only for ASTRI so far")
+
+        if self.skip_edge_events:
+            if reject_edge_event(new_img, new_geom):
+                raise EdgeEvent
+            self.cutflow.count("clean edge")
+
+        return new_img, new_geom
 
     def clean_wave_astri(self, img, cam_geom):
         array2d_img = astri_to_2d_array(img)
@@ -245,14 +253,6 @@ class ImageCleaner:
 
         # wavelet_transform still leaves some isolated pixels; remove them
         cleaned_img = self.island_cleaning(cleaned_img)
-
-        if self.skip_edge_events:
-            edge_thresh = np.max(cleaned_img)/5.
-            mask = np.ones_like(cleaned_img, bool)
-            mask[self.edge_width:-self.edge_width, self.edge_width:-self.edge_width] = 0
-            if (cleaned_img[mask] > edge_thresh).any():
-                    raise EdgeEvent
-            self.cutflow.count("wavelet edge")
 
         new_img = array_2d_to_astri(cleaned_img)
         new_geom = cam_geom
@@ -276,15 +276,7 @@ class ImageCleaner:
         unrot_geom, unrot_img = convert_geometry_back(rot_geom, cleaned_img,
                                                       cam_geom.cam_id)
 
-        if self.skip_edge_events:
-            if reject_edge_event(unrot_img, unrot_geom):
-                raise EdgeEvent
-            self.cutflow.count("clean edge")
-
-        new_img = unrot_img
-        new_geom = unrot_geom
-
-        return new_img, new_geom
+        return unrot_img, unrot_geom
 
     def clean_tail(self, img, cam_geom):
         mask = tailcuts_clean(
