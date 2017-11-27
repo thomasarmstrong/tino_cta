@@ -11,11 +11,14 @@ from ctapipe.utils.CutFlow import CutFlow
 
 
 try:
+    raise
     from .geometry_converter import convert_geometry_1d_to_2d, convert_geometry_back
     print("using tino_cta geometry_converter")
 except:
-    from ctapipe.image.geometry_converter import convert_geometry_1d_to_2d, \
-                                                 convert_geometry_back
+    from ctapipe.image.geometry_converter import (convert_geometry_hex1d_to_rect2d,
+                                                  convert_geometry_rect2d_back_to_hexe1d,
+                                                  astri_to_2d_array, array_2d_to_astri,
+                                                  chec_to_2d_array, array_2d_to_chec)
     print("using ctapipe geometry_converter")
 
 try:
@@ -26,8 +29,6 @@ try:
 
 except:
     print("something missing from datapipe.denoising")
-
-from datapipe.io.geometry_converter import astri_to_2d_array, array_2d_to_astri
 
 
 class UnknownMode(Exception):
@@ -119,7 +120,7 @@ def get_edge_pixels(camera, rows=1, n_neigh=None):
     return camera.edge_pixels
 
 
-def reject_edge_event(img, geom, rel_thresh=5., abs_thresh=None):
+def reject_edge_event(img, geom, rel_thresh=5., abs_thresh=None, rows=1):
     """determines whether any pixel at the edge (defined by `get_edge_pixels`) has a
     too high signal. The threshold is given either by `abs_thresh` or the highest signal
     divided by `rel_thresh`.
@@ -143,7 +144,7 @@ def reject_edge_event(img, geom, rel_thresh=5., abs_thresh=None):
         whether or not any of the edge pixels has a signal higher than the threshold
     """
     edge_thresh = abs_thresh or (np.max(img)/rel_thresh)
-    edge_pixels = get_edge_pixels(geom, rows=1)
+    edge_pixels = get_edge_pixels(geom, rows=rows)
     return (img[edge_pixels] > edge_thresh).any()
 
 
@@ -158,19 +159,32 @@ class ImageCleaner:
                                      [0, 1, 1, 1, 1],
                                      [0, 0, 1, 1, 1]])
 
+    geom_1d_to_2d = {"ASTRICam": astri_to_2d_array,
+                     "CHEC": chec_to_2d_array,
+                     "hex": convert_geometry_hex1d_to_rect2d}
+
+    geom_2d_to_1d = {"ASTRICam": array_2d_to_astri,
+                     "CHEC": array_2d_to_chec,
+                     "hex": convert_geometry_rect2d_back_to_hexe1d}
+
     def __init__(self, mode="wave", dilate=False, island_cleaning=True,
                  skip_edge_events=True, edge_width=1,
                  cutflow=CutFlow("ImageCleaner"),
                  wavelet_options=None,
                  tmp_files_directory='/dev/shm/', mrfilter_directory=None):
         self.mode = mode
-        self.skip_edge_events = skip_edge_events
         self.edge_width = edge_width
         self.cutflow = cutflow
 
+        if skip_edge_events:
+            self.reject_edge_event = reject_edge_event
+        else:
+            self.reject_edge_event = lambda *a, **b: False
+        self.cutflow.add_cut("edge event", self.reject_edge_event)
+
         if mode in [None, "none", "None"]:
             self.clean = self.clean_none
-        elif mode == "wave":
+        elif mode.startswith("wave"):
             self.clean = self.clean_wave
             self.wavelet_cleaning = \
                 lambda *arg, **kwargs: WaveletTransform().clean_image(
@@ -184,12 +198,13 @@ class ImageCleaner:
             self.wavelet_options = \
                 {"ASTRICam": wavelet_options or "-K -C1 -m3 -s2,2,3,3 -n4",
                  "DigiCam": wavelet_options or "-K -C1 -m3 -s6.274,2.629,7.755,0.076 -n4",
-                 # 3,3,4,4
                  "FlashCam": wavelet_options or "-K -C1 -m3 -s4,4,5,4 -n4",
-                 "NectarCam": wavelet_options or "-K -C1 -m3 -s13.013,2.549,6.559,1.412 -n4",
-                 # 3,2.5,4,1
-                 "LSTCam": wavelet_options or "-K -C1 -m3 -s23.343,2.490,-2.856,-0.719 -n4",
-                 # 2,4.5,3.5,3
+                 "NectarCam": wavelet_options or
+                    "-K -C1 -m3 -s13.013,2.549,6.559,1.412 -n4",
+                 "LSTCam": wavelet_options or
+                    "-K -C1 -m3 -s23.343,2.490,-2.856,-0.719 -n4",
+                 # WARNING: DUMMY VALUES
+                 "CHEC": wavelet_options or "-K -C1 -m3 -s2,2,3,3 -n4"
                  }
             # camera models for noise injection
             self.noise_model = \
@@ -197,9 +212,11 @@ class ImageCleaner:
                  "DigiCam": EmpDist(cdf.DIGICAM_CDF_FILE),
                  "FlashCam": EmpDist(cdf.FLASHCAM_CDF_FILE),
                  "NectarCam": EmpDist(cdf.NECTARCAM_CDF_FILE),
-                 "LSTCam": EmpDist(cdf.LSTCAM_CDF_FILE)}
+                 "LSTCam": EmpDist(cdf.LSTCAM_CDF_FILE),
+                 # WARNING: DUMMY FILE
+                 "CHEC": EmpDist(cdf.ASTRI_CDF_FILE)}
 
-        elif mode == "tail":
+        elif mode.startswith("tail"):
             self.clean = self.clean_tail
             self.tail_thresholds = \
                 {"ASTRICam": (5, 7),  # (5, 10)?
@@ -209,7 +226,7 @@ class ImageCleaner:
                  "NectarCam": (4, 8),
                  # "FlashCam": (4, 8),  # there is some scaling missing?
                  "DigiCam": (3, 6),
-                 "GCTCam": (2, 4),
+                 "CHEC": (2, 4),
                  "SCTCam": (1.5, 3)}
 
             self.island_threshold = 1.5
@@ -228,23 +245,26 @@ class ImageCleaner:
     def clean_wave(self, img, cam_geom):
         if cam_geom.pix_type.startswith("hex"):
             new_img, new_geom = self.clean_wave_hex(img, cam_geom)
-
-        elif "ASTRI" in cam_geom.cam_id:
-            new_img, new_geom = self.clean_wave_astri(img, cam_geom)
-
+        elif cam_geom.pix_type.startswith("rect"):
+            new_img, new_geom = self.clean_wave_rect(img, cam_geom)
         else:
-            raise MissingImplementation(
-                    "wavelet cleaning of square-pixel images only for ASTRI so far")
+            raise MissingImplementation("wavelet cleaning not yet implemented"
+                                        " for geometry {}".format(cam_geom.cam_id))
 
-        if self.skip_edge_events:
-            if reject_edge_event(new_img, new_geom):
-                raise EdgeEvent
-            self.cutflow.count("clean edge")
+        if self.cutflow.cut("edge event",
+                            img=new_img, geom=new_geom, rows=self.edge_width):
+            raise EdgeEvent
 
         return new_img, new_geom
 
-    def clean_wave_astri(self, img, cam_geom):
-        array2d_img = astri_to_2d_array(img)
+    def clean_wave_rect(self, img, cam_geom):
+        # array2d_img = astri_to_2d_array(img)
+        try:
+            array2d_img = self.geom_1d_to_2d[cam_geom.cam_id](img)
+        except KeyError:
+            raise MissingImplementation("wavelet cleaning not yet implemented"
+                                        " for geometry {}".format(cam_geom.cam_id))
+
         cleaned_img = self.wavelet_cleaning(
                 array2d_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
                 noise_distribution=self.noise_model[cam_geom.cam_id])
@@ -254,13 +274,14 @@ class ImageCleaner:
         # wavelet_transform still leaves some isolated pixels; remove them
         cleaned_img = self.island_cleaning(cleaned_img)
 
-        new_img = array_2d_to_astri(cleaned_img)
+        # new_img = array_2d_to_astri(cleaned_img)
+        new_img = self.geom_2d_to_1d[cam_geom.cam_id](cleaned_img)
         new_geom = cam_geom
 
         return new_img, new_geom
 
     def clean_wave_hex(self, img, cam_geom):
-        rot_geom, rot_img = convert_geometry_1d_to_2d(
+        rot_geom, rot_img = convert_geometry_hex1d_to_rect2d(
                                 cam_geom, img, cam_geom.cam_id)
 
         cleaned_img = self.wavelet_cleaning(
@@ -273,8 +294,8 @@ class ImageCleaner:
                                            neighbours=self.hex_neighbours_1ring,
                                            threshold=self.island_threshold)
 
-        unrot_geom, unrot_img = convert_geometry_back(rot_geom, cleaned_img,
-                                                      cam_geom.cam_id)
+        unrot_geom, unrot_img = convert_geometry_rect2d_back_to_hexe1d(
+            rot_geom, cleaned_img, cam_geom.cam_id)
 
         return unrot_img, unrot_geom
 
@@ -299,13 +320,14 @@ class ImageCleaner:
             new_img = array_2d_to_astri(new_img)
             new_geom = cam_geom
         else:
-            rot_geom, rot_img = convert_geometry_1d_to_2d(
+            rot_geom, rot_img = convert_geometry_hex1d_to_rect2d(
                                     cam_geom, img, cam_geom.cam_id)
 
             cleaned_img = self.island_cleaning(rot_img, self.hex_neighbours_1ring)
 
-            unrot_geom, unrot_img = convert_geometry_back(rot_geom, cleaned_img,
-                                                          cam_geom.cam_id)
+            unrot_geom, unrot_img = convert_geometry_rect2d_back_to_hexe1d(
+                rot_geom, cleaned_img, cam_geom.cam_id)
+
             new_img = unrot_img
             new_geom = unrot_geom
 

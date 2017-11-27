@@ -24,10 +24,10 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 
 from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
-from ctapipe.utils.coordinate_transformations import *
+from ctapipe.coordinates.coordinate_transformations import *
 
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
-from modules.prepare_event import EventPreparator as EP
+from modules.prepare_event import EventPreparer as EP
 
 from ctapipe.calib import CameraCalibrator
 
@@ -122,11 +122,9 @@ if __name__ == '__main__':
                     labels=["log10(signal)", "Delta P"])
 
     allowed_tels = None
-    # allowed_tels = range(10)  # smallest 3×3 square of ASTRI telescopes
-    allowed_tels = range(34)  # all ASTRI telescopes
-    # allowed_tels = range(34, 40)  # use the array of FlashCams instead
     allowed_tels = prod3b_tel_ids("LSTCam")
-    # allowed_tels = prod3b_tel_ids("ASTRICam")
+    allowed_tels = prod3b_tel_ids("ASTRICam")
+    allowed_tels = prod3b_tel_ids("CHEC")
     for filename in sorted(filenamelist)[:args.last]:
         print("filename = {}".format(filename))
 

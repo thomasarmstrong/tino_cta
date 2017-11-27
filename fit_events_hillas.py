@@ -36,11 +36,11 @@ from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
 from ctapipe.reco.shower_max import ShowerMaxEstimator
 
-from ctapipe.utils.coordinate_transformations import az_to_phi, alt_to_theta
+from ctapipe.coordinates.coordinate_transformations import az_to_phi, alt_to_theta
 
 from modules.ImageCleaning import ImageCleaner
 
-from modules.prepare_event import EventPreparator
+from modules.prepare_event import EventPreparer
 
 from helper_functions import *
 
@@ -98,14 +98,14 @@ def main():
 
     shower_max_estimator = ShowerMaxEstimator("paranal")
 
-    preper = EventPreparator(cleaner=cleaner,
-                             hillas_parameters=hillas_parameters, shower_reco=shower_reco,
-                             event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
-                             # event/image cuts:
-                             allowed_cam_ids=[],  # means: all
-                             min_ntel=3,
-                             min_charge=args.min_charge,
-                             min_pixel=3)
+    preper = EventPreparer(cleaner=cleaner,
+                           hillas_parameters=hillas_parameters, shower_reco=shower_reco,
+                           event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
+                           # event/image cuts:
+                           allowed_cam_ids=[],  # means: all
+                           min_ntel=3,
+                           min_charge=args.min_charge,
+                           min_pixel=3)
 
     # a signal handler to abort the event loop but still do the post-processing
     signal_handler = SignalHandler()
@@ -151,7 +151,7 @@ def main():
 
     # define here which telescopes to loop over
     allowed_tels = None
-    allowed_tels = prod3b_tel_ids("L+F+D")
+    # allowed_tels = prod3b_tel_ids("L+F+D")
     for filename in sorted(filenamelist)[:5][:args.last]:
 
         print("filename = {}".format(filename))
@@ -265,7 +265,7 @@ def main():
     print("\n\n")
     Eventcutflow("min2Tels trig")
     print()
-    Imagecutflow()  # sort_column=1)
+    Imagecutflow(sort_column=1)
 
     # if we don't want to plot anything, we can exit now
     if not args.plot:
