@@ -46,7 +46,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.proton:
+    if args.infile_list:
+        filenamelist = []
+        for f in args.infile_list:
+            filenamelist += glob("{}/{}".format(args.indir, f))
+        filenamelist.sort()
+    elif args.proton:
         filenamelist = glob("{}/proton/*gz".format(args.indir))
         channel = "proton"
     elif args.electron:
@@ -196,4 +201,4 @@ if __name__ == "__main__":
     plt.xlabel(r'$E_\mathrm{reco}$' + ' / {:latex}'.format(energy_unit))
     plt.ylabel("fraction of faint imgages (pe < 100) per event")
     save_fig("plots/faint_img_fraction_{}_{}".format(args.mode, channel))
-    plt.show()
+#    plt.show()

@@ -1,45 +1,30 @@
 import numpy as np
 
-from copy import copy
-
 from scipy import ndimage
-from matplotlib import pyplot as plt
-
-from ctapipe.image.cleaning import tailcuts_clean, dilate
 
 from ctapipe.utils.CutFlow import CutFlow
 
+from ctapipe.image.cleaning import tailcuts_clean, dilate
+from ctapipe.image.geometry_converter import (convert_geometry_hex1d_to_rect2d,
+                                              convert_geometry_rect2d_back_to_hexe1d,
+                                              astri_to_2d_array, array_2d_to_astri,
+                                              chec_to_2d_array, array_2d_to_chec)
 
-try:
-    raise
-    from .geometry_converter import convert_geometry_1d_to_2d, convert_geometry_back
-    print("using tino_cta geometry_converter")
-except:
-    from ctapipe.image.geometry_converter import (convert_geometry_hex1d_to_rect2d,
-                                                  convert_geometry_rect2d_back_to_hexe1d,
-                                                  astri_to_2d_array, array_2d_to_astri,
-                                                  chec_to_2d_array, array_2d_to_chec)
-    print("using ctapipe geometry_converter")
-
-try:
-    from datapipe.denoising.wavelets_mrfilter import WaveletTransform
-    from datapipe.denoising import cdf
-    from datapipe.denoising.inverse_transform_sampling import \
-        EmpiricalDistribution as EmpDist
-
-except:
-    print("something missing from datapipe.denoising")
+from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+from datapipe.denoising import cdf
+from datapipe.denoising.inverse_transform_sampling import \
+    EmpiricalDistribution as EmpDist
 
 
-class UnknownMode(Exception):
+class UnknownMode(ValueError):
     pass
 
 
-class EdgeEvent(Exception):
+class EdgeEvent(RuntimeError):
     pass
 
 
-class MissingImplementation(Exception):
+class MissingImplementation(KeyError):
     pass
 
 
@@ -214,15 +199,15 @@ class ImageCleaner:
                  "NectarCam": EmpDist(cdf.NECTARCAM_CDF_FILE),
                  "LSTCam": EmpDist(cdf.LSTCAM_CDF_FILE),
                  # WARNING: DUMMY FILE
-                 "CHEC": EmpDist(cdf.ASTRI_CDF_FILE)}
+                 "CHEC": EmpDist(cdf.DIGICAM_CDF_FILE)}
 
         elif mode.startswith("tail"):
             self.clean = self.clean_tail
             self.tail_thresholds = \
                 {"ASTRICam": (5, 7),  # (5, 10)?
                  "FlashCam": (12, 15),
+                 "LSTCam": (5, 10),  # ?? (3, 6) for Abelardo...
                  # ASWG Zeuthen talk by Abelardo Moralejo:
-                 "LSTCam": (5, 10),
                  "NectarCam": (4, 8),
                  # "FlashCam": (4, 8),  # there is some scaling missing?
                  "DigiCam": (3, 6),
@@ -258,7 +243,6 @@ class ImageCleaner:
         return new_img, new_geom
 
     def clean_wave_rect(self, img, cam_geom):
-        # array2d_img = astri_to_2d_array(img)
         try:
             array2d_img = self.geom_1d_to_2d[cam_geom.cam_id](img)
         except KeyError:
@@ -274,7 +258,6 @@ class ImageCleaner:
         # wavelet_transform still leaves some isolated pixels; remove them
         cleaned_img = self.island_cleaning(cleaned_img)
 
-        # new_img = array_2d_to_astri(cleaned_img)
         new_img = self.geom_2d_to_1d[cam_geom.cam_id](cleaned_img)
         new_geom = cam_geom
 
@@ -321,11 +304,6 @@ class ImageCleaner:
             new_img = array_2d_to_astri(new_img)
             new_geom = cam_geom
 
-            if self.skip_edge_events:
-                if reject_edge_event(new_img, new_geom):
-                    raise EdgeEvent
-                self.cutflow.count("clean edge")
-
         else:
             # turn into 2d to apply island cleaning
             rot_geom, rot_img = convert_geometry_hex1d_to_rect2d(
@@ -341,10 +319,9 @@ class ImageCleaner:
             new_img = unrot_img
             new_geom = unrot_geom
 
-            if self.skip_edge_events:
-                if reject_edge_event(unrot_img, unrot_geom):
-                    raise EdgeEvent
-                self.cutflow.count("clean edge")
+        if self.cutflow.cut("edge event",
+                            img=new_img, geom=new_geom, rows=self.edge_width):
+            raise EdgeEvent
 
         return new_img, new_geom
 
