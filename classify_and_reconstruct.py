@@ -20,8 +20,12 @@ from ctapipe.utils.CutFlow import CutFlow
 from ctapipe.image.hillas import HillasParameterizationError, \
     hillas_parameters_4 as hillas_parameters
 
+from ctapipe.reco.HillasReconstructor import \
+    HillasReconstructor, TooFewTelescopes
+
 from helper_functions import *
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
+from modules.prepare_event import EventPreparer
 
 try:
     from ctapipe.reco.event_classifier import *
@@ -37,16 +41,6 @@ except:
     from modules.energy_regressor import *
     print("using tino_cta energy_regressor")
 
-try:
-    from modules.HillasReconstructor import HillasReconstructor, \
-        TooFewTelescopesException
-    print("using tino_cta HillasReconstructor")
-except:
-    from ctapipe.reco.HillasReconstructor import \
-        HillasReconstructor, TooFewTelescopesException
-    print("using ctapipe.reco.HillasReconstructor")
-
-from modules.prepare_event import EventPreparator
 
 # PyTables
 import tables as tb
@@ -65,10 +59,10 @@ def main():
     parser = make_argparser()
     parser.add_argument('--classifier', type=str,
                         default='data/classifier_pickle/classifier'
-                                '_prod3b_{mode}_{cam_id}_{classifier}.pkl')
+                                '_{mode}_{cam_id}_{classifier}.pkl')
     parser.add_argument('--regressor', type=str,
                         default='data/classifier_pickle/regressor'
-                                '_prod3b_{mode}_{cam_id}_{regressor}.pkl')
+                                '_{mode}_{cam_id}_{regressor}.pkl')
     parser.add_argument('-o', '--outfile', type=str, default="",
                         help="location to write the classified events to.")
     parser.add_argument('--wave_dir',  type=str, default=None,
@@ -114,14 +108,13 @@ def main():
     # the class that does the shower reconstruction
     shower_reco = HillasReconstructor()
 
-    preper = EventPreparator(calib=None, cleaner=cleaner,
-                             hillas_parameters=hillas_parameters,
-                             shower_reco=shower_reco,
-                             event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
-                             # event/image cuts:
-                             allowed_cam_ids=[],
-                             min_ntel=2,
-                             min_charge=args.min_charge, min_pixel=3)
+    preper = EventPreparer(
+                cleaner=cleaner, hillas_parameters=hillas_parameters,
+                shower_reco=shower_reco,
+                event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
+                # event/image cuts:
+                allowed_cam_ids=[],
+                min_ntel=2, min_charge=args.min_charge, min_pixel=3)
 
     # wrapper for the scikit-learn classifier
     classifier = EventClassifier.load(
@@ -199,10 +192,13 @@ def main():
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
     reco_outfile = tb.open_file(
-            args.outfile, mode="w",
-            # if we don't want to write the event list to disk, need to add more arguments
-            **({} if args.outfile else {"driver": "H5FD_CORE",
-                                        "driver_core_backing_store": False}))
+            mode="w",
+            # if no outfile name is given (i.e. don't to write the event list to disk),
+            # need specify two "driver" arguments
+            **({"filename": args.outfile} if args.outfile else
+               {"filename": "no_outfile.h5",
+                "driver": "H5FD_CORE", "driver_core_backing_store": False}))
+
     reco_table = reco_outfile.create_table("/", "reco_events", RecoEvent)
     reco_event = reco_table.row
 

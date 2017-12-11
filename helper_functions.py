@@ -64,9 +64,6 @@ def make_argparser():
                         help="give a specific list of files to run on")
     parser.add_argument('--plots_dir', type=str, default="plots/",
                         help="path to store plots")
-    parser.add_argument('--tail', dest="mode", action='store_const',
-                        const="tail", default="wave",
-                        help="if set, use tail cleaning, otherwise wavelets")
     parser.add_argument('--dilate', default=False, action='store_true',
                         help="use dilate function for tailcut cleaning")
     parser.add_argument('--no_reject_edge', dest='skip_edge_events', default=True,
@@ -84,6 +81,15 @@ def make_argparser():
                         help="only consider first file per type")
     parser.add_argument('--raw', type=str, default=None,
                         help="raw option string for wavelet filtering")
+
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument('--wave', dest="mode", action='store_const',
+                            const="wave", default="wave",
+                            help="if set, use wavelet cleaning -- default")
+    mode_group.add_argument('--tail', dest="mode", action='store_const',
+                            const="tail",
+                            help="if set, use tail cleaning, otherwise wavelets")
+
     return parser
 
 
