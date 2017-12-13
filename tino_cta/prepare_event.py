@@ -11,7 +11,7 @@ from ctapipe.image import hillas
 
 from ctapipe.utils.linalg import rotation_matrix_2d
 
-from modules.ImageCleaning import ImageCleaner, EdgeEvent
+from tino_cta.ImageCleaning import ImageCleaner, EdgeEvent
 from ctapipe.utils.CutFlow import CutFlow
 from ctapipe.coordinates.coordinate_transformations import (
             az_to_phi, alt_to_theta, transform_pixel_position)

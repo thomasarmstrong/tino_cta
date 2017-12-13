@@ -6,6 +6,7 @@
 
 data
 plots
+models
 
 __pycache__
 .cache
@@ -27,3 +28,10 @@ extract_and_crop_simtel_images.txt
 
 # file lists on the GRID storage system
 vo.*
+
+
+# jupyter checkpoints
+.ipynb_checkpoints/
+
+# module egg...
+*.egg-info
