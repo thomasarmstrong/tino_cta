@@ -27,19 +27,8 @@ from helper_functions import *
 from modules.ImageCleaning import ImageCleaner, EdgeEvent
 from modules.prepare_event import EventPreparer
 
-try:
-    from ctapipe.reco.event_classifier import *
-    print("using ctapipe event_classifier")
-except ImportError:
-    from modules.event_classifier import *
-    print("using tino_cta event_classifier")
-
-try:
-    from ctapipe.reco.energy_regressor import *
-    print("using ctapipe energy_regressor")
-except:
-    from modules.energy_regressor import *
-    print("using tino_cta energy_regressor")
+from ctapipe.reco.event_classifier import *
+from ctapipe.reco.energy_regressor import *
 
 
 # PyTables
@@ -174,21 +163,23 @@ def main():
 
     # this class defines the reconstruction parameters to keep track of
     class RecoEvent(tb.IsDescription):
-        NTels_trig = tb.Int16Col(dflt=1, pos=0)
-        NTels_reco = tb.Int16Col(dflt=1, pos=1)
-        NTels_reco_lst = tb.Int16Col(dflt=1, pos=2)
-        NTels_reco_mst = tb.Int16Col(dflt=1, pos=3)
-        NTels_reco_sst = tb.Int16Col(dflt=1, pos=4)
-        MC_Energy = tb.Float32Col(dflt=1, pos=5)
-        reco_Energy = tb.Float32Col(dflt=1, pos=6)
-        reco_phi = tb.Float32Col(dflt=1, pos=7)
-        reco_theta = tb.Float32Col(dflt=1, pos=8)
-        off_angle = tb.Float32Col(dflt=1, pos=9)
-        xi = tb.Float32Col(dflt=1, pos=10)
-        DeltaR = tb.Float32Col(dflt=1, pos=11)
-        ErrEstPos = tb.Float32Col(dflt=1, pos=12)
-        ErrEstDir = tb.Float32Col(dflt=1, pos=13)
-        gammaness = tb.Float32Col(dflt=1, pos=14)
+        Run_ID = tb.Int16Col(dflt=-1, pos=0)
+        Event_ID = tb.Int16Col(dflt=-1, pos=1)
+        NTels_trig = tb.Int16Col(dflt=0, pos=0)
+        NTels_reco = tb.Int16Col(dflt=0, pos=1)
+        NTels_reco_lst = tb.Int16Col(dflt=0, pos=2)
+        NTels_reco_mst = tb.Int16Col(dflt=0, pos=3)
+        NTels_reco_sst = tb.Int16Col(dflt=0, pos=4)
+        MC_Energy = tb.Float32Col(dflt=np.nan, pos=5)
+        reco_Energy = tb.Float32Col(dflt=np.nan, pos=6)
+        reco_phi = tb.Float32Col(dflt=np.nan, pos=7)
+        reco_theta = tb.Float32Col(dflt=np.nan, pos=8)
+        off_angle = tb.Float32Col(dflt=np.nan, pos=9)
+        xi = tb.Float32Col(dflt=np.nan, pos=10)
+        DeltaR = tb.Float32Col(dflt=np.nan, pos=11)
+        ErrEstPos = tb.Float32Col(dflt=np.nan, pos=12)
+        ErrEstDir = tb.Float32Col(dflt=np.nan, pos=13)
+        gammaness = tb.Float32Col(dflt=np.nan, pos=14)
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
     reco_outfile = tb.open_file(
@@ -204,8 +195,8 @@ def main():
 
     allowed_tels = None  # all telescopes
     allowed_tels = prod3b_tel_ids("L+N+D")
-    for filename in filenamelist[:args.last]:
-        print("filename = {}".format(filename))
+    for i, filename in enumerate(filenamelist[:args.last]):
+        print(f"file: {i} filename = {filename}")
 
         source = hessio_event_source(filename,
                                      allowed_tels=allowed_tels,
@@ -214,7 +205,7 @@ def main():
         # loop that cleans and parametrises the images and performs the reconstruction
         for (event, hillas_dict, n_tels,
              tot_signal, max_signals, pos_fit, dir_fit, h_max,
-             err_est_pos, err_est_dir) in preper.prepare_event(source):
+             err_est_pos, err_est_dir) in preper.prepare_event(source, True):
 
             # now prepare the features for the classifier
             cls_features_evt = {}
@@ -275,48 +266,52 @@ def main():
                     reg_features_evt[cam_id] = [reg_features_tel]
                     cls_features_evt[cam_id] = [cls_features_tel]
 
-            if not cls_features_evt or not reg_features_evt:
-                continue
-
-            predict_energ = regressor.predict_by_event([reg_features_evt])["mean"][0]
-            predict_proba = classifier.predict_proba_by_event([cls_features_evt])
-            gammaness = predict_proba[0, 0]
-
-            # the MC direction of origin of the simulated particle
-            shower = event.mc
-            shower_core = np.array([shower.core_x / u.m, shower.core_y / u.m]) * u.m
-            shower_org = linalg.set_phi_theta(shower.az + 90 * u.deg,
-                                              90. * u.deg - shower.alt)
-
-            # and how the reconstructed direction compares to that
-            xi = linalg.angle(dir_fit, shower_org)
-            phi, theta = linalg.get_phi_theta(dir_fit)
-            phi = (phi if phi > 0 else phi + 360 * u.deg)
-
-            DeltaR = linalg.length(pos_fit[:2] - shower_core)
-
-            # TODO: replace with actual array pointing direction
-            array_pointing = linalg.set_phi_theta(0 * u.deg, 20. * u.deg)
-            # angular offset between the reconstructed direction and the array pointing
-            off_angle = linalg.angle(dir_fit, array_pointing)
-
-            reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
-            reco_event["NTels_reco"] = len(hillas_dict)
-            reco_event["NTels_reco_lst"] = n_tels["LST"]
-            reco_event["NTels_reco_mst"] = n_tels["MST"]
-            reco_event["NTels_reco_sst"] = n_tels["SST"]
+            # save basic event infos
             reco_event["MC_Energy"] = event.mc.energy.to(energy_unit).value
-            reco_event["reco_Energy"] = predict_energ.to(energy_unit).value
-            reco_event["reco_phi"] = phi / angle_unit
-            reco_event["reco_theta"] = theta / angle_unit
-            reco_event["off_angle"] = off_angle / angle_unit
-            reco_event["xi"] = xi / angle_unit
-            reco_event["DeltaR"] = DeltaR / dist_unit
-            reco_event["ErrEstPos"] = err_est_pos / dist_unit
-            reco_event["ErrEstDir"] = err_est_dir / angle_unit
-            reco_event["gammaness"] = gammaness
-            reco_event.append()
-            reco_table.flush()
+            reco_event["Event_ID"] = event.r1.event_id
+            reco_event["Run_ID"] = event.r1.run_id
+
+            if cls_features_evt and reg_features_evt:
+
+                predict_energ = regressor.predict_by_event([reg_features_evt])["mean"][0]
+                predict_proba = classifier.predict_proba_by_event([cls_features_evt])
+                gammaness = predict_proba[0, 0]
+
+                # the MC direction of origin of the simulated particle
+                shower = event.mc
+                shower_core = np.array([shower.core_x / u.m, shower.core_y / u.m]) * u.m
+                shower_org = linalg.set_phi_theta(shower.az + 90 * u.deg,
+                                                  90. * u.deg - shower.alt)
+
+                # and how the reconstructed direction compares to that
+                xi = linalg.angle(dir_fit, shower_org)
+                phi, theta = linalg.get_phi_theta(dir_fit)
+                phi = (phi if phi > 0 else phi + 360 * u.deg)
+
+                DeltaR = linalg.length(pos_fit[:2] - shower_core)
+
+                # TODO: replace with actual array pointing direction
+                array_pointing = linalg.set_phi_theta(0 * u.deg, 20. * u.deg)
+                # angular offset between the reconstructed direction and the array
+                # pointing
+                off_angle = linalg.angle(dir_fit, array_pointing)
+
+                reco_event["NTels_trig"] = len(event.dl0.tels_with_data)
+                reco_event["NTels_reco"] = len(hillas_dict)
+                reco_event["NTels_reco_lst"] = n_tels["LST"]
+                reco_event["NTels_reco_mst"] = n_tels["MST"]
+                reco_event["NTels_reco_sst"] = n_tels["SST"]
+                reco_event["reco_Energy"] = predict_energ.to(energy_unit).value
+                reco_event["reco_phi"] = phi / angle_unit
+                reco_event["reco_theta"] = theta / angle_unit
+                reco_event["off_angle"] = off_angle / angle_unit
+                reco_event["xi"] = xi / angle_unit
+                reco_event["DeltaR"] = DeltaR / dist_unit
+                reco_event["ErrEstPos"] = err_est_pos / dist_unit
+                reco_event["ErrEstDir"] = err_est_dir / angle_unit
+                reco_event["gammaness"] = gammaness
+                reco_event.append()
+                reco_table.flush()
 
             if signal_handler.stop:
                 break

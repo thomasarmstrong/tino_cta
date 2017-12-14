@@ -24,6 +24,13 @@ PreparedEvent = namedtuple("PreparedEvent",
                             ])
 
 
+def stub(event):
+    return PreparedEvent(event=event, hillas_dict=None, n_tels=None,
+                         tot_signal=None, max_signals=None,
+                         pos_fit=None, dir_fit=None, h_max=None,
+                         err_est_pos=None, err_est_dir=None)
+
+
 tel_phi = {}
 tel_theta = {}
 tel_orientation = (tel_phi, tel_theta)
@@ -89,14 +96,17 @@ class EventPreparer():
             pmt_signal = np.squeeze(pmt_signal)
         return pmt_signal
 
-    def prepare_event(self, source):
+    def prepare_event(self, source, return_stub=False):
 
         for event in source:
 
             self.event_cutflow.count("noCuts")
 
             if self.event_cutflow.cut("min2Tels trig", len(event.dl0.tels_with_data)):
-                continue
+                if return_stub:
+                    yield stub(event)
+                else:
+                    continue
 
             # calibrate the event
             self.calib.calibrate(event)
@@ -220,7 +230,10 @@ class EventPreparer():
 
             n_tels["reco"] = len(hillas_dict)
             if self.event_cutflow.cut("min2Tels reco", n_tels["reco"]):
-                continue
+                if return_stub:
+                    yield stub(event)
+                else:
+                    continue
 
             try:
                 with warnings.catch_warnings():
@@ -234,11 +247,17 @@ class EventPreparer():
                             hillas_dict, event.inst.subarray, tel_phi, tel_theta)
             except Exception as e:
                 print(e)
-                continue
+                if return_stub:
+                    yield stub(event)
+                else:
+                    continue
 
             if self.event_cutflow.cut("position nan", pos_fit) or \
                self.event_cutflow.cut("direction nan", dir_fit):
-                continue
+                if return_stub:
+                    yield stub(event)
+                else:
+                    continue
 
             yield PreparedEvent(event=event, hillas_dict=hillas_dict, n_tels=n_tels,
                                 tot_signal=tot_signal, max_signals=max_signals,
