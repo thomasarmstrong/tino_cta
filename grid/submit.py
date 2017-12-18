@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 
-from os.path import basename
+import os
+from os.path import basename, expandvars
 import sys
 import glob
 import re
@@ -15,8 +16,8 @@ from DIRAC.Interfaces.API.Dirac import Dirac
 
 def sliding_window(my_list, window_size, step_size=None, start=0):
     step_size = step_size or window_size
-    while start+window_size < len(my_list):
-        yield my_list[start:start+window_size]
+    while start + window_size < len(my_list):
+        yield my_list[start:start + window_size]
         start += step_size
     else:
         yield my_list[start:]
@@ -28,7 +29,12 @@ dirac = Dirac()
 
 # list of files on my GRID SE space
 # not submitting jobs where we already have the output
-GRID_filelist = open('vo.cta.in2p3.fr-user-t-tmichael.lfns').read()
+while True:
+    try:
+        GRID_filelist = open('vo.cta.in2p3.fr-user-t-tmichael.lfns').read()
+        break
+    except IOError:
+        os.system('dirac-dms-user-lfns')
 
 
 #   ######  ######## ######## ######## ########  #### ##    ##  ######
@@ -38,56 +44,79 @@ GRID_filelist = open('vo.cta.in2p3.fr-user-t-tmichael.lfns').read()
 #        ##    ##    ##       ##       ##   ##    ##  ##  #### ##    ##
 #  ##    ##    ##    ##       ##       ##    ##   ##  ##   ### ##    ##
 #   ######     ##    ######## ######## ##     ## #### ##    ##  ######
+
+# bad sites
+banned_sites = [
+    # 'LCG.CPPM.fr',   # LFN connection problems
+    # 'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
+    # 'LCG.CAMK.pl',      # no miniconda (bad vo configuration?)
+    # 'LCG.Prague.cz',    # no miniconda (bad vo configuration?)
+    # 'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
+    'LCG.OBSPM.fr',
+    # 'LCG.LAPP.fr',      # no miniconda (bad vo configuration?)
+    # 'LCG.PIC.es',       #
+    # 'LCG.M3PEC.fr',     #
+    # 'LCG.CETA.es'
+]
+
 cam_id_list = ["LSTCam", "NectarCam", "DigiCam"]
 
-source_ctapipe = '/cvmfs/cta.in2p3.fr/software/miniconda/bin/activate ctapipe_v0.5.3'
+source_ctapipe = \
+    'source /cvmfs/cta.in2p3.fr/software/miniconda/bin/activate ctapipe_v0.5.3'
 execute = './classify_and_reconstruct.py'
-pilot_args = ' '.join([
-        source_ctapipe, '&&', 'PATH=$PATH:./', execute,
+pilot_args_classify = ' '.join([
+        source_ctapipe, '&&',
+        execute,
         '--classifier ./{classifier}',
         '--regressor ./{regressor}',
         '--outfile {outfile}',
         '--indir ./ --infile_list *.simtel.gz',
-        '{mode}',
+        '--{mode}',
         '--cam_ids'] + cam_id_list)
+pilot_args_append = ' '.join([
+        source_ctapipe, '&&',
+        './append_tables.py',
+        '--infiles_base', '{in_name}',
+        '--outfile', '{out_name}'])
 
-
+expandvars
 # files containing lists of the Prod3b files on the GRID
-prod3b_filelist_gamma = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
-                             "Paranal_gamma_North_20deg_HB9_merged.list")
-prod3b_filelist_proton = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
-                              "Paranal_proton_North_20deg_HB9_merged.list")
-prod3b_filelist_electron = open("/local/home/tmichael/Data/cta/Prod3b/Paranal/"
-                                "Paranal_electron_North_20deg_HB9_merged.list")
+prod3b_filelist_gamma = open(expandvars("$CTA_DATA/Prod3b/Paranal/"
+                             "Paranal_gamma_North_20deg_HB9_merged.list"))
+prod3b_filelist_proton = open(expandvars("$CTA_DATA/Prod3b/Paranal/"
+                              "Paranal_proton_North_20deg_HB9_merged.list"))
+prod3b_filelist_electron = open(expandvars("$CTA_DATA/Prod3b/Paranal/"
+                                "Paranal_electron_North_20deg_HB9_merged.list"))
 
 
 # number of files per job
-window_sizes = [5] * 3
+window_sizes = [25] * 3
 
 # I used the first few files to train the classifier and regressor -- skip them
 start_runs = [50, 50, 0]
 
 # how many jobs to submit at once
-NJobs = 10  # put at < 0 to deactivate
+NJobs = 200  # put at < 0 to deactivate
 
 # define a template name for the file that's going to be written out.
 # the placeholder braces are going to get set during the file-loop
 output_filename_template = 'classified_events_{}.h5'
-output_path = "cta/prod3b/paranal_LND_edge_test/"
+output_path = "cta/prod3b/paranal_LND_edge/"
 
 # sets all the local files that are going to be uploaded with the job plus the pickled
 # classifier (if the file name starts with `LFN:`, it will be copied from the GRID itself)
-input_sandbox = ['modules', 'helper_functions.py', 'snippets/append_tables.py',
+input_sandbox = [expandvars('$CTA_SOFT/tino_cta/tino_cta'),
+                 expandvars('$CTA_SOFT/tino_cta/helper_functions.py'),
+                 expandvars('$CTA_SOFT/tino_cta/snippets/append_tables.py'),
 
                  # python wrapper for the mr_filter wavelet cleaning
-                 '/local/home/tmichael/software/jeremie_cta/'
-                 'sap-cta-data-pipeline/datapipe/',
+                 expandvars('$CTA_SOFT/jeremie_cta/ctapipe-wavelet-cleaning/datapipe/'),
 
                  # script that is being run
-                 execute,
+                 expandvars('$CTA_SOFT/tino_cta/' + execute), 'pilot.sh',
 
                  # the executable for the wavelet cleaning
-                 'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter',
+                 'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter'
                  ]
 
 # the pickled classifier and regressor on the GRID
@@ -118,7 +147,7 @@ for cam_id in cam_id_list:
 # get jobs from today and yesterday...
 days = []
 for i in range(2):  # how many days do you want to look back?
-    days.append((datetime.date.today()-datetime.timedelta(days=i)).isoformat())
+    days.append((datetime.date.today() - datetime.timedelta(days=i)).isoformat())
 
 # get list of run_tokens that are currently running / waiting
 running_ids = set()
@@ -127,8 +156,8 @@ for status in ["Waiting", "Running", "Checking"]:
     for day in days:
         try:
             [running_ids.add(id) for id in dirac.selectJobs(
-                        status=status, date=day,
-                        owner="tmichael")['Value']]
+                status=status, date=day,
+                owner="tmichael")['Value']]
         except KeyError:
             pass
 
@@ -137,8 +166,8 @@ if n_jobs > 0:
     print("getting names from {} running/waiting jobs... please wait..."
           .format(n_jobs))
     for i, id in enumerate(running_ids):
-        if ((100*i)/n_jobs) % 5 == 0:
-            print("\r{} %".format(((20*i)/n_jobs)*5)),
+        if ((100 * i) / n_jobs) % 5 == 0:
+            print("\r{} %".format(((20 * i) / n_jobs) * 5)),
         jobname = dirac.attributes(id)["Value"]["JobName"]
         running_names.append(jobname)
     else:
@@ -146,7 +175,7 @@ if n_jobs > 0:
 
 # summary before submitting
 print("\nrunning as:")
-print(pilot_args)
+print(pilot_args_classify)
 print("\nwith input_sandbox:")
 print(input_sandbox)
 print("\nwith output file:")
@@ -181,9 +210,9 @@ for i, filelist in enumerate([
         # setting output name
         job_name = '_'.join([channel, run_token])
         output_filename_wave = output_filename_template.format(
-                    '_'.join(["wave", channel, run_token]))
+            '_'.join(["wave", channel, run_token]))
         output_filename_tail = output_filename_template.format(
-                    '_'.join(["tail", channel, run_token]))
+            '_'.join(["tail", channel, run_token]))
 
         # if job already running / waiting, skip
         if job_name in running_names:
@@ -210,26 +239,13 @@ for i, filelist in enumerate([
         j.setName(job_name)
         j.setInputSandbox(input_sandbox)
 
-        # bad sites
-        banned_sites = [
-            # 'LCG.CPPM.fr',   # LFN connection problems
-            # 'LCG.IN2P3-CC.fr',  # jobs fail immediately after start
-            # 'LCG.CAMK.pl',      # no miniconda (bad vo configuration?)
-            # 'LCG.Prague.cz',    # no miniconda (bad vo configuration?)
-            # 'LCG.PRAGUE-CESNET.cz',    # no miniconda (bad vo configuration?)
-            'LCG.OBSPM.fr',
-            # 'LCG.LAPP.fr',      # no miniconda (bad vo configuration?)
-            # 'LCG.PIC.es',       #
-            # 'LCG.M3PEC.fr',     #
-            # 'LCG.CETA.es'
-        ]
         if banned_sites:
             j.setBannedSites(banned_sites)
 
         # mr_filter loses its executable property by uploading it to the GRID SE; reset
         j.setExecutable('chmod', '+x mr_filter')
-        # also set the main script as executable
-        j.setExecutable('chmod', '+x ' + execute)
+
+        j.setExecutable('ls -lah')
 
         for run_file in run_filelist:
             file_token = re.split('_', run_file)[3]
@@ -237,30 +253,31 @@ for i, filelist in enumerate([
             # wait for a random number of seconds (up to five minutes) before starting
             # to add a bit more entropy in the starting times of the dirac querries.
             # if too many jobs try in parallel to access the SEs, the interface crashes
-            sleep = random.randint(0, 5*60)
+            sleep = random.randint(0, 5 * 60)
             j.setExecutable('sleep', str(sleep))
 
             # consecutively downloads the data files, processes them, deletes the input
             # and goes on to the next input file; afterwards, the output files are merged
-            j.setExecutable('dirac-dms-get-file', "LFN:"+run_file)
+            j.setExecutable('dirac-dms-get-file', "LFN:" + run_file)
 
             # consecutively process file with wavelet and tailcut cleaning
             for mode in ["wave", "tail"]:
                 # source the miniconda ctapipe environment and run the python script with
                 # all its arguments
                 output_filename_temp = output_filename_template.format(
-                        "_".join([mode, channel, file_token]))
+                    "_".join([mode, channel, file_token]))
                 classifier_LFN = model_path_template.format(
                     "prod3b/paranal_edge", "classifier",
                     mode, "{cam_id}", "RandomForestClassifier")
                 regressor_LFN = model_path_template.format(
                     "prod3b/paranal_edge", "regressor",
                     mode, "{cam_id}", "RandomForestRegressor")
-                j.setExecutable(
-                    'source', pilot_args.format(outfile=output_filename_temp,
-                                                regressor=basename(regressor_LFN),
-                                                classifier=basename(classifier_LFN),
-                                                mode="--{}".format(mode)))
+                j.setExecutable('./pilot.sh',
+                                pilot_args_classify.format(
+                                    outfile=output_filename_temp,
+                                    regressor=basename(regressor_LFN),
+                                    classifier=basename(classifier_LFN),
+                                    mode=mode))
 
             # remove the current file to clear space
             j.setExecutable('rm', basename(run_file))
@@ -270,20 +287,12 @@ for i, filelist in enumerate([
 
         # if there is more than one file per job, merge the output tables
         if window_sizes[i] > 1:
-            j.setExecutable('source',
-                            ' '.join([
-                                source_ctapipe, '&&',
-                                './append_tables.py',
-                                '--infiles_base', 'classified_events_wave',
-                                '--outfile', output_filename_wave
-                                ]))
-            j.setExecutable('source',
-                            ' '.join([
-                                source_ctapipe, '&&',
-                                './append_tables.py',
-                                '--infiles_base', 'classified_events_tail',
-                                '--outfile', output_filename_tail
-                                ]))
+            for in_name, out_name in [('classified_events_wave', output_filename_wave),
+                                      ('classified_events_tail', output_filename_tail)]:
+                j.setExecutable('./pilot.sh',
+                                pilot_args_append.format(
+                                    in_name=in_name,
+                                    out_name=out_name))
 
         print
         print("OutputData: {}{}".format(output_path, output_filename_wave))
