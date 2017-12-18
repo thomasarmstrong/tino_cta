@@ -152,9 +152,8 @@ def main():
     # define here which telescopes to loop over
     allowed_tels = None
     # allowed_tels = prod3b_tel_ids("L+F+D")
-    for filename in sorted(filenamelist)[:5][:args.last]:
-
-        print("filename = {}".format(filename))
+    for i, filename in enumerate(filenamelist[:args.last]):
+        print(f"file: {i} filename = {filename}")
 
         source = hessio_event_source(filename,
                                      allowed_tels=allowed_tels,
