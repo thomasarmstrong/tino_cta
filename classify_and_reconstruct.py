@@ -24,8 +24,8 @@ from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
 
 from helper_functions import *
-from modules.ImageCleaning import ImageCleaner, EdgeEvent
-from modules.prepare_event import EventPreparer
+from tino_cta.ImageCleaning import ImageCleaner, EdgeEvent
+from tino_cta.prepare_event import EventPreparer
 
 from ctapipe.reco.event_classifier import *
 from ctapipe.reco.energy_regressor import *
@@ -196,7 +196,7 @@ def main():
     allowed_tels = None  # all telescopes
     allowed_tels = prod3b_tel_ids("L+N+D")
     for i, filename in enumerate(filenamelist[:args.last]):
-        print(f"file: {i} filename = {filename}")
+        # print(f"file: {i} filename = {filename}")
 
         source = hessio_event_source(filename,
                                      allowed_tels=allowed_tels,
@@ -210,7 +210,8 @@ def main():
             # now prepare the features for the classifier
             cls_features_evt = {}
             reg_features_evt = {}
-            for tel_id in hillas_dict.keys():
+            if hillas_dict is not None:
+              for tel_id in hillas_dict.keys():
                 Imagecutflow.count("pre-features")
 
                 tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
