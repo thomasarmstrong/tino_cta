@@ -1,0 +1,245 @@
+import numpy as np
+from astropy import units as u
+from astropy.table import Table
+from scipy.optimize import minimize
+
+import irf_builder as irf
+from irf_builder import spectra
+
+
+def sigma_lima(n_on, n_off, alpha=0.2):
+    """
+    Compute the significance according to Eq. (17) of Li & Ma (1983).
+
+    Parameters
+    ----------
+    n_on : integer/float
+        Number of on counts
+    n_off : integer/float
+        Number of off counts
+    alpha : float, optional (default: 0.2)
+        Ratio of on-to-off exposure
+
+    Returns
+    -------
+    sigma : float
+        the significance of the given off and on counts
+    """
+
+    alpha1 = alpha + 1.0
+    n_sum = n_on + n_off
+    arg1 = n_on / n_sum
+    arg2 = n_off / n_sum
+    term1 = n_on
+    term2 = n_off
+    if n_on > 0:
+        term1 *= np.log((alpha1 / alpha) * arg1)
+    if n_off > 0:
+        term2 *= np.log(alpha1 * arg2)
+    sigma = np.sqrt(2.0 * (term1 + term2))
+
+    return sigma
+
+
+def diff_to_x_sigma(scale, n, alpha, x=5):
+    """
+    calculates the significance according to `sigma_lima` and returns the squared
+    difference to `x`. To be used in a minimiser that determines the necessary source
+    intensity for a detection of given significance of `x` sigma
+    The square here is only to have a continuously differentiable function with a smooth
+    turning point at the minimum -- in contrast to an absolute-function that makes a
+    sharp turn at the minimum.
+
+    Parameters
+    ----------
+    scale : python list with a single float
+        this is the variable in the minimisation procedure
+        it scales the number of gamma events
+    n : shape (2) list
+        the signal count in the on- (index 0)
+        and the background count int the off-region (index 1)
+        the events in the on-region are to be scaled by `scale[0]`
+        the background rate in the on-region is estimated as `alpha` times off-count
+    alpha : float
+        the ratio of the on and off areas
+    x : float, optional (default: 5)
+        target significance in multiples of "sigma"
+
+    Returns
+    -------
+    (sigma - x)**2 : float
+        squared difference of the significance to `x`
+        minimise this function for the number of gamma events needed for your desired
+        significance of `x` sigma
+    """
+
+    n_on = n[1] * alpha + n[0] * scale[0]
+    n_off = n[1]
+    sigma = sigma_lima(n_on, n_off, alpha)
+    return (sigma - x)**2
+
+
+def point_source_sensitivity(events, energy_bin_edges,
+                             alpha, signal_list=("g"), mode="MC",
+                             sensitivity_source_flux=spectra.crab_source_rate,
+                             min_n=10, max_background_ratio=.05,
+                             n_draws=1000):
+    """
+    Calculates the sensitivity to a point-source
+
+    Parameters
+    ----------
+    alpha : float
+        area-ratio of the on- over the off-region
+    energy_bin_edges : numpy array
+        array of the bin edges for the sensitivity calculation
+    signal_list : iterable of strings, optional (default: ("g"))
+        list of keys to consider as signal channels
+    mode : string ["MC", "Data"] (default: "MC")
+        interprete the signal/not-signal channels in all the dictionaries as
+        gamma/background ("MC") or as on-region/off-region ("Data")
+        - if "MC":
+            the signal channel is taken as the part comming from the source and
+            the background channels multiplied by `alpha` is used as the background
+            part in the on-region; the background channels themselves are taken as
+            coming from the off-regions
+        - if "Data":
+            the signal channel is taken as the counts reconstructed in the on-region
+            the counts from the background channels multiplied by `alpha` are taken as
+            the background estimate for the on-region
+    min_n : integer, optional (default: 10)
+        minimum number of events per energy bin -- if the number is smaller, scale up
+        all events to sum up to this
+    max_background_ratio : float, optional (default: 0.05)
+        maximal background contamination per bin -- if fraction of protons in a bin
+        is larger than this, scale up the gammas events accordingly
+    sensitivity_source_flux : callable, optional (default: `crab_source_rate`)
+        function of the flux the sensitivity is calculated with
+    n_draws : int, optional (default: 1000)
+        number of random draws to calculate uncertainties on the sensitivity
+
+    Returns
+    -------
+    sensitivities : astropy.table.Table
+        the sensitivity for every energy bin of `energy_bin_edges`
+
+    """
+
+    # sensitivities go in here
+    sensitivities = Table(
+        names=("Energy", "Sensitivity_base", "Sensitivity",
+               "Sensitivity_low", "Sensitivity_up"))
+    try:
+        sensitivities["Energy"].unit = energy_bin_edges.unit
+    except AttributeError:
+        sensitivities["Energy"].unit = irf.energy_unit
+    sensitivities["Sensitivity_base"].unit = irf.flux_unit
+    sensitivities["Sensitivity"].unit = irf.flux_unit
+    sensitivities["Sensitivity_up"].unit = irf.flux_unit
+    sensitivities["Sensitivity_low"].unit = irf.flux_unit
+
+    if hasattr(events, "weight"):
+        # in case we do have event weights, we sum them within the energy bin
+        # we also need the actual number of events to estimate the statistical error
+        sum_events = lambda mask: np.sum(events[cl]["weights"][mask])
+        len_events = lambda mask: len(events[cl][mask])
+    else:
+        # otherwise we simply check the length of the masked energy array
+        # since the weights are 1 here, `len_events` is the same as `sum_events`
+        sum_events = lambda mask: len(events[cl][mask])
+        len_events = sum_events
+
+    # loop over all energy bins
+    # the bins are spaced logarithmically: use the geometric mean as the bin-centre,
+    # so when plotted logarithmically, they appear at the middle between
+    # the bin-edges
+    for elow, ehigh, emid in zip(energy_bin_edges[:-1],
+                                 energy_bin_edges[1:],
+                                 np.sqrt(energy_bin_edges[:-1] *
+                                         energy_bin_edges[1:])):
+
+        S_events = np.zeros(2)  # [on-signal, off-background]
+        N_events = np.zeros(2)  # [on-signal, off-background]
+
+        # count the (weights of the) events in the on and off regions for this
+        # energy bin
+        for cl in events:
+            # single out the events in this energy bin
+            e_mask = (events[cl][irf.reco_energy_name] > elow) & \
+                     (events[cl][irf.reco_energy_name] < ehigh)
+
+            if cl in signal_list:
+                S_events[0] += sum_events(e_mask)
+                N_events[0] += len_events(e_mask)
+            else:
+                S_events[1] += sum_events(e_mask)
+                N_events[1] += len_events(e_mask)
+
+        # If we have no counts in the on-region, there is no sensitivity.
+        # If on data the background estimate from the off-region is larger than the
+        # counts in the on-region, `sigma_lima` will break! Skip those
+        # cases, too.
+        if N_events[0] <= 0:
+            continue
+
+        if mode.lower() == "data":
+            # the background estimate for the on-region is `alpha` times the
+            # background in the off-region
+            # if running on data, the signal estimate for the on-region is the counts
+            # in the on-region minus the background estimate for the on-region
+            S_events[0] -= S_events[1] * alpha
+            N_events[0] -= N_events[1] * alpha
+
+        MC_scale = S_events / N_events
+
+        scales = []
+        # to get the proper Poisson fluctuation in MC, draw the events with
+        # `N_events` as lambda and then scale the result to the weighted number
+        # of expected events
+        if n_draws > 0:
+            trials = np.random.poisson(N_events, size=(n_draws, 2))
+            trials = trials * MC_scale
+        else:
+            # if `n_draws` is zero or smaller, don't do any draws and just take the
+            # numbers that we have
+            trials = [S_events]
+        for trial_events in trials:
+            # find the scaling factor for the gamma events that gives a 5 sigma
+            # discovery in this energy bin
+            scale = minimize(diff_to_x_sigma, [1e-3],
+                             args=(trial_events, alpha),
+                             method='L-BFGS-B', bounds=[(1e-4, None)],
+                             options={'disp': False}
+                             ).x[0]
+
+            scale_base = scale
+
+            # scale up the gamma events by this factor
+            trial_events[0] *= scale
+
+            # # check if there are sufficient signal events in this energy bin
+            # scale *= check_min_n_signal(trial_events,
+            #                             min_n_signal=min_n, alpha=alpha)
+            #
+            # # check if the relative amount of protons in this bin is
+            # # sufficiently small
+            # scale *= check_background_contamination(
+            #     trial_events, alpha=alpha,
+            #     max_background_ratio=max_background_ratio)
+
+            scales.append(scale)
+
+        # get the scaling factors for the median and the 1sigma containment region
+        scale = np.percentile(scales, (50, 32, 68))
+
+        # get the flux at the bin centre
+        flux = sensitivity_source_flux(emid).to(irf.flux_unit)
+
+        # and scale it up by the determined factors
+        sensitivity = flux * scale
+        sensitivity_base = flux * scale_base
+
+        # store results in table
+        sensitivities.add_row([emid, sensitivity_base, *sensitivity])
+
+    return sensitivities
