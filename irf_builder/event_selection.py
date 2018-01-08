@@ -64,10 +64,3 @@ def minimise_sensitivity_per_bin(events, bin_edges, r_scale):
             xi_cuts.append(res.x[1])
 
     return cut_energies, ga_cuts, xi_cuts
-
-
-def minimising_splines(cut_energies, ga_cuts, xi_cuts, k=3):
-    spline_ga = interpolate.splrep(cut_energies, ga_cuts, k=k)
-    spline_xi = interpolate.splrep(cut_energies, xi_cuts, k=k)
-
-    return spline_ga, spline_xi

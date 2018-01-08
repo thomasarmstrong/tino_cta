@@ -127,13 +127,11 @@ def point_source_sensitivity(events, energy_bin_edges,
 
     # sensitivities go in here
     sensitivities = Table(
-        names=("Energy", "Sensitivity_base", "Sensitivity",
-               "Sensitivity_low", "Sensitivity_up"))
+        names=("Energy", "Sensitivity", "Sensitivity_low", "Sensitivity_up"))
     try:
         sensitivities["Energy"].unit = energy_bin_edges.unit
     except AttributeError:
         sensitivities["Energy"].unit = irf.energy_unit
-    sensitivities["Sensitivity_base"].unit = irf.flux_unit
     sensitivities["Sensitivity"].unit = irf.flux_unit
     sensitivities["Sensitivity_up"].unit = irf.flux_unit
     sensitivities["Sensitivity_low"].unit = irf.flux_unit
@@ -211,22 +209,6 @@ def point_source_sensitivity(events, energy_bin_edges,
                              method='L-BFGS-B', bounds=[(1e-4, None)],
                              options={'disp': False}
                              ).x[0]
-
-            scale_base = scale
-
-            # scale up the gamma events by this factor
-            trial_events[0] *= scale
-
-            # # check if there are sufficient signal events in this energy bin
-            # scale *= check_min_n_signal(trial_events,
-            #                             min_n_signal=min_n, alpha=alpha)
-            #
-            # # check if the relative amount of protons in this bin is
-            # # sufficiently small
-            # scale *= check_background_contamination(
-            #     trial_events, alpha=alpha,
-            #     max_background_ratio=max_background_ratio)
-
             scales.append(scale)
 
         # get the scaling factors for the median and the 1sigma containment region
@@ -237,9 +219,8 @@ def point_source_sensitivity(events, energy_bin_edges,
 
         # and scale it up by the determined factors
         sensitivity = flux * scale
-        sensitivity_base = flux * scale_base
 
         # store results in table
-        sensitivities.add_row([emid, sensitivity_base, *sensitivity])
+        sensitivities.add_row([emid, *sensitivity])
 
     return sensitivities
