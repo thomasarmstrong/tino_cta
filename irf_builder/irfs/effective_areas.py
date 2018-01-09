@@ -1,5 +1,6 @@
 import numpy as np
 from astropy import units as u
+from matplotlib import pyplot as plt
 
 import irf_builder as irf
 from irf_builder.spectra import make_mock_event_rate, e_minus_2
@@ -91,3 +92,25 @@ def get_effective_areas_wrapper(events):
                            'p': e_minus_2,
                            'e': e_minus_2}
     )
+
+
+def plot_effective_areas(eff_areas):
+    """plots the effective areas of the different channels as a line plot
+
+    Parameter
+    ---------
+    eff_areas : dict of 1D arrays
+        dictionary of the effective areas of the different channels
+    """
+    for cl, a in eff_areas.items():
+        plt.plot(irf.e_bin_centres, a,
+                 label=irf.plotting.channel_map[cl],
+                 color=irf.plotting.channel_colour_map[cl],
+                 marker=irf.plotting.channel_marker_map[cl])
+    plt.legend()
+    plt.title("Effective Areas")
+    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
+    plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
+    plt.gca().set_xscale("log")
+    plt.gca().set_yscale("log")
+    plt.grid()

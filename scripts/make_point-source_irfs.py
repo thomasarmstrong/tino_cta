@@ -17,14 +17,6 @@ from matplotlib import pyplot as plt
 import irf_builder as irf
 
 
-channel_map = {'g': "gamma", 'p': "proton", 'e': "electron"}
-channel_colour_map = {'g': "orange", 'p': "blue", 'e': "red"}
-channel_marker_map = {'g': 's', 'p': '^', 'e': 'v'}
-
-mode_linestyle_map = {"wave": '-', "tail": '--'}
-mode_colour_map = {"tail": "darkorange", "wave": "darkred"}
-
-
 def correct_off_angle(data, origin=None):
     import ctapipe.utils.linalg as linalg
     origin = origin or linalg.set_phi_theta(90 * u.deg, 20 * u.deg)
@@ -88,10 +80,7 @@ events_t = {"reco": {'g': gammas_t_o, 'p': proton_t_o, 'e': electr_t_o}}
 irf.make_weights(events_w["reco"])
 irf.make_weights(events_t["reco"])
 
-eff_areas = irf.irfs.get_effective_areas(events_w["reco"])
-irf.irfs.plotting.plot_effective_areas(eff_areas)
-if args.plot:
-    plt.pause(.1)
+# determine optimal bin-by-bin cut values and fit splines to them
 
 cut_energies, ga_cuts, xi_cuts = {}, {}, {}
 
@@ -109,9 +98,9 @@ else:
     print("loading cut values")
     for mode in ["wave", "tail"]:
         cuts = Table.read(f"cut_values_{mode}.tex", format="ascii.latex")
-    cut_energies[mode] = cuts["Energy"]
-    ga_cuts[mode] = cuts["gammaness"]
-    xi_cuts[mode] = cuts["xi"]
+        cut_energies[mode] = cuts["Energy"]
+        ga_cuts[mode] = cuts["gammaness"]
+        xi_cuts[mode] = cuts["xi"]
 
 print("making splines")
 spline_ga, spline_xi = {}, {}
@@ -119,29 +108,30 @@ for mode in cut_energies:
     spline_ga[mode] = interpolate.splrep(cut_energies[mode], ga_cuts[mode], k=args.k)
     spline_xi[mode] = interpolate.splrep(cut_energies[mode], xi_cuts[mode], k=args.k)
 
-    fig = plt.figure(figsize=(10, 5))
-    plt.suptitle(mode)
-    for i, (cut_var, spline, ylabel) in enumerate(zip(
-            [ga_cuts[mode], xi_cuts[mode]],
-            [spline_ga[mode], spline_xi[mode]],
-            ["gammaness", "xi / degree"])):
-        fig.add_subplot(121 + i)
-        plt.plot(cut_energies / u.TeV, cut_var,
-                 label="crit. values", ls="", marker="^")
-        plt.plot(irf.e_bin_centres_fine / u.TeV,
-                 interpolate.splev(irf.e_bin_centres_fine, spline),
-                 label="spline fit")
-
-        plt.xlabel("Energy / TeV")
-        plt.ylabel(ylabel)
-        plt.gca().set_xscale("log")
-        plt.legend()
-
-        if i == 0:
-            plt.plot(irf.e_bin_centres_fine[[0, -1]], [1, 1],
-                     ls="dashed", color="lightgray")
-if args.plot:
-    plt.pause(.1)
+#     fig = plt.figure(figsize=(10, 5))
+#     plt.suptitle(mode)
+#     for i, (cut_var, spline, ylabel) in enumerate(zip(
+#             [ga_cuts[mode], xi_cuts[mode]],
+#             [spline_ga[mode], spline_xi[mode]],
+#             ["gammaness", "xi / degree"])):
+#         fig.add_subplot(121 + i)
+#         plt.plot(cut_energies[mode] / u.TeV, cut_var,
+#                  label="crit. values", ls="", marker="^")
+#         plt.plot(irf.e_bin_centres_fine / u.TeV,
+#                  interpolate.splev(irf.e_bin_centres_fine, spline),
+#                  label="spline fit")
+#
+#         plt.xlabel("Energy / TeV")
+#         plt.ylabel(ylabel)
+#         plt.gca().set_xscale("log")
+#         plt.legend()
+#
+#         if i == 0:
+#             plt.plot(irf.e_bin_centres_fine[[0, -1]], [1, 1],
+#                      ls="dashed", color="lightgray")
+#
+# if args.plot:
+#     plt.pause(.1)
 
 # applying cuts consecutively
 
@@ -158,11 +148,38 @@ from_step = "gammaness"
 next_step = "theta"
 for mode, events in [("wave", events_w), ("tail", events_t)]:
     events[next_step] = {}
-    for key in events_w[from_step]:
+    for key in events[from_step]:
         events[next_step][key] = events[from_step][key][
-            events[from_step][key]["off_angle"] <
+            events[from_step][key]["off_angle"] < (1 if key == 'g' else args.r_scale) *
             interpolate.splev(events[from_step][key]["reco_Energy"], spline_xi[mode])]
 
+sensitivity = {}
+for mode, events in [("wave", events_w["theta"]),
+                     ("tail", events_t["theta"])]:
+    sensitivity[mode] = irf.calculate_sensitivity(
+        events, irf.e_bin_edges, alpha=args.r_scale**-2)
 
+plt.figure()
+irf.plotting.plot_crab()
+irf.plotting.plot_reference()
+irf.plotting.plot_sensitivity(sensitivity)
+
+
+# plt.figure()
+# eff_areas = irf.irfs.get_effective_areas(events_w["reco"])
+# irf.plotting.plot_effective_areas(eff_areas)
+
+
+# plt.figure()
+# th_sq, bin_e = irf.irfs.angular_resolution.get_theta_square(events_w["theta"])
+# irf.plotting.plot_theta_square(th_sq, bin_e)
+
+
+# plt.figure()
+# xi = irf.irfs.angular_resolution.get_angular_resolution(events_w["gammaness"])
+# irf.plotting.plot_angular_resolution(xi)
+
+# plt.figure()
+# irf.plotting.plot_angular_resolution_violin(events_w["gammaness"])
 
 plt.show()

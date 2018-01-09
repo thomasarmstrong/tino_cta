@@ -3,6 +3,8 @@ from astropy import units as u
 from astropy.table import Table
 from scipy.optimize import minimize
 
+from matplotlib import pyplot as plt
+
 import irf_builder as irf
 from irf_builder import spectra
 
@@ -82,7 +84,6 @@ def diff_to_x_sigma(scale, n, alpha, x=5):
 def point_source_sensitivity(events, energy_bin_edges,
                              alpha, signal_list=("g"), mode="MC",
                              sensitivity_source_flux=spectra.crab_source_rate,
-                             min_n=10, max_background_ratio=.05,
                              n_draws=1000):
     """
     Calculates the sensitivity to a point-source
@@ -107,12 +108,6 @@ def point_source_sensitivity(events, energy_bin_edges,
             the signal channel is taken as the counts reconstructed in the on-region
             the counts from the background channels multiplied by `alpha` are taken as
             the background estimate for the on-region
-    min_n : integer, optional (default: 10)
-        minimum number of events per energy bin -- if the number is smaller, scale up
-        all events to sum up to this
-    max_background_ratio : float, optional (default: 0.05)
-        maximal background contamination per bin -- if fraction of protons in a bin
-        is larger than this, scale up the gammas events accordingly
     sensitivity_source_flux : callable, optional (default: `crab_source_rate`)
         function of the flux the sensitivity is calculated with
     n_draws : int, optional (default: 1000)
@@ -224,3 +219,33 @@ def point_source_sensitivity(events, energy_bin_edges,
         sensitivities.add_row([emid, *sensitivity])
 
     return sensitivities
+
+
+def plot_sensitivity(sensitivities):
+
+    for mode, sensitivitiy in sensitivities.items():
+        sens_low, sens_up = (
+            (sensitivitiy["Sensitivity"] -
+             sensitivitiy["Sensitivity_low"]).to(irf.flux_unit) *
+            sensitivitiy["Energy"].to(u.erg)**2,
+            (sensitivitiy["Sensitivity_up"] -
+             sensitivitiy["Sensitivity"]).to(irf.flux_unit) *
+            sensitivitiy["Energy"].to(u.erg)**2)
+
+        # plt.errorbar(
+        plt.loglog(
+            sensitivitiy["Energy"] / irf.energy_unit,
+            (sensitivitiy["Sensitivity"] *
+             sensitivitiy["Energy"].to(u.erg)**2).to(irf.sensitivity_unit).value,
+            # (sens_low.value, sens_up.value),
+            color=irf.plotting.mode_colour_map[mode],
+            marker="s",
+            label=irf.plotting.mode_map[mode])
+
+    plt.legend(title="Obsetvation Time: {}".format(irf.observation_time), loc=1)
+    plt.xlabel(r'$E_\mathrm{reco}$' + ' / {:latex}'.format(irf.energy_unit))
+    plt.ylabel(r'$E^2 \Phi /$ {:latex}'.format(irf.sensitivity_unit))
+    plt.gca().set_xscale("log")
+    plt.grid()
+    plt.xlim([1e-2, 2e2])
+    plt.ylim([5e-15, 5e-10])

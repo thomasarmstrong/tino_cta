@@ -5,7 +5,7 @@ import irf_builder as irf
 
 
 def unbinned(events, n_simulated_events, e_min_max, spectra,
-             generator_areas, generator_gamma, observation_time=50 * u.h,
+             generator_areas, generator_gamma, observation_time,
              diff_angle=None, extensions=None):
     """
     generates a weight for every event
@@ -60,7 +60,7 @@ def unbinned(events, n_simulated_events, e_min_max, spectra,
     return events
 
 
-def unbinned_wrapper(events, observation_time=50 * u.h):
+def unbinned_wrapper(events):
     return unbinned(
         events, n_simulated_events={'g': irf.meta_data["gamma"]["n_simulated"],
                                     'p': irf.meta_data["proton"]["n_simulated"],
@@ -68,7 +68,7 @@ def unbinned_wrapper(events, observation_time=50 * u.h):
         generator_areas={'g': np.pi * (irf.meta_data["gamma"]["gen_radius"] * u.m)**2,
                          'p': np.pi * (irf.meta_data["proton"]["gen_radius"] * u.m)**2,
                          'e': np.pi * (irf.meta_data["electron"]["gen_radius"] * u.m)**2},
-        observation_time=observation_time,
+        observation_time=irf.observation_time,
         spectra={'g': irf.spectra.crab_source_rate,
                  'p': irf.spectra.cr_background_rate,
                  'e': irf.spectra.electron_spectrum},
