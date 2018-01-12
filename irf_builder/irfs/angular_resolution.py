@@ -48,7 +48,8 @@ def get_angular_resolution(events, percent=68):
 
 
 def plot_angular_resolution(xi):
-    for cl, a in xi.items():
+    # for cl, a in xi.items():
+    for cl, a in [('g', xi['g'])]:
         plt.plot(irf.e_bin_centres, a,
                  label=irf.plotting.channel_map[cl],
                  color=irf.plotting.channel_colour_map[cl],

@@ -78,7 +78,7 @@ def unbinned_wrapper(events):
                          irf.meta_data["proton"]["e_max"]) * u.TeV,
                    'e': (irf.meta_data["electron"]["e_min"],
                          irf.meta_data["electron"]["e_max"]) * u.TeV},
-        extensions={'p': irf.meta_data["proton"]["diff_cone"] * u.deg,
+        diff_angle={'p': irf.meta_data["proton"]["diff_cone"] * u.deg,
                     'e': irf.meta_data["electron"]["diff_cone"] * u.deg},
         generator_gamma={'g': irf.meta_data["gamma"]["gen_gamma"],
                          'p': irf.meta_data["proton"]["gen_gamma"],

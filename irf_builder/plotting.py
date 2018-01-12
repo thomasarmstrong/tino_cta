@@ -25,9 +25,14 @@ except ImportError:
 # pull in all the plot functions into one `plotting` namespace
 from irf_builder.sensitivity import plot_sensitivity
 from irf_builder.irfs.effective_areas import plot_effective_areas
+from irf_builder.irfs.energy import (plot_energy_migration_matrix, plot_rel_delta_e,
+                                     plot_energy_bias, plot_energy_resolution)
+from irf_builder.irfs.event_rates import (plot_energy_distribution,
+                                          plot_energy_event_rates)
 from irf_builder.irfs.angular_resolution import (plot_theta_square,
                                                  plot_angular_resolution,
                                                  plot_angular_resolution_violin)
+
 
 # some dictionaries to control the visuals of the different plots in the same figure
 channel_map = {'g': "gamma", 'p': "proton", 'e': "electron"}
@@ -75,7 +80,7 @@ def plot_crab(e_bins=None, fractions=None):
 
 
 def plot_reference():
-    """some pseude-official line to compare
+    """some pseude-official sensitivity line to compare to
     """
     ref_loge, ref_sens = *(np.array([
         (-1.8, 6.87978e-11), (-1.6, 1.87765e-11),

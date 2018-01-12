@@ -8,14 +8,14 @@ def cut_and_sensitivity(cuts, events, bin_edges, r_scale,
                         syst_nsim=True, syst_nphy=False):
     """ throw this into a minimiser """
     ga_cut = cuts[0]
-    xi_cut = cuts[1]
+    th_cut = cuts[1]
 
     cut_events = {}
     for key in events:
         cut_events[key] = events[key][
             (events[key]["gammaness"] > ga_cut) &
             # the background regions are larger to gather more statistics
-            (events[key]["off_angle"] < xi_cut * (1 if key == 'g' else r_scale))]
+            (events[key]["off_angle"] < th_cut * (1 if key == 'g' else r_scale))]
 
     if syst_nsim and (len(events['g']) < 10 or
                       len(events['g']) < (len(events['p']) + len(events['e'])) * 0.05):
@@ -28,7 +28,7 @@ def cut_and_sensitivity(cuts, events, bin_edges, r_scale,
         return 1
 
     sensitivities = irf.calculate_sensitivity(
-        cut_events, bin_edges, alpha=r_scale**-2)
+        cut_events, bin_edges, alpha=r_scale**-2, n_draws=10)
 
     try:
         return sensitivities["Sensitivity"][0]
@@ -38,11 +38,11 @@ def cut_and_sensitivity(cuts, events, bin_edges, r_scale,
 
 def minimise_sensitivity_per_bin(events, bin_edges, r_scale):
 
-    cut_events = {}
     cut_energies, ga_cuts, xi_cuts = [], [], []
     for elow, ehigh, emid in zip(bin_edges[:-1], bin_edges[1:],
                                  np.sqrt(bin_edges[:-1] * bin_edges[1:])):
 
+        cut_events = {}
         for key in events:
             cut_events[key] = events[key][
                 (events[key][irf.reco_energy_name] > elow) &
@@ -51,7 +51,7 @@ def minimise_sensitivity_per_bin(events, bin_edges, r_scale):
         res = optimize.differential_evolution(
             cut_and_sensitivity,
             bounds=[(.5, 1), (0, 0.5)],
-            maxiter=2000, popsize=20,
+            maxiter=1000, popsize=10,
             args=(cut_events,
                   np.array([elow / irf.energy_unit,
                             ehigh / irf.energy_unit]) * irf.energy_unit,
@@ -64,3 +64,14 @@ def minimise_sensitivity_per_bin(events, bin_edges, r_scale):
             xi_cuts.append(res.x[1])
 
     return cut_energies, ga_cuts, xi_cuts
+
+
+def apply_cuts(events, cuts=None):
+    cuts = cuts or []
+    cut_events = {}
+    for c, t in events.items():
+        mask = np.ones(len(t), dtype=bool)
+        for cut in cuts:
+            mask = mask & t[cut]
+        cut_events[c] = t[mask]
+    return cut_events

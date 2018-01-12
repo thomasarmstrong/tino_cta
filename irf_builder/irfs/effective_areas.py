@@ -67,12 +67,11 @@ def get_effective_areas(events, generator_areas,
     # generate the histograms for the energy distributions of the selected
     # events
     for cl in events:
-        mc_energy = events[cl][irf.mc_energy_name].values * irf.energy_unit
+        mc_energy = events[cl][irf.mc_energy_name]
         selected_events[cl] = np.histogram(mc_energy, bins=irf.e_bin_edges)[0]
 
         # the effective areas are the selection efficiencies per energy bin multiplied
-        # by the area in which the Monte Carlo events have been generated
-        # in
+        # by the area in which the Monte Carlo events have been generated in
         efficiency = selected_events[cl] / generator_energy_hists[cl]
         effective_areas[cl] = efficiency * generator_areas[cl]
 
@@ -109,7 +108,7 @@ def plot_effective_areas(eff_areas):
                  marker=irf.plotting.channel_marker_map[cl])
     plt.legend()
     plt.title("Effective Areas")
-    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
+    plt.xlabel(r"$E_\mathrm{MC}$ / TeV")
     plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
     plt.gca().set_xscale("log")
     plt.gca().set_yscale("log")

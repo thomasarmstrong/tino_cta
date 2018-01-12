@@ -1,19 +1,18 @@
 import numpy as np
 from astropy import units as u
 
-# pull in some weights into top-level namespace
-from .irfs import effective_areas
-
-from .meta_data_loader import load_meta_data_from_yml as load_meta_data
-
-from .weighting import unbinned_wrapper as make_weights
-
-from .event_selection import minimise_sensitivity_per_bin as optimise_cuts
-
-from .sensitivity import point_source_sensitivity as calculate_sensitivity
-
+# pull in sub-modules
 from . import spectra
 from . import plotting
+from . import event_selection
+
+
+# pull in and rename some functions into top-level namespace for easier access
+from .meta_data_loader import load_meta_data_from_yml as load_meta_data
+from .weighting import unbinned_wrapper as make_weights
+from .irfs import effective_areas
+from .event_selection import minimise_sensitivity_per_bin as optimise_cuts
+from .sensitivity import point_source_sensitivity as calculate_sensitivity
 
 
 # the header entries for the simulated and reconstructed energies
