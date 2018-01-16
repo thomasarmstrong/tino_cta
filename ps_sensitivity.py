@@ -41,7 +41,7 @@ e_bin_fine_centres = (e_bin_fine_edges[:-1] + e_bin_fine_edges[1:]) / 2
 edges_gammas = np.logspace(np.log10(0.003), np.log10(330), 28) * u.TeV
 edges_proton = np.logspace(np.log10(0.004), np.log10(600), 30) * u.TeV
 edges_electr = np.logspace(np.log10(0.003), np.log10(330), 28) * u.TeV
-sensitivity_energy_bin_edges = np.logspace(-2.1, 2.5, 24) * u.TeV
+sensitivity_energy_bin_edges = np.logspace(-2, 2.5, 24) * u.TeV
 # sensitivity_energy_bin_edges = np.logspace(-2, 2.5, 17)*u.TeV
 edges_gammas = sensitivity_energy_bin_edges
 edges_proton = sensitivity_energy_bin_edges
@@ -341,7 +341,7 @@ def make_sensitivity_plots(SensCalc, sensitivities,
                       sensitivities_t["Energy"].to(u.erg)**2)[1:-2] /
                      (sensitivities["Sensitivity"].to(flux_unit) *
                       sensitivities["Energy"].to(u.erg)**2)[1:-2],
-                     label=r"Sens$_\text{tail} / Sens$_\text{wave}$"
+                     label=r"Sens$_\mathrm{tail}$ / Sens$_\mathrm{wave}$"
                      )
         plt.legend()
         # plt.semilogx(sensitivities_t["Energy"].to(energy_unit)[[0, -1]],
@@ -976,6 +976,14 @@ def make_performance_plots(events_w, events_t, which=None):
                 plt.pause(.1)
 
 
+# ##     ##    ###    #### ##    ##
+# ###   ###   ## ##    ##  ###   ##
+# #### ####  ##   ##   ##  ####  ##
+# ## ### ## ##     ##  ##  ## ## ##
+# ##     ## #########  ##  ##  ####
+# ##     ## ##     ##  ##  ##   ###
+# ##     ## ##     ## #### ##    ##
+
 if __name__ == "__main__":
     np.random.seed(19)
 
@@ -987,24 +995,23 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # load meta data from disk
-    meta_data_file = "{}/meta_data.yml".format(args.indir)
+    meta_data_file = f"{args.indir}/meta_data.yml"
     meta_data = yaml.load(open(meta_data_file), Loader=Loader)
     meta_units = meta_data["units"]
     meta_gammas = meta_data["gamma"]
     meta_proton = meta_data["proton"]
     meta_electr = meta_data["electron"]
 
-    meta_gammas["n_simulated"] = meta_gammas["n_files"] * meta_gammas["n_events_per_file"]
-    meta_proton["n_simulated"] = meta_proton["n_files"] * meta_proton["n_events_per_file"]
-    meta_electr["n_simulated"] = meta_electr["n_files"] * meta_electr["n_events_per_file"]
+    for meta in [meta_gammas, meta_proton, meta_electr]:
+        meta["n_simulated"] = meta["n_files"] * meta["n_events_per_file"]
 
     # reading the reconstructed and classified events
     gammas_w_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
-            args.indir, args.infile, "gamma", "wave"), "reco_events")
+        args.indir, args.infile, "gamma", "wave"), "reco_events")
     proton_w_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
-            args.indir, args.infile, "proton", "wave"), "reco_events")
+        args.indir, args.infile, "proton", "wave"), "reco_events")
     electr_w_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
-            args.indir, args.infile, "electron", "wave"), "reco_events")
+        args.indir, args.infile, "electron", "wave"), "reco_events")
 
     # FUCK FUCK FUCK FUCK
     correct_off_angle(gammas_w_o)
@@ -1014,21 +1021,40 @@ if __name__ == "__main__":
     events_w = {"reco": {'g': gammas_w_o, 'p': proton_w_o, 'e': electr_w_o}}
 
     gammas_t_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
-            args.indir, args.infile, "gamma", "tail"), "reco_events")
+        args.indir, args.infile, "gamma", "tail"), "reco_events")
     proton_t_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
-            args.indir, args.infile, "proton", "tail"), "reco_events")
+        args.indir, args.infile, "proton", "tail"), "reco_events")
     electr_t_o = pd.read_hdf("{}/{}_{}_{}.h5".format(
-            args.indir, args.infile, "electron", "tail"), "reco_events")
+        args.indir, args.infile, "electron", "tail"), "reco_events")
 
     events_t = {"reco": {'g': gammas_t_o, 'p': proton_t_o, 'e': electr_t_o}}
 
     if args.load:
-        print("reading pickled splines")
-        from sklearn.externals import joblib
-        spline_w_ga = joblib.load("./data/spline_wave_gammaness.pkl")
-        spline_w_xi = joblib.load("./data/spline_wave_xi.pkl")
-        spline_t_ga = joblib.load("./data/spline_tail_gammaness.pkl")
-        spline_t_xi = joblib.load("./data/spline_tail_xi.pkl")
+        # print("reading pickled splines")
+        # from sklearn.externals import joblib
+        # spline_w_ga = joblib.load("./data/spline_wave_gammaness.pkl")
+        # spline_w_xi = joblib.load("./data/spline_wave_xi.pkl")
+        # spline_t_ga = joblib.load("./data/spline_tail_gammaness.pkl")
+        # spline_t_xi = joblib.load("./data/spline_tail_xi.pkl")
+        print("loading cut values")
+        from astropy.table import Table
+        cut_energies, ga_cuts, xi_cuts = {}, {}, {}
+        spline_ga, spline_xi = {}, {}
+        for mode in ["wave", "tail"]:
+            cuts = Table.read(f"scripts/cut_values_{mode}.tex", format="ascii.latex")
+            cut_energies[mode] = cuts["Energy"]
+            ga_cuts[mode] = cuts["gammaness"]
+            xi_cuts[mode] = cuts["xi"]
+
+            spline_ga[mode] = interpolate.splrep(cut_energies[mode],
+                                                 ga_cuts[mode], k=1)
+            spline_xi[mode] = interpolate.splrep(cut_energies[mode],
+                                                 xi_cuts[mode], k=1)
+        spline_w_ga = spline_ga["wave"]
+        spline_t_ga = spline_ga["tail"]
+        spline_w_xi = spline_xi["wave"]
+        spline_t_xi = spline_xi["tail"]
+
     else:
         print("making splines")
         cut_energies = sensitivity_energy_bin_edges[::]
@@ -1039,7 +1065,7 @@ if __name__ == "__main__":
         (spline_t_ga, ga_cuts_t), (spline_t_xi, xi_cuts_t) = \
             get_optimal_splines(events_t["reco"], cut_energies, k=1)
         print("... tailcuts done")
-    # if False:
+    if False:
         print("writing pickled splines")
         from sklearn.externals import joblib
         joblib.dump(spline_w_ga, "./data/spline_wave_gammaness.pkl")
@@ -1139,7 +1165,7 @@ if __name__ == "__main__":
              interpolate.splev(events_t[from_step][key]["reco_Energy"], spline_t_xi))]
 
     plots_dir_temp = args.plots_dir
-    for step in []: #"reco", "gammaness", "theta"]:
+    for step in []:  # "reco", "gammaness", "theta"]:
         args.plots_dir = "/".join([plots_dir_temp, step, ""])
         if not os.path.exists(args.plots_dir):
             os.makedirs(args.plots_dir)
