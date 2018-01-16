@@ -55,7 +55,7 @@ irf.meta_data = irf.load_meta_data(f"{args.indir}/{args.meta_file}")
 # reading the reconstructed and classified events
 all_events = {}
 # for mode in ["wave", "tail"]:
-for mode in ["wave"]:
+for mode in ["wave", "tail"]:
     all_events[mode] = {}
     for c, channel in irf.plotting.channel_map.items():
         all_events[mode][c] = \
@@ -90,7 +90,7 @@ if args.make_cuts:
                    format="ascii.latex")
 else:
     print("loading cut values")
-    for mode in ["wave", "tail"]:
+    for mode in all_events:
         cuts = Table.read(f"cut_values_{mode}.tex", format="ascii.latex")
         cut_energies[mode] = cuts["Energy"]
         ga_cuts[mode] = cuts["gammaness"]

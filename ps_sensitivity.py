@@ -152,7 +152,7 @@ def calculate_sensitivities(events, energy_bin_edges, alpha):
 
     SensCalc.get_sensitivity(
             alpha=alpha,
-            n_draws=-1, max_background_ratio=.05,
+            n_draws=1, max_background_ratio=.05,
             sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
 
     return SensCalc
@@ -175,7 +175,7 @@ def cut_and_sensitivity(cuts, events, energy_bin_edges, alpha):
         return 1
 
     SensCalc = calculate_sensitivities(
-            cut_events, energy_bin_edges, alpha=alpha)
+        cut_events, energy_bin_edges, n_draws=1, alpha=alpha)
 
     if len(SensCalc.sensitivities):
         return SensCalc.sensitivities["Sensitivity"][0]
