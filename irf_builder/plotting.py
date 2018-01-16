@@ -54,7 +54,7 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
     outname : string
         destination path without ending for the figure being saved
     endings : list of strings, optional (default: ["tex", "pdf", "png"])
-        list of file name endings to save the figure as; needs to be eiter "tex" or
+        list of file name endings to save the figure as; can be "tex" or
         any other ending supported and recognised by matplotlib
 
     Note
