@@ -4,6 +4,7 @@ from astropy import units as u
 # pull in sub-modules
 from . import spectra
 from . import plotting
+from . import sensitivity
 from . import event_selection
 
 
@@ -28,6 +29,11 @@ flux_unit = (u.erg * u.cm**2 * u.s)**(-1)
 sensitivity_unit = flux_unit * u.erg**2
 
 observation_time = 50 * u.h
+
+# factor by which the radial "Theta-cut" is larger for the off- than for the on-region
+r_scale = 1
+# the ratio between the area of the off-region over the on-region
+alpha = 1
 
 # define edges to sort events in
 e_bin_edges = np.logspace(-2, 2.5, 20) * u.TeV

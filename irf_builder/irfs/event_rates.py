@@ -54,7 +54,7 @@ def plot_energy_distribution(events=None, energies=None,
     plt.grid()
 
 
-def get_energy_event_rates(events, th_cuts, r_scale, e_bin_edges=None, energy_name=None):
+def get_energy_event_rates(events, th_cuts, e_bin_edges=None, energy_name=None):
     energy_name = energy_name or irf.reco_energy_name
     e_bin_edges = e_bin_edges or irf.e_bin_edges
     energy_rates = {}
@@ -62,9 +62,10 @@ def get_energy_event_rates(events, th_cuts, r_scale, e_bin_edges=None, energy_na
         counts = np.histogram(e[energy_name], bins=e_bin_edges,
                               weights=e["weight"])[0]
 
-        diff_angle = th_cuts * (1 if ch == 'g' else r_scale) * u.deg
-        angular_area = 2 * np.pi * (1 - np.cos(diff_angle)) * u.sr
-        energy_rates[ch] = counts / (angular_area * irf.observation_time).to('s*deg2')
+        angle = th_cuts * (1 if ch == 'g' else irf.r_scale) * u.deg
+        angular_area = 2 * np.pi * (1 - np.cos(angle)) * u.sr
+        energy_rates[ch] = counts / (angular_area.to(u.deg**2) *
+                                     irf.observation_time.to(u.s))
     return energy_rates
 
 
@@ -81,3 +82,4 @@ def plot_energy_event_rates(energy_rates, e_bin_edges=None):
     plt.gca().set_xscale("log")
     plt.gca().set_yscale("log")
     plt.grid()
+    plt.tight_layout()

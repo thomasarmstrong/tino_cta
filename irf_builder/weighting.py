@@ -4,7 +4,7 @@ from astropy import units as u
 import irf_builder as irf
 
 
-def unbinned(events, n_simulated_events, e_min_max, spectra,
+def unbinned(events, n_simulated_events, e_min_max, target_spectra,
              generator_areas, generator_gamma, observation_time,
              diff_angle=None, extensions=None):
     """
@@ -12,10 +12,14 @@ def unbinned(events, n_simulated_events, e_min_max, spectra,
 
     Parameters
     ----------
+    events : dictionary of tables
+        dictionary of the DL3 (?) event tables
     n_simulated_events : dictionary
         total number of simulated events for every channel
     e_min_max : dictionary of tuples
         lower and upper energy limits used in the Monte Carlo event generator
+    target_spectra : dictionary of callables
+        dictionary of the target fluxes the different channels shall be weighted to
     generator_areas : dictionary
         area within which the shower impact point has been distributed by the
         Monte Carlo event generator
@@ -38,11 +42,17 @@ def unbinned(events, n_simulated_events, e_min_max, spectra,
     # setting defaults because mutable
     diff_angle = diff_angle or {}
     extensions = extensions or {}
-    for cl, val in diff_angle.items():
-        extensions[cl] = 2 * np.pi * (1 - np.cos(diff_angle[cl])) * u.rad**2
+    for cl, angle in diff_angle.items():
+        extensions[cl] = 2 * np.pi * (1 - np.cos(angle)) * u.rad**2
 
     for cl in events:
-        mc_energy = events[cl][irf.mc_energy_name].values * irf.energy_unit
+        try:
+            # testing if table columns have units
+            events[cl][irf.mc_energy_name].unit
+            mc_energy = events[cl][irf.mc_energy_name]
+        except AttributeError:
+            # if not, add the default energy unit
+            mc_energy = events[cl][irf.mc_energy_name].values * irf.energy_unit
 
         # event weights for a flat energy distribution
         e_w = mc_energy**generator_gamma[cl] \
@@ -55,31 +65,28 @@ def unbinned(events, n_simulated_events, e_min_max, spectra,
 
         # multiply these flat event weights by the flux to get weights corresponding
         # to the number of expected events from that flux
-        events[cl]["weight"] = (e_w * spectra[cl](mc_energy)).si
+        events[cl]["weight"] = (e_w * target_spectra[cl](mc_energy)).si
 
     return events
 
 
 def unbinned_wrapper(events):
     return unbinned(
-        events, n_simulated_events={'g': irf.meta_data["gamma"]["n_simulated"],
-                                    'p': irf.meta_data["proton"]["n_simulated"],
-                                    'e': irf.meta_data["electron"]["n_simulated"]},
-        generator_areas={'g': np.pi * (irf.meta_data["gamma"]["gen_radius"] * u.m)**2,
-                         'p': np.pi * (irf.meta_data["proton"]["gen_radius"] * u.m)**2,
-                         'e': np.pi * (irf.meta_data["electron"]["gen_radius"] * u.m)**2},
+        events,
+        n_simulated_events=dict((ch, irf.meta_data[channel]["n_simulated"])
+                                for ch, channel in irf.plotting.channel_map.items()),
+        generator_areas=dict((ch,
+                              np.pi * (irf.meta_data[channel]["gen_radius"] * u.m)**2)
+                             for ch, channel in irf.plotting.channel_map.items()),
         observation_time=irf.observation_time,
-        spectra={'g': irf.spectra.crab_source_rate,
-                 'p': irf.spectra.cr_background_rate,
-                 'e': irf.spectra.electron_spectrum},
-        e_min_max={'g': (irf.meta_data["gamma"]["e_min"],
-                         irf.meta_data["gamma"]["e_max"]) * u.TeV,
-                   'p': (irf.meta_data["proton"]["e_min"],
-                         irf.meta_data["proton"]["e_max"]) * u.TeV,
-                   'e': (irf.meta_data["electron"]["e_min"],
-                         irf.meta_data["electron"]["e_max"]) * u.TeV},
-        diff_angle={'p': irf.meta_data["proton"]["diff_cone"] * u.deg,
-                    'e': irf.meta_data["electron"]["diff_cone"] * u.deg},
-        generator_gamma={'g': irf.meta_data["gamma"]["gen_gamma"],
-                         'p': irf.meta_data["proton"]["gen_gamma"],
-                         'e': irf.meta_data["electron"]["gen_gamma"]})
+        target_spectra={'g': irf.spectra.crab_source_rate,
+                        'p': irf.spectra.cr_background_rate,
+                        'e': irf.spectra.electron_spectrum},
+        e_min_max=dict((ch, (irf.meta_data[channel]["e_min"],
+                             irf.meta_data[channel]["e_max"]) * u.TeV)
+                       for ch, channel in irf.plotting.channel_map.items()),
+        diff_angle=dict((ch, irf.meta_data[channel]["diff_cone"] * u.deg)
+                        for ch, channel in irf.plotting.channel_map.items()
+                        if irf.meta_data[channel]["diff_cone"] > 0),
+        generator_gamma=dict((ch, irf.meta_data[channel]["gen_gamma"])
+                             for ch, channel in irf.plotting.channel_map.items()))

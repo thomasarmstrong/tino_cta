@@ -41,12 +41,12 @@ def get_effective_areas(events, generator_areas,
     """
 
     if (n_simulated_events is not None and generator_spectra is not None) == \
-            (generator_energy_hists):
+            (generator_energy_hists is not None):
         raise ValueError("use either (n_simulated_events and generator"
                          "_spectra) or generator_energy_hists to set the MC "
                          "generated energy spectrum -- not both")
 
-    if not generator_energy_hists:
+    if generator_energy_hists is None:
         generator_energy_hists = {}
         # generate the histograms for the energy distributions of the Monte Carlo
         # generated events given the generator spectra and the number of generated
@@ -64,8 +64,7 @@ def get_effective_areas(events, generator_areas,
     # binning according to .energy_bin_edges[cl]
     selected_events = {}
 
-    # generate the histograms for the energy distributions of the selected
-    # events
+    # generate the histograms for the energy distributions of the selected events
     for cl in events:
         mc_energy = events[cl][irf.mc_energy_name]
         selected_events[cl] = np.histogram(mc_energy, bins=irf.e_bin_edges)[0]
@@ -81,16 +80,14 @@ def get_effective_areas(events, generator_areas,
 def get_effective_areas_wrapper(events):
     return get_effective_areas(
         events,
-        generator_areas={'g': np.pi * (irf.meta_data["gamma"]["gen_radius"] * u.m)**2,
-                         'p': np.pi * (irf.meta_data["proton"]["gen_radius"] * u.m)**2,
-                         'e': np.pi * (irf.meta_data["electron"]["gen_radius"] * u.m)**2},
-        n_simulated_events={'g': irf.meta_data["gamma"]["n_simulated"],
-                            'p': irf.meta_data["proton"]["n_simulated"],
-                            'e': irf.meta_data["electron"]["n_simulated"]},
+        generator_areas=dict((ch,
+                              np.pi * (irf.meta_data[channel]["gen_radius"] * u.m)**2)
+                             for ch, channel in irf.plotting.channel_map.items()),
+        n_simulated_events=dict((ch, irf.meta_data[channel]["n_simulated"])
+                                for ch, channel in irf.plotting.channel_map.items()),
         generator_spectra={'g': e_minus_2,
                            'p': e_minus_2,
-                           'e': e_minus_2}
-    )
+                           'e': e_minus_2})
 
 
 def plot_effective_areas(eff_areas):

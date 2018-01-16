@@ -5,10 +5,12 @@ import irf_builder as irf
 
 
 def cut_and_sensitivity(cuts, events, bin_edges, r_scale,
-                        syst_nsim=True, syst_nphy=False):
+                        syst_nsim=False, syst_nphy=False):
     """ throw this into a minimiser """
     ga_cut = cuts[0]
     th_cut = cuts[1]
+
+    alpha = r_scale**-2
 
     cut_events = {}
     for key in events:
@@ -18,17 +20,18 @@ def cut_and_sensitivity(cuts, events, bin_edges, r_scale,
             (events[key]["off_angle"] < th_cut * (1 if key == 'g' else r_scale))]
 
     if syst_nsim and (len(events['g']) < 10 or
-                      len(events['g']) < (len(events['p']) + len(events['e'])) * 0.05):
+                      len(events['g']) < alpha * 0.05 *
+                      (len(events['p']) + len(events['e']))):
         return 1
 
     if syst_nphy and (np.sum(events['g']['weight']) < 10 or
                       np.sum(events['g']['weight']) <
                       (np.sum(events['p']['weight']) +
-                       np.sum(events['e']['weight'])) * 0.05):
+                       np.sum(events['e']['weight'])) * 0.05 * alpha):
         return 1
 
     sensitivities = irf.calculate_sensitivity(
-        cut_events, bin_edges, alpha=r_scale**-2, n_draws=10)
+        cut_events, bin_edges, alpha=alpha, n_draws=10)
 
     try:
         return sensitivities["Sensitivity"][0]
@@ -38,7 +41,7 @@ def cut_and_sensitivity(cuts, events, bin_edges, r_scale,
 
 def minimise_sensitivity_per_bin(events, bin_edges, r_scale):
 
-    cut_energies, ga_cuts, xi_cuts = [], [], []
+    cut_energies, ga_cuts, th_cuts = [], [], []
     for elow, ehigh, emid in zip(bin_edges[:-1], bin_edges[1:],
                                  np.sqrt(bin_edges[:-1] * bin_edges[1:])):
 
@@ -61,9 +64,9 @@ def minimise_sensitivity_per_bin(events, bin_edges, r_scale):
         if res.success:
             cut_energies.append(emid.value)
             ga_cuts.append(res.x[0])
-            xi_cuts.append(res.x[1])
+            th_cuts.append(res.x[1])
 
-    return cut_energies, ga_cuts, xi_cuts
+    return cut_energies, ga_cuts, th_cuts
 
 
 def apply_cuts(events, cuts=None):
