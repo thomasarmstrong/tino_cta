@@ -24,7 +24,8 @@ except ImportError:
 
 # pull in all the plot functions into one `plotting` namespace
 from irf_builder.sensitivity import plot_sensitivity
-from irf_builder.irfs.effective_areas import plot_effective_areas
+from irf_builder.irfs.effective_areas import (plot_effective_areas,
+                                              plot_selection_efficiencies)
 from irf_builder.irfs.energy import (plot_energy_migration_matrix, plot_rel_delta_e,
                                      plot_energy_bias, plot_energy_resolution)
 from irf_builder.irfs.event_rates import (plot_energy_distribution,
@@ -67,6 +68,31 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
             tikz_save(f"{outname}.{end}", **kwargs)
         else:
             plt.savefig(f"{outname}.{end}")
+
+
+def plot_channels_lines(data, title, ylabel, xlabel=r"$E_\mathrm{MC}$ / TeV"):
+    """generic plotting function that plots all data in a dictionary as a line plot
+
+    Parameters
+    ----------
+    data : dict of 1D arrays
+        dictionary of the data to be plotted
+    title, ylabel, xlabel : strings (defaults: xlabel=r"$E_\mathrm{MC}$ / TeV")
+        text to be put around the plot
+    """
+    for cl, dat in data.items():
+        plt.plot(irf.e_bin_centres, dat,
+                 label=irf.plotting.channel_map[cl],
+                 color=irf.plotting.channel_colour_map[cl],
+                 marker=irf.plotting.channel_marker_map[cl])
+    plt.legend()
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.gca().set_xscale("log")
+    plt.gca().set_yscale("log")
+    plt.grid()
+    plt.tight_layout()
 
 
 def plot_crab(e_bins=None, fractions=None):
