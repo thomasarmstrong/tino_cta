@@ -16,28 +16,32 @@ def get_effective_areas(events, generator_areas,
 
     Parameters
     ----------
-    generator_areas : astropy quantities
+    generator_areas : dictionary of astropy quantities
         the area for each channel within which the shower impact position was
         generated
     n_simulated_events : dictionary of integers, optional (defaults: None)
         number of events used in the MC simulation for each channel
     generator_spectra : dictionary of functors, optional (default: None)
         function object for the differential generator flux of each channel
-    generator_energy_hists : numpy arrays, optional (default: None)
+    generator_energy_hists : dictionary of numpy arrays, optional (default: None)
         energy histogram of the generated events for each channel binned according to
         `.energy_bin_edges`
 
     Returns
     -------
-    eff_area_gam, eff_area_pro : numpy arrays
-        histograms of the effective areas of gammas and protons binned according to
-        `.bin_edges_gam` and `.bin_edges_pro`
+    effective_areas : dictionary of numpy arrays
+        histograms of the effective areas of the different channels binned according to
+        `irf.e_bin_edges`
+    selection_efficiencies : dictionary of numpy arrays
+
+    selected_events : dictionary of numpy arrays
+
 
     Notes
     -----
     either give the histogram of the energy distributions at MC generator level with
     `generator_energy_hists` or create them on the fly with `n_simulated_events` and
-    `spectra`
+    `generator_spectra`
     """
 
     if (n_simulated_events is not None and generator_spectra is not None) == \
@@ -57,12 +61,16 @@ def get_effective_areas(events, generator_areas,
                 bin_edges=irf.e_bin_edges, log_e=False)
 
     # an energy-binned histogram of the effective areas
-    # binning according to .energy_bin_edges[cl]
+    # binning according to irf.e_bin_edges
     effective_areas = {}
 
     # an energy-binned histogram of the selected events
-    # binning according to .energy_bin_edges[cl]
+    # binning according to irf.e_bin_edges
     selected_events = {}
+
+    # an energy-binned histogram of the selection efficiencies
+    # binning according to irf.e_bin_edges
+    selection_efficiencies = {}
 
     # generate the histograms for the energy distributions of the selected events
     for cl in events:
@@ -71,10 +79,10 @@ def get_effective_areas(events, generator_areas,
 
         # the effective areas are the selection efficiencies per energy bin multiplied
         # by the area in which the Monte Carlo events have been generated in
-        efficiency = selected_events[cl] / generator_energy_hists[cl]
-        effective_areas[cl] = efficiency * generator_areas[cl]
+        selection_efficiencies[cl] = selected_events[cl] / generator_energy_hists[cl]
+        effective_areas[cl] = selection_efficiencies[cl] * generator_areas[cl]
 
-    return effective_areas
+    return effective_areas, selection_efficiencies, selected_events
 
 
 def get_effective_areas_wrapper(events):
@@ -98,15 +106,17 @@ def plot_effective_areas(eff_areas):
     eff_areas : dict of 1D arrays
         dictionary of the effective areas of the different channels
     """
-    for cl, a in eff_areas.items():
-        plt.plot(irf.e_bin_centres, a,
-                 label=irf.plotting.channel_map[cl],
-                 color=irf.plotting.channel_colour_map[cl],
-                 marker=irf.plotting.channel_marker_map[cl])
-    plt.legend()
-    plt.title("Effective Areas")
-    plt.xlabel(r"$E_\mathrm{MC}$ / TeV")
-    plt.ylabel(r"$A_\mathrm{eff} / \mathrm{m}^2$")
-    plt.gca().set_xscale("log")
-    plt.gca().set_yscale("log")
-    plt.grid()
+    irf.plotting.plot_channels_lines(eff_areas, title="Effective Areas",
+                                     ylabel=r"$A_\mathrm{eff} / \mathrm{m}^2$")
+
+
+def plot_selection_efficiencies(selec_effs):
+    """plots the selection efficiencies of the different channels as a line plot
+
+    Parameter
+    ---------
+    eff_areas : dict of 1D arrays
+        dictionary of the selection efficiencies of the different channels
+    """
+    irf.plotting.plot_channels_lines(selec_effs, title="selection Efficiencies",
+                                     ylabel="fraction of selected events")
