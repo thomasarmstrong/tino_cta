@@ -122,8 +122,7 @@ def correct_energy_bias(events, energy_bias):
     spline = interpolate.splrep(irf.e_bin_centres.value, energy_bias, k=1)
 
     for ch in events:
-        events[ch][irf.reco_energy_name] = \
-            events[ch][irf.reco_energy_name] * \
+        events[ch][irf.reco_energy_name] *= \
             (1 + interpolate.splev(events[ch][irf.reco_energy_name], spline))
     return events
 
