@@ -59,8 +59,11 @@ show_plots_group.add_argument('--plot_ang_res', default=False, action='store_tru
 show_plots_group.add_argument('--plot_selection', default=False, action='store_true',
                               help="display effective areas, selection efficiencies "
                                    "and number of selected events on screen")
-show_plots_group.add_argument('--plot_sens', default=False, action='store_true',
+show_plots_group.add_argument('--plot_sensitivity', default=False, action='store_true',
                               help="display sensitivity on screen")
+show_plots_group.add_argument('--plot_classification', default=False, action='store_true'
+                              , help="display plots related to event classification "
+                                     "on screen")
 
 args = parser.parse_args()
 
@@ -72,7 +75,6 @@ irf.meta_data = irf.load_meta_data(f"{args.indir}/{args.meta_file}")
 
 # reading the reconstructed and classified events
 all_events = {}
-# for mode in ["wave", "tail"]:
 for mode in ["wave", "tail"]:
     all_events[mode] = {}
     for c, channel in irf.plotting.channel_map.items():
@@ -114,18 +116,18 @@ else:
         ga_cuts[mode] = cuts["gammaness"]
         th_cuts[mode] = cuts["theta"]
 
-print("making splines")
-spline_ga, spline_xi = {}, {}
+print("making splines ...", end="")
+spline_ga, spline_th = {}, {}
 for mode in cut_energies:
     spline_ga[mode] = interpolate.splrep(cut_energies[mode], ga_cuts[mode], k=args.k)
-    spline_xi[mode] = interpolate.splrep(cut_energies[mode], th_cuts[mode], k=args.k)
+    spline_th[mode] = interpolate.splrep(cut_energies[mode], th_cuts[mode], k=args.k)
 
     if args.plot_cuts or args.plot_all:
         fig = plt.figure(figsize=(10, 5))
         plt.suptitle(mode)
         for i, (cut_var, spline, ylabel) in enumerate(zip(
                 [ga_cuts[mode], th_cuts[mode]],
-                [spline_ga[mode], spline_xi[mode]],
+                [spline_ga[mode], spline_th[mode]],
                 ["gammaness", r"$\Theta_\mathrm{cut} / ^\circ$"])):
             fig.add_subplot(121 + i)
             plt.plot(cut_energies[mode] / u.TeV, cut_var,
@@ -143,6 +145,7 @@ for mode in cut_energies:
                 plt.plot(irf.e_bin_centres_fine[[0, -1]], [1, 1],
                          ls="dashed", color="lightgray")
         plt.pause(.1)
+print(" done")
 
 # evaluating cuts and add columns with flags
 for mode, events in all_events.items():
@@ -152,7 +155,7 @@ for mode, events in all_events.items():
                                                          spline_ga[mode])
         events[key]["pass_theta"] = \
             events[key]["off_angle"] < (1 if key == 'g' else irf.r_scale) * \
-            interpolate.splev(events[key]["reco_Energy"], spline_xi[mode])
+            interpolate.splev(events[key]["reco_Energy"], spline_th[mode])
 
 
 # applying the cuts
@@ -169,6 +172,22 @@ gamma_events = dict((m, irf.event_selection.apply_cuts(e, ["pass_gammaness"]))
 energy_resolution = irf.irfs.energy.get_energy_resolution(cut_events["wave"])
 energy_bias = irf.irfs.energy.get_energy_bias(cut_events["wave"])
 irf.irfs.energy.correct_energy_bias(cut_events["wave"], energy_bias['g'])
+
+
+# finally, calculate the sensitivity
+sensitivity = {}
+for mode, events in cut_events.items():
+    sensitivity[mode] = irf.calculate_sensitivity(
+        events, irf.e_bin_edges, alpha=irf.alpha, n_draws=1)
+
+
+# ########  ##        #######  ########  ######
+# ##     ## ##       ##     ##    ##    ##    ##
+# ##     ## ##       ##     ##    ##    ##
+# ########  ##       ##     ##    ##     ######
+# ##        ##       ##     ##    ##          ##
+# ##        ##       ##     ##    ##    ##    ##
+# ##        ########  #######     ##     ######
 
 if args.plot_energy or args.plot_all:
     plt.figure(figsize=(10, 5))
@@ -244,16 +263,17 @@ if args.plot_ang_res or args.plot_all:
     irf.plotting.plot_angular_resolution_violin(gamma_events["wave"])
 
 
-sensitivity = {}
-for mode, events in cut_events.items():
-    sensitivity[mode] = irf.calculate_sensitivity(
-        events, irf.e_bin_edges, alpha=irf.alpha, n_draws=1)
-
-if args.plot_sens or args.plot_all:
+if args.plot_sensitivity or args.plot_all:
     plt.figure()
     irf.plotting.plot_crab()
     irf.plotting.plot_reference()
     irf.plotting.plot_sensitivity(sensitivity)
 
+
+if args.plot_classification or args.plot_all:
+    plt.figure()
+    false_p_rate, true_p_rate, roc_area_under_curve = \
+        irf.irfs.classification.get_roc_curve(all_events["wave"])
+    irf.plotting.plot_roc_curve(false_p_rate, true_p_rate, roc_area_under_curve)
 
 plt.show()
