@@ -51,14 +51,8 @@ def get_effective_areas(events, generator_areas,
                          "generated energy spectrum -- not both")
 
     if generator_energy_hists is None:
-        generator_energy_hists = {}
-        # generate the histograms for the energy distributions of the Monte Carlo
-        # generated events given the generator spectra and the number of generated
-        # events
-        for cl in events:
-            generator_energy_hists[cl] = make_mock_event_rate(
-                generator_spectra[cl], norm=n_simulated_events[cl],
-                bin_edges=irf.e_bin_edges, log_e=False)
+        generator_energy_hists = \
+            irf.irfs.event_rates.get_simulated_energy_distribution_wrapper(events)
 
     # an energy-binned histogram of the effective areas
     # binning according to irf.e_bin_edges
