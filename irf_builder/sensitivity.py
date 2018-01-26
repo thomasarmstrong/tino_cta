@@ -158,8 +158,8 @@ def point_source_sensitivity(events, energy_bin_edges,
         # energy bin
         for cl in events:
             # single out the events in this energy bin
-            e_mask = (events[cl][irf.reco_energy_name] > elow) & \
-                     (events[cl][irf.reco_energy_name] < ehigh)
+            e_mask = (events[cl][irf.energy_names["reco"]] > elow) & \
+                     (events[cl][irf.energy_names["reco"]] < ehigh)
 
             if cl in signal_list:
                 S_events[0] += sum_events(e_mask)

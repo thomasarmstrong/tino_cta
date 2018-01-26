@@ -13,19 +13,19 @@ def get_energy_migration_matrix(events):
         `energy_matrix[mc_energy_bin][reco_energy_bin]`
     """
     energy_matrix = {}
-    for i, (channel, evt) in enumerate(events.items()):
-        counts, _, _ = np.histogram2d(evt[irf.mc_energy_name],
-                                      evt[irf.reco_energy_name],
+    for i, (ch, ev) in enumerate(events.items()):
+        counts, _, _ = np.histogram2d(ev[irf.energy_names["mc"]],
+                                      ev[irf.energy_names["reco"]],
                                       bins=(irf.e_bin_edges_fine,
                                             irf.e_bin_edges_fine))
-        energy_matrix[channel] = counts
+        energy_matrix[ch] = counts
     return energy_matrix
 
 
 def plot_energy_migration_matrix(energy_matrix, fig=None):
     if fig is None:
         fig = plt.gcf()
-    for i, (channel, e_matrix) in enumerate(energy_matrix.items()):
+    for i, (ch, e_matrix) in enumerate(energy_matrix.items()):
         ax = fig.add_subplot(131 + i)
 
         ax.pcolormesh(irf.e_bin_edges_fine.value,
@@ -33,7 +33,7 @@ def plot_energy_migration_matrix(energy_matrix, fig=None):
         plt.plot(irf.e_bin_edges_fine.value[[0, -1]],
                  irf.e_bin_edges_fine.value[[0, -1]],
                  color="darkgreen")
-        plt.title(irf.plotting.channel_map[channel])
+        plt.title(irf.plotting.channel_map[ch])
         ax.set_xlabel(r"$E_\mathrm{reco}$ / TeV")
         if i == 0:
             ax.set_ylabel(r"$E_\mathrm{MC}$ / TeV")
@@ -42,25 +42,30 @@ def plot_energy_migration_matrix(energy_matrix, fig=None):
         plt.grid()
 
     plt.tight_layout()
-    # plt.subplots_adjust(top=0.921, bottom=0.148,
-    #                     left=0.093, right=0.982,
-    #                     hspace=0.2, wspace=0.27)
 
 
-def get_rel_delta_e(events, ref_energy_name=None):
-    ref_energy_name = ref_energy_name or irf.reco_energy_name
+def get_rel_delta_e(events, ref_energy="reco"):
+    ref_energy_name = irf.energy_names[ref_energy]
     rel_delta_e = {}
     for ch in events:
         counts, _, _ = np.histogram2d(
             events[ch][ref_energy_name],
-            (events[ch][irf.reco_energy_name] - events[ch][irf.mc_energy_name]) /
+            (events[ch][irf.energy_names["reco"]] - events[ch][irf.energy_names["mc"]]) /
             events[ch][ref_energy_name],
             bins=(irf.e_bin_edges_fine, np.linspace(-1, 1, 100)))
         rel_delta_e[ch] = counts
-    return rel_delta_e
+
+    if ref_energy == "reco":
+        xlabel = r"$E_\mathrm{reco}$ / TeV"
+        ylabel = r"$(E_\mathrm{reco} - E_\mathrm{MC}) / E_\mathrm{reco}$"
+    else:
+        xlabel = r"$E_\mathrm{MC}$ / TeV"
+        ylabel = r"$(E_\mathrm{reco} - E_\mathrm{MC}) / E_\mathrm{MC}$"
+
+    return rel_delta_e, xlabel, ylabel
 
 
-def plot_rel_delta_e(rel_delta_e, fig=None):
+def plot_rel_delta_e(rel_delta_e, xlabel=None, ylabel=None, fig=None):
     if fig is None:
         fig = plt.gcf()
     for i, ch in enumerate(rel_delta_e):
@@ -71,16 +76,13 @@ def plot_rel_delta_e(rel_delta_e, fig=None):
         plt.plot(irf.e_bin_edges_fine.value[[0, -1]], [0, 0],
                  color="darkgreen")
         plt.title(irf.plotting.channel_map[ch])
-        ax.set_xlabel(r"$E_\mathrm{reco}$ / TeV")
+        ax.set_xlabel(xlabel)
         if i == 0:
-            ax.set_ylabel(r"$(E_\mathrm{reco} - E_\mathrm{MC}) / E_\mathrm{reco}$")
+            ax.set_ylabel(ylabel)
         ax.set_xscale("log")
         plt.grid()
 
     plt.tight_layout()
-    # plt.subplots_adjust(top=0.921, bottom=0.148,
-    #                     left=0.105, right=0.982,
-    #                     hspace=0.2, wspace=0.332)
 
 
 def get_energy_bias(events):
@@ -89,12 +91,12 @@ def get_energy_bias(events):
         median_bias = np.zeros_like(irf.e_bin_centres.value)
         for i, (e_low, e_high) in enumerate(zip(irf.e_bin_edges[:-1] / irf.energy_unit,
                                                 irf.e_bin_edges[1:] / irf.energy_unit)):
-            bias = (e[irf.mc_energy_name] / e[irf.reco_energy_name]) - 1
+            bias = (e[irf.energy_names["mc"]] / e[irf.energy_names["reco"]]) - 1
 
             try:
                 median_bias[i] = np.percentile(
-                    bias[(e[irf.reco_energy_name] > e_low) &
-                         (e[irf.reco_energy_name] < e_high)],
+                    bias[(e[irf.energy_names["reco"]] > e_low) &
+                         (e[irf.energy_names["reco"]] < e_high)],
                     50)
             except IndexError:
                 pass
@@ -116,26 +118,26 @@ def plot_energy_bias(energy_bias, channels=None):
     plt.grid()
 
 
-def correct_energy_bias(events, energy_bias):
+def correct_energy_bias(events, energy_bias, k=1):
     from scipy import interpolate
 
-    spline = interpolate.splrep(irf.e_bin_centres.value, energy_bias, k=1)
+    spline = interpolate.splrep(irf.e_bin_centres.value, energy_bias, k=k)
 
     for ch in events:
-        events[ch][irf.reco_energy_name] *= \
-            (1 + interpolate.splev(events[ch][irf.reco_energy_name], spline))
+        events[ch][irf.energy_names["reco"]] *= \
+            (1 + interpolate.splev(events[ch][irf.energy_names["reco"]], spline))
     return events
 
 
-def get_energy_resolution(events, ref_energy_name=None, percentile=68):
-    ref_energy_name = ref_energy_name or irf.reco_energy_name
+def get_energy_resolution(events, ref_energy="reco", percentile=68):
+    ref_energy_name = irf.energy_names[ref_energy]
     energy_resolution = {}
     for ch, e in events.items():
         resolution = np.zeros_like(irf.e_bin_centres.value)
         for i, (e_low, e_high) in enumerate(zip(irf.e_bin_edges[:-1] / irf.energy_unit,
                                                 irf.e_bin_edges[1:] / irf.energy_unit)):
-            rel_error = np.abs(e[irf.mc_energy_name] - e[irf.reco_energy_name]) / \
-                e[ref_energy_name]
+            rel_error = np.abs(e[irf.energy_names["mc"]] -
+                               e[irf.energy_names["reco"]]) / e[ref_energy_name]
 
             try:
                 resolution[i] = np.percentile(

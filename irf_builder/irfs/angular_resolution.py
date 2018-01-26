@@ -38,16 +38,21 @@ def percentiles(values, bin_values, bin_edges, percentile):
     return percentiles_binned.T
 
 
-def get_angular_resolution(events, percent=68):
+def get_angular_resolution(events, percent=68, ref_energy="reco"):
     xi_xx = {}
     for channel, values in events.items():
             xi_xx[channel] = percentiles(values[irf.offset_angle_name],
-                                         values[irf.mc_energy_name],
+                                         values[irf.energy_names[ref_energy]],
                                          irf.e_bin_edges.value, percent)
-    return xi_xx
+    if ref_energy == "reco":
+        xlabel = r"$E_\mathrm{reco}$ / TeV"
+    else:
+        xlabel = r"$E_\mathrm{MC}$ / TeV"
+
+    return xi_xx, xlabel
 
 
-def plot_angular_resolution(xi):
+def plot_angular_resolution(xi, xlabel=None):
     # for cl, a in xi.items():
     for cl, a in [('g', xi['g'])]:
         plt.plot(irf.e_bin_centres, a,
@@ -56,7 +61,7 @@ def plot_angular_resolution(xi):
                  marker=irf.plotting.channel_marker_map[cl])
     plt.legend()
     plt.title("angular resolution")
-    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
+    plt.xlabel(xlabel)
     plt.ylabel(r"$\xi_{68} / ^\circ$")
     plt.gca().set_xscale("log")
     plt.gca().set_yscale("log")
@@ -65,7 +70,7 @@ def plot_angular_resolution(xi):
 
 def plot_angular_resolution_violin(events):
 
-    energy = events['g'][irf.mc_energy_name]
+    energy = events['g'][irf.energy_names["mc"]]
     off_angle = events['g'][irf.offset_angle_name]
 
     # to plot the violins, sort the ordinate values into a dictionary

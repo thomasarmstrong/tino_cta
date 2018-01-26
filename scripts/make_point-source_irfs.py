@@ -61,9 +61,9 @@ show_plots_group.add_argument('--plot_selection', default=False, action='store_t
                                    "and number of selected events on screen")
 show_plots_group.add_argument('--plot_sensitivity', default=False, action='store_true',
                               help="display sensitivity on screen")
-show_plots_group.add_argument('--plot_classification', default=False, action='store_true'
-                              , help="display plots related to event classification "
-                                     "on screen")
+show_plots_group.add_argument('--plot_classification', default=False, action='store_true',
+                              help="display plots related to event classification "
+                                   "on screen")
 
 args = parser.parse_args()
 
@@ -116,7 +116,7 @@ else:
         ga_cuts[mode] = cuts["gammaness"]
         th_cuts[mode] = cuts["theta"]
 
-print("making splines ...", end="")
+
 spline_ga, spline_th = {}, {}
 for mode in cut_energies:
     spline_ga[mode] = interpolate.splrep(cut_energies[mode], ga_cuts[mode], k=args.k)
@@ -136,7 +136,7 @@ for mode in cut_energies:
                      interpolate.splev(irf.e_bin_centres_fine, spline),
                      label="spline fit")
 
-            plt.xlabel("Energy / TeV")
+            plt.xlabel(r"$E_\mathrm{MC}$ / TeV")
             plt.ylabel(ylabel)
             plt.gca().set_xscale("log")
             plt.legend()
@@ -144,18 +144,21 @@ for mode in cut_energies:
             if i == 0:
                 plt.plot(irf.e_bin_centres_fine[[0, -1]], [1, 1],
                          ls="dashed", color="lightgray")
+        plt.subplots_adjust(top=0.91, bottom=0.148,
+                            left=0.077, right=0.981,
+                            hspace=0.2, wspace=0.204)
         plt.pause(.1)
-print(" done")
+
 
 # evaluating cuts and add columns with flags
 for mode, events in all_events.items():
     for key in events:
         events[key]["pass_gammaness"] = \
-            events[key]["gammaness"] > interpolate.splev(events[key]["reco_Energy"],
-                                                         spline_ga[mode])
+            events[key]["gammaness"] > interpolate.splev(
+                events[key][irf.energy_names['reco']], spline_ga[mode])
         events[key]["pass_theta"] = \
             events[key]["off_angle"] < (1 if key == 'g' else irf.r_scale) * \
-            interpolate.splev(events[key]["reco_Energy"], spline_th[mode])
+            interpolate.splev(events[key][irf.energy_names['reco']], spline_th[mode])
 
 
 # applying the cuts
@@ -195,17 +198,14 @@ if args.plot_energy or args.plot_all:
     irf.plotting.plot_energy_migration_matrix(energy_matrix)
 
     plt.figure(figsize=(10, 5))
-    rel_delta_e_reco = irf.irfs.energy.get_rel_delta_e(cut_events["wave"])
-    irf.plotting.plot_rel_delta_e(rel_delta_e_reco)
+    rel_delta_e_reco, xlabel, ylabel = \
+        irf.irfs.energy.get_rel_delta_e(cut_events["wave"])
+    irf.plotting.plot_rel_delta_e(rel_delta_e_reco, xlabel, ylabel)
 
     plt.figure(figsize=(10, 5))
-    rel_delta_e_mc = irf.irfs.energy.get_rel_delta_e(cut_events["wave"],
-                                                     irf.mc_energy_name)
-    irf.plotting.plot_rel_delta_e(rel_delta_e_mc)
-    for i, ax in enumerate(plt.gcf().axes):
-        ax.set_xlabel(r"$E_\mathrm{MC}$ / TeV")
-        if i == 0:
-            ax.set_ylabel(r"$(E_\mathrm{reco} - E_\mathrm{MC}) / E_\mathrm{MC}$")
+    rel_delta_e_mc, xlabel, ylabel = \
+        irf.irfs.energy.get_rel_delta_e(cut_events["wave"], ref_energy="mc")
+    irf.plotting.plot_rel_delta_e(rel_delta_e_mc, xlabel, ylabel)
 
     plt.figure()
     irf.plotting.plot_energy_resolution(energy_resolution)
@@ -226,9 +226,14 @@ if args.plot_energy or args.plot_all:
 
 if args.plot_rates or args.plot_all:
     plt.figure()
-    energy_rates = irf.irfs.event_rates.get_energy_event_rates(
+    energy_fluxes, xlabel = irf.irfs.event_rates.get_energy_event_fluxes(
         cut_events["wave"], th_cuts["wave"])
-    irf.plotting.plot_energy_event_rates(energy_rates)
+    irf.plotting.plot_energy_event_fluxes(energy_fluxes, xlabel=xlabel)
+
+    plt.figure()
+    energy_rates, xlabel = \
+        irf.irfs.event_rates.get_energy_event_rates(cut_events["wave"])
+    irf.plotting.plot_energy_event_rates(energy_rates, xlabel=xlabel)
 
 
 if args.plot_selection or args.plot_all:
@@ -256,8 +261,8 @@ if args.plot_ang_res or args.plot_all:
     irf.plotting.plot_theta_square(th_sq, bin_e)
 
     plt.figure()
-    xi = irf.irfs.angular_resolution.get_angular_resolution(gamma_events["wave"])
-    irf.plotting.plot_angular_resolution(xi)
+    xi, xlabel = irf.irfs.angular_resolution.get_angular_resolution(gamma_events["wave"])
+    irf.plotting.plot_angular_resolution(xi, xlabel)
 
     plt.figure()
     irf.plotting.plot_angular_resolution_violin(gamma_events["wave"])

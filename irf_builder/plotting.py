@@ -30,7 +30,8 @@ from irf_builder.irfs.effective_areas import (plot_effective_areas,
 from irf_builder.irfs.energy import (plot_energy_migration_matrix, plot_rel_delta_e,
                                      plot_energy_bias, plot_energy_resolution)
 from irf_builder.irfs.event_rates import (plot_energy_distribution,
-                                          plot_energy_event_rates)
+                                          plot_energy_event_rates,
+                                          plot_energy_event_fluxes)
 from irf_builder.irfs.angular_resolution import (plot_theta_square,
                                                  plot_angular_resolution,
                                                  plot_angular_resolution_violin)
@@ -71,7 +72,7 @@ def save_fig(outname, endings=["tex", "pdf", "png"], **kwargs):
             plt.savefig(f"{outname}.{end}")
 
 
-def plot_channels_lines(data, title, ylabel, xlabel=r"$E_\mathrm{MC}$ / TeV"):
+def plot_channels_lines(data, ylabel, title=None, xlabel=r"$E_\mathrm{MC}$ / TeV"):
     """generic plotting function that plots all data in a dictionary as a line plot
 
     Parameters
@@ -87,7 +88,8 @@ def plot_channels_lines(data, title, ylabel, xlabel=r"$E_\mathrm{MC}$ / TeV"):
                  color=irf.plotting.channel_colour_map[cl],
                  marker=irf.plotting.channel_marker_map[cl])
     plt.legend()
-    plt.title(title)
+    if title:
+        plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.gca().set_xscale("log")

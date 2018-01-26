@@ -48,11 +48,11 @@ def unbinned(events, n_simulated_events, e_min_max, target_spectra,
     for cl in events:
         try:
             # testing if table columns have units
-            events[cl][irf.mc_energy_name].unit
-            mc_energy = events[cl][irf.mc_energy_name]
+            events[cl][irf.energy_names["mc"]].unit
+            mc_energy = events[cl][irf.energy_names["mc"]]
         except AttributeError:
             # if not, add the default energy unit
-            mc_energy = events[cl][irf.mc_energy_name].values * irf.energy_unit
+            mc_energy = events[cl][irf.energy_names["mc"]].values * irf.energy_unit
 
         # event weights for a flat energy distribution
         e_w = mc_energy**generator_gamma[cl] \

@@ -18,8 +18,8 @@ from .sensitivity import point_source_sensitivity as calculate_sensitivity
 
 # the header entries for the simulated and reconstructed energies
 # and offset angle
-mc_energy_name = "MC_Energy"
-reco_energy_name = "reco_Energy"
+energy_names = {"mc": "MC_Energy",
+                "reco": "reco_Energy"}
 offset_angle_name = "off_angle"
 
 # your favourite units here
@@ -32,7 +32,7 @@ observation_time = 50 * u.h
 
 # factor by which the radial "Theta-cut" is larger for the off- than for the on-region
 r_scale = 1
-# the ratio between the area of the off-region over the on-region
+# the ratio between the area of the off-region over the on-region (alpha = r_scale**-2)
 alpha = 1
 
 # define edges to sort events in

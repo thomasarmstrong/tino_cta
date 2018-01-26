@@ -120,40 +120,39 @@ def correct_off_angle(data, origin=None):
     data["off_angle"] = off_angles.to(u.deg)
 
 
-def calculate_sensitivities(events, energy_bin_edges, alpha):
+def calculate_sensitivities(events, energy_bin_edges, alpha, n_draws=1):
     SensCalc = SensitivityPointSource(
-            reco_energies={'g': events['g']['MC_Energy'].values * u.TeV,
-                           'p': events['p']['MC_Energy'].values * u.TeV,
-                           'e': events['e']['MC_Energy'].values * u.TeV},
-            mc_energies={'g': events['g']['MC_Energy'].values * u.TeV,
-                         'p': events['p']['MC_Energy'].values * u.TeV,
-                         'e': events['e']['MC_Energy'].values * u.TeV},
-            flux_unit=flux_unit)
+        reco_energies={'g': events['g']['MC_Energy'].values * u.TeV,
+                       'p': events['p']['MC_Energy'].values * u.TeV,
+                       'e': events['e']['MC_Energy'].values * u.TeV},
+        mc_energies={'g': events['g']['MC_Energy'].values * u.TeV,
+                     'p': events['p']['MC_Energy'].values * u.TeV,
+                     'e': events['e']['MC_Energy'].values * u.TeV},
+        flux_unit=flux_unit)
 
     SensCalc.generate_event_weights(
-            n_simulated_events={'g': meta_gammas["n_simulated"],
-                                'p': meta_proton["n_simulated"],
-                                'e': meta_electr["n_simulated"]},
-            generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
-                             'p': np.pi * (meta_proton["gen_radius"] * u.m)**2,
-                             'e': np.pi * (meta_electr["gen_radius"] * u.m)**2},
-            observation_time=observation_time,
-            spectra={'g': crab_source_rate,
-                     'p': cr_background_rate,
-                     'e': electron_spectrum},
-            e_min_max={'g': (meta_gammas["e_min"], meta_gammas["e_max"]) * u.TeV,
-                       'p': (meta_proton["e_min"], meta_proton["e_max"]) * u.TeV,
-                       'e': (meta_electr["e_min"], meta_electr["e_max"]) * u.TeV},
-            extensions={'p': meta_proton["diff_cone"] * u.deg,
-                        'e': meta_electr["diff_cone"] * u.deg},
-            generator_gamma={'g': meta_gammas["gen_gamma"],
-                             'p': meta_proton["gen_gamma"],
-                             'e': meta_electr["gen_gamma"]})
+        n_simulated_events={'g': meta_gammas["n_simulated"],
+                            'p': meta_proton["n_simulated"],
+                            'e': meta_electr["n_simulated"]},
+        generator_areas={'g': np.pi * (meta_gammas["gen_radius"] * u.m)**2,
+                         'p': np.pi * (meta_proton["gen_radius"] * u.m)**2,
+                         'e': np.pi * (meta_electr["gen_radius"] * u.m)**2},
+        observation_time=observation_time,
+        spectra={'g': crab_source_rate,
+                 'p': cr_background_rate,
+                 'e': electron_spectrum},
+        e_min_max={'g': (meta_gammas["e_min"], meta_gammas["e_max"]) * u.TeV,
+                   'p': (meta_proton["e_min"], meta_proton["e_max"]) * u.TeV,
+                   'e': (meta_electr["e_min"], meta_electr["e_max"]) * u.TeV},
+        extensions={'p': meta_proton["diff_cone"] * u.deg,
+                    'e': meta_electr["diff_cone"] * u.deg},
+        generator_gamma={'g': meta_gammas["gen_gamma"],
+                         'p': meta_proton["gen_gamma"],
+                         'e': meta_electr["gen_gamma"]})
 
     SensCalc.get_sensitivity(
-            alpha=alpha,
-            n_draws=1, max_background_ratio=.05,
-            sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
+        alpha=alpha, n_draws=n_draws, max_background_ratio=.05,
+        sensitivity_energy_bin_edges=sensitivity_energy_bin_edges)
 
     return SensCalc
 
@@ -183,7 +182,7 @@ def cut_and_sensitivity(cuts, events, energy_bin_edges, alpha):
         return 1
 
 
-def get_optimal_splines(events, optimise_bin_edges, k=3):
+def get_optimal_splines(events, optimise_bin_edges, k=1):
 
     cut_events = {}
     cut_energies, ga_cuts, xi_cuts = [], [], []
@@ -198,13 +197,13 @@ def get_optimal_splines(events, optimise_bin_edges, k=3):
                 (events[key]["MC_Energy"] < ehigh)]
 
         res = optimize.differential_evolution(
-                cut_and_sensitivity,
-                bounds=[(.5, 1), (0, 0.5)],
-                maxiter=2000, popsize=20,
-                args=(cut_events,
-                      np.array([elow / energy_unit,
-                                ehigh / energy_unit]) * energy_unit,
-                      alpha)
+            cut_and_sensitivity,
+            bounds=[(.5, 1), (0, 0.5)],
+            maxiter=1000, popsize=10,
+            args=(cut_events,
+                  np.array([elow / energy_unit,
+                            ehigh / energy_unit]) * energy_unit,
+                  alpha)
         )
 
         if res.success:
@@ -828,7 +827,8 @@ def make_performance_plots(events_w, events_t, which=None):
         bin_widths['p'] = np.diff(edges_proton)
         bin_widths['e'] = np.diff(edges_electr)
 
-        for events, mode in zip([events_t, events_w], ["tailcuts", "wavelets"]):
+        # for events, mode in zip([events_t, events_w], ["tailcuts", "wavelets"]):
+        for events, mode in zip([events_w], ["wavelets"]):
             SensCalc = SensitivityPointSource(
                     reco_energies={'g': events['g']['reco_Energy'].values * u.TeV,
                                    'p': events['p']['reco_Energy'].values * u.TeV,
@@ -881,6 +881,7 @@ def make_performance_plots(events_w, events_t, which=None):
                                        'e': e_minus_2},
                     )
             SensCalc.get_expected_events()
+            SensCalc.get_expected_events_in_reco_e()
 
             if not which or "gen_spectrum" in which:
                 # plot MC generator spectrum and selected spectrum
@@ -923,6 +924,7 @@ def make_performance_plots(events_w, events_t, which=None):
                     )
                 plt.gca().set_xscale("log")
                 plt.gca().set_yscale("log")
+                plt.title(mode)
 
                 plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
                 plt.ylabel("expected events in {}".format(observation_time))
@@ -937,7 +939,7 @@ def make_performance_plots(events_w, events_t, which=None):
                 for key in ['p', 'e', 'g']:
                     plt.plot(
                         bin_centres[key] / energy_unit,
-                        (SensCalc.exp_events_per_energy_bin[key] /
+                        (SensCalc.exp_events_per_reco_energy_bin[key] /
                          observation_time).to(u.s**-1).value *
                         (1 if key == 'g' else alpha),
                         label=channel_map[key],
@@ -950,6 +952,7 @@ def make_performance_plots(events_w, events_t, which=None):
 
                 plt.xlabel(r"$E_\mathrm{MC} / \mathrm{" + str(energy_unit) + "}$")
                 plt.ylabel(r"event rate: $\frac{dN}{dt} / \mathrm{s}^{-1}$")
+                plt.title(mode)
                 plt.legend()
                 if args.write:
                     save_fig(args.plots_dir + "event_rate_" + mode)
@@ -1030,30 +1033,31 @@ if __name__ == "__main__":
     events_t = {"reco": {'g': gammas_t_o, 'p': proton_t_o, 'e': electr_t_o}}
 
     if args.load:
-        # print("reading pickled splines")
-        # from sklearn.externals import joblib
-        # spline_w_ga = joblib.load("./data/spline_wave_gammaness.pkl")
-        # spline_w_xi = joblib.load("./data/spline_wave_xi.pkl")
-        # spline_t_ga = joblib.load("./data/spline_tail_gammaness.pkl")
-        # spline_t_xi = joblib.load("./data/spline_tail_xi.pkl")
+        print("reading pickled splines")
+        from sklearn.externals import joblib
+        spline_w_ga = joblib.load("./data/spline_wave_gammaness.pkl")
+        spline_w_xi = joblib.load("./data/spline_wave_xi.pkl")
+        spline_t_ga = joblib.load("./data/spline_tail_gammaness.pkl")
+        spline_t_xi = joblib.load("./data/spline_tail_xi.pkl")
+
         print("loading cut values")
         from astropy.table import Table
-        cut_energies, ga_cuts, xi_cuts = {}, {}, {}
-        spline_ga, spline_xi = {}, {}
+        cut_energies, ga_cuts, th_cuts = {}, {}, {}
+        spline_ga, spline_th = {}, {}
         for mode in ["wave", "tail"]:
             cuts = Table.read(f"scripts/cut_values_{mode}.tex", format="ascii.latex")
             cut_energies[mode] = cuts["Energy"]
             ga_cuts[mode] = cuts["gammaness"]
-            xi_cuts[mode] = cuts["xi"]
+            th_cuts[mode] = cuts["theta"]
 
             spline_ga[mode] = interpolate.splrep(cut_energies[mode],
                                                  ga_cuts[mode], k=1)
-            spline_xi[mode] = interpolate.splrep(cut_energies[mode],
-                                                 xi_cuts[mode], k=1)
+            spline_th[mode] = interpolate.splrep(cut_energies[mode],
+                                                 th_cuts[mode], k=1)
         spline_w_ga = spline_ga["wave"]
         spline_t_ga = spline_ga["tail"]
-        spline_w_xi = spline_xi["wave"]
-        spline_t_xi = spline_xi["tail"]
+        spline_w_th = spline_th["wave"]
+        spline_t_th = spline_th["tail"]
 
     else:
         print("making splines")
@@ -1063,9 +1067,10 @@ if __name__ == "__main__":
             get_optimal_splines(events_w["reco"], cut_energies, k=1)
         print("... wavelets done")
         (spline_t_ga, ga_cuts_t), (spline_t_xi, xi_cuts_t) = \
-            get_optimal_splines(events_t["reco"], cut_energies, k=1)
+            (spline_w_ga, ga_cuts_w), (spline_w_xi, xi_cuts_w)
+        # get_optimal_splines(events_t["reco"], cut_energies, k=1)
         print("... tailcuts done")
-    if False:
+
         print("writing pickled splines")
         from sklearn.externals import joblib
         joblib.dump(spline_w_ga, "./data/spline_wave_gammaness.pkl")
@@ -1073,6 +1078,7 @@ if __name__ == "__main__":
         joblib.dump(spline_t_ga, "./data/spline_tail_gammaness.pkl")
         joblib.dump(spline_t_xi, "./data/spline_tail_xi.pkl")
 
+    if False:
         # wave
         fig = plt.figure(figsize=(10, 5))
         fig.add_subplot(121)
@@ -1165,12 +1171,14 @@ if __name__ == "__main__":
              interpolate.splev(events_t[from_step][key]["reco_Energy"], spline_t_xi))]
 
     plots_dir_temp = args.plots_dir
-    for step in []:  # "reco", "gammaness", "theta"]:
+    for step in ["theta"]:  # "reco", "gammaness", "theta"]:
         args.plots_dir = "/".join([plots_dir_temp, step, ""])
         if not os.path.exists(args.plots_dir):
             os.makedirs(args.plots_dir)
         make_performance_plots(events_w[step],
-                               events_t[step], which=["effective_areas"])
+                               events_t[step],
+                               which=["gen_spectrum", "expected_events",
+                                      "effective_areas", "event_rate"])
 
     # plt.show()
 
@@ -1193,9 +1201,9 @@ if __name__ == "__main__":
     # plt.show()
 
     sens_w = calculate_sensitivities(
-        events_w["theta"], sensitivity_energy_bin_edges, alpha=alpha)
+        events_w["theta"], sensitivity_energy_bin_edges, alpha=alpha, n_draws=1)
     sens_t = calculate_sensitivities(
-        events_t["theta"], sensitivity_energy_bin_edges, alpha=alpha)
+        events_t["theta"], sensitivity_energy_bin_edges, alpha=alpha, n_draws=1)
 
     make_sensitivity_plots(sens_w, sens_w.sensitivities,
                            sens_t, sens_t.sensitivities)

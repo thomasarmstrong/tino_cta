@@ -31,18 +31,16 @@ def get_simulated_energy_distribution_wrapper(events):
     )
 
 
-def plot_energy_distribution(events=None, energies=None,
-                             e_bin_edges=None):
+def plot_energy_distribution(events=None, energies=None):
     if (events is None) == (energies is None):
         raise ValueError("please provide one of `events` or `energies`, but not both")
 
     if energies is None:
-        energies = dict((c, e[irf.mc_energy_name]) for c, e in events.items())
-
-    e_bin_edges = e_bin_edges or irf.e_bin_edges
+        energies = dict((c, e[irf.energy_names["mc"]]) for c, e in events.items())
 
     for ch, energy in energies.items():
-        plt.bar(e_bin_edges[:-1], energy, width=np.diff(e_bin_edges), align='edge',
+        plt.bar(irf.e_bin_edges[:-1], energy, width=np.diff(irf.e_bin_edges),
+                align='edge',
                 label=irf.plotting.channel_map[ch],
                 color=irf.plotting.channel_colour_map[ch],
                 alpha=.5)
@@ -54,32 +52,51 @@ def plot_energy_distribution(events=None, energies=None,
     plt.grid()
 
 
-def get_energy_event_rates(events, th_cuts, e_bin_edges=None, energy_name=None):
-    energy_name = energy_name or irf.reco_energy_name
-    e_bin_edges = e_bin_edges or irf.e_bin_edges
+def get_energy_event_rates(events, ref_energy="reco"):
     energy_rates = {}
-    for ch, e in events.items():
-        counts = np.histogram(e[energy_name], bins=e_bin_edges,
-                              weights=e["weight"])[0]
+    for ch, ev in events.items():
+        counts = np.histogram(ev["reco_Energy"],
+                              bins=irf.e_bin_edges,
+                              weights=ev["weight"])[0]
+
+        energy_rates[ch] = counts / irf.observation_time.to(u.s)
+        if ch != 'g':
+            energy_rates[ch] *= irf.alpha
+
+    if ref_energy == "reco":
+        xlabel = r"$E_\mathrm{reco}$ / TeV"
+    else:
+        xlabel = r"$E_\mathrm{MC}$ / TeV"
+
+    return energy_rates, xlabel
+
+
+def get_energy_event_fluxes(events, th_cuts, ref_energy="reco"):
+    energy_fluxes = {}
+    for ch, ev in events.items():
+        counts = np.histogram(ev[irf.energy_names[ref_energy]],
+                              bins=irf.e_bin_edges,
+                              weights=ev["weight"])[0]
 
         angle = th_cuts * (1 if ch == 'g' else irf.r_scale) * u.deg
         angular_area = 2 * np.pi * (1 - np.cos(angle)) * u.sr
-        energy_rates[ch] = counts / (angular_area.to(u.deg**2) *
-                                     irf.observation_time.to(u.s))
-    return energy_rates
+        energy_fluxes[ch] = counts / (angular_area.to(u.deg**2) *
+                                      irf.observation_time.to(u.s))
+    if ref_energy == "reco":
+        xlabel = r"$E_\mathrm{reco}$ / TeV"
+    else:
+        xlabel = r"$E_\mathrm{MC}$ / TeV"
+
+    return energy_fluxes, xlabel
 
 
-def plot_energy_event_rates(energy_rates, e_bin_edges=None):
-    e_bin_edges = e_bin_edges or irf.e_bin_edges
-    for ch in energy_rates:
-        plt.plot(e_bin_edges[:-1], energy_rates[ch],
-                 label=irf.plotting.channel_map[ch],
-                 color=irf.plotting.channel_colour_map[ch],
-                 )
-    plt.legend()
-    plt.xlabel(r"$E_\mathrm{reco}$ / TeV")
-    plt.ylabel(r"event rate $f / (\mathrm{s}^{-1}*\mathrm{deg}^{-2})$")
-    plt.gca().set_xscale("log")
-    plt.gca().set_yscale("log")
-    plt.grid()
-    plt.tight_layout()
+def plot_energy_event_fluxes(energy_fluxes, xlabel=None):
+    irf.plotting.plot_channels_lines(
+        energy_fluxes, xlabel=xlabel,
+        ylabel=r"event flux $f / (\mathrm{s}^{-1}*\mathrm{deg}^{-2})$")
+
+
+def plot_energy_event_rates(energy_rates, xlabel=None):
+    irf.plotting.plot_channels_lines(
+        energy_rates, xlabel=xlabel,
+        ylabel=r"on-region event rates $f / (\mathrm{s}^{-1})$")

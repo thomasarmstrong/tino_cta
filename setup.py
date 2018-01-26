@@ -6,6 +6,8 @@ setup(
     description='A useful module',
     author='Tino Michael',
     author_email='tino.michael@cea.fr',
-    packages=['tino_cta', 'irf_builder'],  # same as name
-    install_requires=[],  # external packages as dependencies
+    packages=['tino_cta', 'irf_builder'],
+    scripts=['scripts/make_point-source_irfs.py'],
+    install_requires=['numpy', 'scipy', 'scikit-learn', 'astropy', 'pandas', 'yaml',
+                      'matplotlib']
 )
