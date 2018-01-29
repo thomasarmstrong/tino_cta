@@ -9,5 +9,5 @@ setup(
     packages=['tino_cta', 'irf_builder'],
     scripts=['scripts/make_point-source_irfs.py'],
     install_requires=['numpy', 'scipy', 'scikit-learn', 'astropy', 'pandas', 'yaml',
-                      'matplotlib']
+                      'matplotlib', 'gammapy']
 )
