@@ -20,7 +20,7 @@ def plot_theta_square(theta_square, bin_edges):
         plt.bar(bin_edges[:-1], theta_square[channel], width=np.diff(bin_edges),
                 align='edge', color=irf.plotting.channel_colour_map[channel],
                 label=irf.plotting.channel_map[channel], alpha=.3)
-    plt.xlabel(r"$\theta^2 / {^\circ}^2$")
+    plt.xlabel(r"$\theta^2 / {}^{\circ^2}$")
     plt.ylabel("event counts")
     plt.legend()
 

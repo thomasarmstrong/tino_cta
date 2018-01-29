@@ -14,7 +14,7 @@ def get_simulated_energy_distribution(generator_spectra, n_simulated_events):
     return generator_energy_hists
 
 
-def get_simulated_energy_distribution_wrapper(events):
+def get_simulated_energy_distribution_wrapper(events=None):
     """
     Notes
     -----

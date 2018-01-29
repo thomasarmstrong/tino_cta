@@ -67,14 +67,14 @@ def get_effective_areas(events, generator_areas,
     selection_efficiencies = {}
 
     # generate the histograms for the energy distributions of the selected events
-    for cl in events:
-        mc_energy = events[cl][irf.energy_names["mc"]]
-        selected_events[cl] = np.histogram(mc_energy, bins=irf.e_bin_edges)[0]
+    for ch in events:
+        mc_energy = events[ch][irf.energy_names["mc"]]
+        selected_events[ch] = np.histogram(mc_energy, bins=irf.e_bin_edges)[0]
 
         # the effective areas are the selection efficiencies per energy bin multiplied
         # by the area in which the Monte Carlo events have been generated in
-        selection_efficiencies[cl] = selected_events[cl] / generator_energy_hists[cl]
-        effective_areas[cl] = selection_efficiencies[cl] * generator_areas[cl]
+        selection_efficiencies[ch] = selected_events[ch] / generator_energy_hists[ch]
+        effective_areas[ch] = selection_efficiencies[ch] * generator_areas[ch]
 
     return effective_areas, selection_efficiencies, selected_events
 
