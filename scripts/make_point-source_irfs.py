@@ -87,8 +87,10 @@ for c in irf.plotting.channel_map:
 
 
 # adding a "weight" column to the data tables
-for events in all_events.values():
-    irf.make_weights(events)
+for mode, events in all_events.items():
+    # irf.make_weights(events)
+    effective_areas, _, selected_events = irf.irfs.get_effective_areas(events)
+    irf.weighting.binned_wrapper(events, effective_areas, selected_events)
 
 
 # # # # # #
@@ -166,9 +168,18 @@ cut_events = dict(
     (m, irf.event_selection.apply_cuts(e, ["pass_gammaness", "pass_theta"]))
     for m, e in all_events.items())
 
+gamma_events = dict(
+    (m, irf.event_selection.apply_cuts(e, ["pass_gammaness"]))
+    for m, e in all_events.items())
 
-gamma_events = dict((m, irf.event_selection.apply_cuts(e, ["pass_gammaness"]))
-                    for m, e in all_events.items())
+
+for step, evs in {"reco": all_events, "theta": cut_events}.items():
+    print(f"\nselected MC events at step {step}:")
+    for ch, ev in evs["wave"].items():
+        print(f"{ch}: {len(ev)}")
+    print(f"expected weighted events at step {step}:")
+    for ch, ev in evs["wave"].items():
+        print(f"{ch}: " + str(np.sum(ev["weight"])))
 
 
 # measure and correct for the energy bias
