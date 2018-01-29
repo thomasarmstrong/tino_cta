@@ -42,30 +42,30 @@ def unbinned(events, n_simulated_events, e_min_max, target_spectra,
     # setting defaults because mutable
     diff_angle = diff_angle or {}
     extensions = extensions or {}
-    for cl, angle in diff_angle.items():
-        extensions[cl] = 2 * np.pi * (1 - np.cos(angle)) * u.rad**2
+    for ch, angle in diff_angle.items():
+        extensions[ch] = 2 * np.pi * (1 - np.cos(angle)) * u.rad**2
 
-    for cl in events:
+    for ch in events:
         try:
             # testing if table columns have units
-            events[cl][irf.energy_names["mc"]].unit
-            mc_energy = events[cl][irf.energy_names["mc"]]
+            events[ch][irf.energy_names["mc"]].unit
+            mc_energy = events[ch][irf.energy_names["mc"]]
         except AttributeError:
             # if not, add the default energy unit
-            mc_energy = events[cl][irf.energy_names["mc"]].values * irf.energy_unit
+            mc_energy = events[ch][irf.energy_names["mc"]].values * irf.energy_unit
 
         # event weights for a flat energy distribution
-        e_w = mc_energy**generator_gamma[cl] \
-            * (e_min_max[cl][1]**(1 - generator_gamma[cl]) -
-               e_min_max[cl][0]**(1 - generator_gamma[cl])) / \
-              (1 - generator_gamma[cl]) \
-            * generator_areas[cl] \
-            * (extensions[cl] if (cl in extensions) else 1) \
-            * observation_time / n_simulated_events[cl]
+        e_w = mc_energy**generator_gamma[ch] \
+            * (e_min_max[ch][1]**(1 - generator_gamma[ch]) -
+               e_min_max[ch][0]**(1 - generator_gamma[ch])) / \
+              (1 - generator_gamma[ch]) \
+            * generator_areas[ch] \
+            * (extensions[ch] if (cl in extensions) else 1) \
+            * observation_time / n_simulated_events[ch]
 
         # multiply these flat event weights by the flux to get weights corresponding
         # to the number of expected events from that flux
-        events[cl]["weight"] = (e_w * target_spectra[cl](mc_energy)).si
+        events[ch]["weight"] = (e_w * target_spectra[ch](mc_energy)).si
 
     return events
 
@@ -90,3 +90,43 @@ def unbinned_wrapper(events):
                         if irf.meta_data[channel]["diff_cone"] > 0),
         generator_gamma=dict((ch, irf.meta_data[channel]["gen_gamma"])
                              for ch, channel in irf.plotting.channel_map.items()))
+
+
+def binned(events, effective_areas, selected_events, spectra, observation_time,
+           diff_angle={}, extensions={}):
+
+    # setting defaults because mutable
+    diff_angle = diff_angle or {}
+    extensions = extensions or {}
+    for ch, angle in diff_angle.items():
+        extensions[ch] = 2 * np.pi * (1 - np.cos(angle)) * u.rad**2
+
+    for ch in events:
+        event_rate = irf.spectra.make_mock_event_rate(
+            spectra[ch], log_e=False, bin_edges=irf.e_bin_edges)
+        if ch in extensions:
+            event_rate *= extensions[ch]
+
+        exp_events_per_energy_bin = (event_rate * observation_time *
+                                     effective_areas[ch]).si
+
+        weights = (exp_events_per_energy_bin / selected_events[ch]).si
+        event_weights = weights[np.clip(
+                                np.digitize(events[ch][irf.energy_names["mc"]],
+                                            irf.e_bin_edges) - 1,
+                                0, len(irf.e_bin_edges) - 2)]
+
+        events[ch]["weight"] = np.array(event_weights)
+
+
+def binned_wrapper(events, effective_areas, selected_events):
+    return binned(
+        events=events, effective_areas=effective_areas, selected_events=selected_events,
+        observation_time=irf.observation_time,
+        spectra={'g': irf.spectra.crab_source_rate,
+                 'p': irf.spectra.cr_background_rate,
+                 'e': irf.spectra.electron_spectrum},
+        diff_angle=dict((ch, irf.meta_data[channel]["diff_cone"] * u.deg)
+                        for ch, channel in irf.plotting.channel_map.items()
+                        if irf.meta_data[channel]["diff_cone"] > 0)
+    )
