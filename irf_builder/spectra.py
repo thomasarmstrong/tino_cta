@@ -2,68 +2,74 @@ import numpy as np
 from astropy import units as u
 import scipy.integrate as integrate
 
+from gammapy.spectrum.cosmic_ray import cosmic_ray_flux
+from gammapy.spectrum.crab import CrabSpectrum
+
 
 __all__ = ["crab_source_rate",
            "cr_background_rate",
            "electron_spectrum"]
 
 
-def crab_source_rate(energy):
-    '''
-    function for a pseudo-Crab point-source rate:
-        dN/dE = 3e-7  * (E/TeV)**-2.5 / (TeV * m² * s)
-    (watch out: unbroken power law... not really true)
-    norm and spectral index reverse engineered from HESS plot...
+# def crab_source_rate(energy):
+#     '''
+#     function for a pseudo-Crab point-source rate:
+#         dN/dE = 3e-7  * (E/TeV)**-2.5 / (TeV * m² * s)
+#     (watch out: unbroken power law... not really true)
+#     norm and spectral index reverse engineered from HESS plot...
+#
+#     Parameters
+#     ----------
+#     energy : astropy quantity
+#         energy for which the rate is desired
+#
+#     Returns
+#     -------
+#     flux : astropy quantity
+#         differential flux at E
+#
+#     '''
+#     return 3e-7 * (energy / u.TeV)**-2.5 / (u.TeV * u.m**2 * u.s)
+#
+#
+# def cr_background_rate(energy):
+#     '''
+#     function for the Cosmic Ray background rate:
+#         dN/dE = 0.215 * (E/TeV)**-8./3 / (TeV * m² * s * sr)
+#     (simple power law, no knee/ankle)
+#     norm and spectral index reverse engineered from "random" CR plot...
+#
+#     Parameters
+#     ----------
+#     energy : astropy quantity
+#         energy for which the rate is desired
+#
+#     Returns
+#     -------
+#     flux : astropy quantity
+#         differential flux at E
+#
+#     '''
+#     return 100 * 0.1**(8. / 3) * (energy / u.TeV)**(-8. / 3) / \
+#         (u.TeV * u.m**2 * u.s * u.sr)
 
-    Parameters
-    ----------
-    energy : astropy quantity
-        energy for which the rate is desired
 
-    Returns
-    -------
-    flux : astropy quantity
-        differential flux at E
-
-    '''
-    return 3e-7 * (energy / u.TeV)**-2.5 / (u.TeV * u.m**2 * u.s)
+def crab_source_rate_gammapy(energy, ref='magic_lp'):
+    crab = CrabSpectrum(ref).model
+    return crab(energy)
 
 
-def cr_background_rate(energy):
-    '''
-    function for the Cosmic Ray background rate:
-        dN/dE = 0.215 * (E/TeV)**-8./3 / (TeV * m² * s * sr)
-    (simple power law, no knee/ankle)
-    norm and spectral index reverse engineered from "random" CR plot...
-
-    Parameters
-    ----------
-    energy : astropy quantity
-        energy for which the rate is desired
-
-    Returns
-    -------
-    flux : astropy quantity
-        differential flux at E
-
-    '''
-    return 100 * 0.1**(8. / 3) * (energy / u.TeV)**(-8. / 3) / \
-        (u.TeV * u.m**2 * u.s * u.sr)
+def cr_background_rate_gammapy(energy):
+    return cosmic_ray_flux(energy, particle="proton")
 
 
-def electron_spectrum(e_true_tev):
-    """Cosmic-Ray Electron spectrum CTA version, with Fermi Shoulder, in
-    units of :math:`\mathrm{TeV^{-1} s^{-1} m^{-2} sr^{-1}}`
+def electron_spectrum_gammapy(energy):
+    return cosmic_ray_flux(energy, particle="electron")
 
-    .. math::
-       {dN \over dE dA dt d\Omega} =
 
-    """
-    e_true_tev /= u.TeV
-    number = (6.85e-5 * e_true_tev**-3.21 +
-              3.18e-3 / (e_true_tev * 0.776 * np.sqrt(2 * np.pi)) *
-              np.exp(-0.5 * (np.log(e_true_tev / 0.107) / 0.776)**2))
-    return number * u.Unit("TeV**-1 s**-1 m**-2 sr**-1")
+crab_source_rate = crab_source_rate_gammapy
+cr_background_rate = cr_background_rate_gammapy
+electron_spectrum = electron_spectrum_gammapy
 
 
 def e_minus_2(energy, unit=u.TeV):
@@ -111,7 +117,11 @@ def make_mock_event_rate(spectrum, bin_edges, log_e=False, norm=None):
         """
         `scipy.integrate` does not like units during integration. use this as a quick fix
         """
-        return spectrum(e).value
+        try:
+            return spectrum(e).value
+        except ValueError:
+            # in case `spectrum` function insists on unified energy
+            return spectrum(e * u.TeV).value
 
     rates = []
     if log_e:
