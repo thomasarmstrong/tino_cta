@@ -60,7 +60,7 @@ def unbinned(events, n_simulated_events, e_min_max, target_spectra,
                e_min_max[ch][0]**(1 - generator_gamma[ch])) / \
               (1 - generator_gamma[ch]) \
             * generator_areas[ch] \
-            * (extensions[ch] if (cl in extensions) else 1) \
+            * (extensions[ch] if (ch in extensions) else 1) \
             * observation_time / n_simulated_events[ch]
 
         # multiply these flat event weights by the flux to get weights corresponding
@@ -107,16 +107,14 @@ def binned(events, effective_areas, selected_events, spectra, observation_time,
         if ch in extensions:
             event_rate *= extensions[ch]
 
-        exp_events_per_energy_bin = (event_rate * observation_time *
-                                     effective_areas[ch]).si
+        exp_events_per_energy_bin = event_rate * observation_time * effective_areas[ch]
+        bin_weights = (exp_events_per_energy_bin / selected_events[ch]).si
+        event_weights = bin_weights[
+            np.clip(np.digitize(events[ch][irf.energy_names["mc"]],
+                                irf.e_bin_edges) - 1,
+                    0, len(irf.e_bin_edges) - 2)]
 
-        weights = (exp_events_per_energy_bin / selected_events[ch]).si
-        event_weights = weights[np.clip(
-                                np.digitize(events[ch][irf.energy_names["mc"]],
-                                            irf.e_bin_edges) - 1,
-                                0, len(irf.e_bin_edges) - 2)]
-
-        events[ch]["weight"] = np.array(event_weights)
+        events[ch]["weight"] = event_weights
 
 
 def binned_wrapper(events, effective_areas, selected_events):
