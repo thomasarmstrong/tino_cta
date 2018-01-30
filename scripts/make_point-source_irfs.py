@@ -88,10 +88,14 @@ for c in irf.plotting.channel_map:
 
 # adding a "weight" column to the data tables
 for mode, events in all_events.items():
-    # irf.make_weights(events)
-    effective_areas, _, selected_events = irf.irfs.get_effective_areas(events)
-    irf.weighting.binned_wrapper(events, effective_areas, selected_events)
-
+    irf.make_weights(events)
+    # for ch in events:
+    #     events[ch]["weight_unbinned"] = events[ch]["weight"]
+    # effective_areas, _, selected_events = irf.irfs.get_effective_areas(events)
+    # irf.weighting.binned_wrapper(events, effective_areas, selected_events)
+    # for ch, ev in events.items():
+    #     print(ch)
+    #     print(events[ch].loc[:, ["MC_Energy", "weight", "weight_unbinned"]])
 
 # # # # # #
 # determine optimal bin-by-bin cut values and fit splines to them
@@ -154,13 +158,13 @@ for mode in cut_energies:
 
 # evaluating cuts and add columns with flags
 for mode, events in all_events.items():
-    for key in events:
-        events[key]["pass_gammaness"] = \
-            events[key]["gammaness"] > interpolate.splev(
-                events[key][irf.energy_names['reco']], spline_ga[mode])
-        events[key]["pass_theta"] = \
-            events[key]["off_angle"] < (1 if key == 'g' else irf.r_scale) * \
-            interpolate.splev(events[key][irf.energy_names['reco']], spline_th[mode])
+    for ch, ev in events.items():
+        ev["pass_gammaness"] = \
+            ev["gammaness"] > interpolate.splev(
+                ev[irf.energy_names['reco']], spline_ga[mode])
+        ev["pass_theta"] = \
+            ev["off_angle"] < (1 if ch == 'g' else irf.r_scale) * \
+            interpolate.splev(ev[irf.energy_names['reco']], spline_th[mode])
 
 
 # applying the cuts
@@ -173,7 +177,9 @@ gamma_events = dict(
     for m, e in all_events.items())
 
 
-for step, evs in {"reco": all_events, "theta": cut_events}.items():
+for step, evs in {"reco": all_events,
+                  "gammaness": gamma_events,
+                  "theta": cut_events}.items():
     print(f"\nselected MC events at step {step}:")
     for ch, ev in evs["wave"].items():
         print(f"{ch}: {len(ev)}")
@@ -192,7 +198,7 @@ irf.irfs.energy.correct_energy_bias(cut_events["wave"], energy_bias['g'])
 sensitivity = {}
 for mode, events in cut_events.items():
     sensitivity[mode] = irf.calculate_sensitivity(
-        events, irf.e_bin_edges, alpha=irf.alpha, n_draws=1)
+        events, irf.e_bin_edges, alpha=irf.alpha, n_draws=500)
 
 
 # ########  ##        #######  ########  ######
