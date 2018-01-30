@@ -1,5 +1,7 @@
 import numpy as np
 from astropy import units as u
+from astropy.units.core import UnitTypeError
+
 import scipy.integrate as integrate
 
 from gammapy.spectrum.cosmic_ray import cosmic_ray_flux
@@ -9,49 +11,6 @@ from gammapy.spectrum.crab import CrabSpectrum
 __all__ = ["crab_source_rate",
            "cr_background_rate",
            "electron_spectrum"]
-
-
-# def crab_source_rate(energy):
-#     '''
-#     function for a pseudo-Crab point-source rate:
-#         dN/dE = 3e-7  * (E/TeV)**-2.5 / (TeV * m² * s)
-#     (watch out: unbroken power law... not really true)
-#     norm and spectral index reverse engineered from HESS plot...
-#
-#     Parameters
-#     ----------
-#     energy : astropy quantity
-#         energy for which the rate is desired
-#
-#     Returns
-#     -------
-#     flux : astropy quantity
-#         differential flux at E
-#
-#     '''
-#     return 3e-7 * (energy / u.TeV)**-2.5 / (u.TeV * u.m**2 * u.s)
-#
-#
-# def cr_background_rate(energy):
-#     '''
-#     function for the Cosmic Ray background rate:
-#         dN/dE = 0.215 * (E/TeV)**-8./3 / (TeV * m² * s * sr)
-#     (simple power law, no knee/ankle)
-#     norm and spectral index reverse engineered from "random" CR plot...
-#
-#     Parameters
-#     ----------
-#     energy : astropy quantity
-#         energy for which the rate is desired
-#
-#     Returns
-#     -------
-#     flux : astropy quantity
-#         differential flux at E
-#
-#     '''
-#     return 100 * 0.1**(8. / 3) * (energy / u.TeV)**(-8. / 3) / \
-#         (u.TeV * u.m**2 * u.s * u.sr)
 
 
 def crab_source_rate_gammapy(energy, ref='magic_lp'):
@@ -119,7 +78,7 @@ def make_mock_event_rate(spectrum, bin_edges, log_e=False, norm=None):
         """
         try:
             return spectrum(e).value
-        except ValueError:
+        except UnitTypeError:
             # in case `spectrum` function insists on unified energy
             return spectrum(e * u.TeV).value
 
