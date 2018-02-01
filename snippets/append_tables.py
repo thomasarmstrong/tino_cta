@@ -8,13 +8,13 @@ import glob
 # PyTables
 try:
     import tables as tb
-except:
+except ImportError:
     print("no pytables installed?")
 
 # pandas data frames
 try:
     import pandas as pd
-except:
+except ImportError:
     print("no pandas installed?")
 
 
@@ -28,7 +28,7 @@ def merge_list_of_pytables(filename_list, destination):
 
         if i == 0:
             pyt_table = pyt_infile.copy_node(
-                    where='/', name='reco_events', newparent=outfile.root)
+                where='/', name='reco_events', newparent=outfile.root)
 
         else:
             pyt_table_t = pyt_infile.root.reco_events
@@ -63,11 +63,11 @@ if __name__ == "__main__":
         for channel in ["gamma", "proton"]:
             for mode in ["wave", "tail"]:
                 filename = "{}/{}/{}_{}_{}_*.h5".format(
-                        args.indir, mode,
-                        args.infiles_base,
-                        channel, mode)
+                    args.indir, mode,
+                    args.infiles_base,
+                    channel, mode)
                 merge_list_of_pandas(glob.glob(filename),
                                      filename.replace("_*", ""))
     else:
         merge_list_of_pytables(
-                glob.glob(args.indir+args.infiles_base+"*.h5"), args.outfile)
+            glob.glob(f"{args.indir}{args.infiles_base}*.h5"), args.outfile)
