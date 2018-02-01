@@ -54,16 +54,16 @@ def main():
                                 '_{mode}_{cam_id}_{regressor}.pkl')
     parser.add_argument('-o', '--outfile', type=str, default="",
                         help="location to write the classified events to.")
-    parser.add_argument('--wave_dir',  type=str, default=None,
+    parser.add_argument('--wave_dir', type=str, default=None,
                         help="directory where to find mr_filter. "
                              "if not set look in $PATH")
-    parser.add_argument('--wave_temp_dir',  type=str, default='/tmp/', help="directory "
+    parser.add_argument('--wave_temp_dir', type=str, default='/tmp/', help="directory "
                         "where mr_filter to store the temporary fits files")
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('--proton',  action='store_true',
+    group.add_argument('--proton', action='store_true',
                        help="do protons instead of gammas")
-    group.add_argument('--electron',  action='store_true',
+    group.add_argument('--electron', action='store_true',
                        help="do electrons instead of gammas")
 
     args = parser.parse_args()

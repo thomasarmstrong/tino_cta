@@ -39,9 +39,9 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--outfile', type=str, required=True)
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('--proton',  action='store_true',
+    group.add_argument('--proton', action='store_true',
                        help="do protons instead of gammas")
-    group.add_argument('--electron',  action='store_true',
+    group.add_argument('--electron', action='store_true',
                        help="do electrons instead of gammas")
 
     args = parser.parse_args()
@@ -78,14 +78,14 @@ if __name__ == "__main__":
     shower_reco = HillasReconstructor()
 
     preper = EventPreparer(
-                cleaner=cleaner,
-                hillas_parameters=hillas_parameters,
-                shower_reco=shower_reco,
-                event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
-                # event/image cuts:
-                allowed_cam_ids=[],
-                min_ntel=2,
-                min_charge=args.min_charge, min_pixel=3)
+        cleaner=cleaner,
+        hillas_parameters=hillas_parameters,
+        shower_reco=shower_reco,
+        event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
+        # event/image cuts:
+        allowed_cam_ids=[],
+        min_ntel=2,
+        min_charge=args.min_charge, min_pixel=3)
 
     # catch ctr-c signal to exit current loop and still display results
     signal_handler = SignalHandler()

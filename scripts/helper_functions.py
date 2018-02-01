@@ -44,7 +44,7 @@ class SignalHandler():
 def convert_astropy_array(arr, unit=None):
     if unit is None:
         unit = arr[0].unit
-    return np.array([a.to(unit).value for a in arr])*unit
+    return np.array([a.to(unit).value for a in arr]) * unit
 
 
 def make_argparser():
@@ -55,11 +55,11 @@ def make_argparser():
                         help="maximum number of events considered per file")
     parser.add_argument('-c', '--min_charge', type=int, default=0,
                         help="minimum charge per telescope after cleaning")
-    parser.add_argument('-i', '--indir',   type=str,
+    parser.add_argument('-i', '--indir', type=str,
                         default=expandvars("$HOME/Data/cta/Prod3b/Paranal"))
-    parser.add_argument('-f', '--infile_list',   type=str, default="", nargs='*',
+    parser.add_argument('-f', '--infile_list', type=str, default="", nargs='*',
                         help="give a specific list of files to run on")
-    parser.add_argument('--cam_ids',   type=str,
+    parser.add_argument('--cam_ids', type=str,
                         default=["LSTCam", "NectarCam", "DigiCam"], nargs='*',
                         help="give a specific list of files to run on")
     parser.add_argument('--plots_dir', type=str, default="plots/",
@@ -72,9 +72,9 @@ def make_argparser():
                         help="write summary-level output -- e.g. plots, tables")
     parser.add_argument('--store', action='store_true',
                         help="write event data / trained classifier")
-    parser.add_argument('-p', '--plot',  action='store_true',
+    parser.add_argument('-p', '--plot', action='store_true',
                         help="do some plotting")
-    parser.add_argument('-v', '--verbose',  action='store_true',
+    parser.add_argument('-v', '--verbose', action='store_true',
                         help="do things more explicit -- plotting, logging etc.")
     parser.add_argument('-d', '--dry', dest='last', action='store_const',
                         const=1, default=None,
@@ -100,7 +100,7 @@ try:
         tikzsave(arg, **kwargs,
                  figureheight='\\figureheight',
                  figurewidth='\\figurewidth')
-except:
+except ImportError:
     print("matplotlib2tikz is not installed")
     print("install with: \n$ pip install matplotlib2tikz")
 
