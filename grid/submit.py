@@ -65,35 +65,35 @@ source_ctapipe = \
     'source /cvmfs/cta.in2p3.fr/software/miniconda/bin/activate ctapipe_v0.5.3'
 execute = './classify_and_reconstruct.py'
 pilot_args_classify = ' '.join([
-        source_ctapipe, '&&',
-        execute,
-        '--classifier ./{classifier}',
-        '--regressor ./{regressor}',
-        '--outfile {outfile}',
-        '--indir ./ --infile_list *.simtel.gz',
-        '--{mode}',
-        '--cam_ids'] + cam_id_list)
+    source_ctapipe, '&&',
+    execute,
+    '--classifier ./{classifier}',
+    '--regressor ./{regressor}',
+    '--outfile {outfile}',
+    '--indir ./ --infile_list *.simtel.gz',
+    '--{mode}',
+    '--cam_ids'] + cam_id_list)
 pilot_args_append = ' '.join([
-        source_ctapipe, '&&',
-        './append_tables.py',
-        '--infiles_base', '{in_name}',
-        '--outfile', '{out_name}'])
+    source_ctapipe, '&&',
+    './append_tables.py',
+    '--infiles_base', '{in_name}',
+    '--outfile', '{out_name}'])
 
 expandvars
 # files containing lists of the Prod3b files on the GRID
 prod3b_filelist_gamma = open(expandvars("$CTA_DATA/Prod3b/Paranal/"
-                             "Paranal_gamma_North_20deg_HB9_merged.list"))
+                             "Paranal_gamma_North_20deg_HB9_good.list"))
 prod3b_filelist_proton = open(expandvars("$CTA_DATA/Prod3b/Paranal/"
-                              "Paranal_proton_North_20deg_HB9_merged.list"))
+                              "Paranal_proton_North_20deg_HB9_good.list"))
 prod3b_filelist_electron = open(expandvars("$CTA_DATA/Prod3b/Paranal/"
-                                "Paranal_electron_North_20deg_HB9_merged.list"))
+                                "Paranal_electron_North_20deg_HB9_good.list"))
 
 
 # number of files per job
 window_sizes = [25] * 3
 
 # I used the first few files to train the classifier and regressor -- skip them
-start_runs = [50, 50, 0]
+start_runs = [0, 0, 0]
 
 # how many jobs to submit at once
 NJobs = 200  # put at < 0 to deactivate
@@ -241,6 +241,7 @@ for i, filelist in enumerate([
 
         if banned_sites:
             j.setBannedSites(banned_sites)
+        # j.setDestination( 'LCG.IN2P3-CC.fr' )
 
         # mr_filter loses its executable property by uploading it to the GRID SE; reset
         j.setExecutable('chmod', '+x mr_filter')
@@ -321,7 +322,7 @@ for i, filelist in enumerate([
 
 try:
     os.remove("datapipe.tar.gz")
-    os.remove("modules.tar.gz")
+    os.remove("tino_cta.tar.gz")
 except:
     pass
 
