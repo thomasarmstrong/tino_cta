@@ -166,9 +166,8 @@ def reject_event_radius(img, geom, rel_radius=.8, which="inner"):
         raise KeyError("'which' can only be 'inner' or 'outer', got:",
                        {which})
 
-    img_sum = np.sum(img)
-    cen_x = np.mean(img * geom.pix_x) / img_sum
-    cen_y = np.mean(img * geom.pix_y) / img_sum
+    cen_x = np.average(geom.pix_x, weights=img)
+    cen_y = np.average(geom.pix_y, weights=img)
 
     return cen_x**2 + cen_y**2 > r_edge_squared * rel_radius**2
 
@@ -202,7 +201,7 @@ class ImageCleaner:
         self.cutflow = cutflow
 
         if skip_edge_events:
-            self.reject_edge_event = reject_edge_event
+            self.reject_edge_event = reject_event_radius
         else:
             self.reject_edge_event = lambda *a, **b: False
         self.cutflow.add_cut("edge event", self.reject_edge_event)
@@ -277,7 +276,8 @@ class ImageCleaner:
                                         " for geometry {}".format(cam_geom.cam_id))
 
         if self.cutflow.cut("edge event",
-                            img=new_img, geom=new_geom, rows=self.edge_width):
+                            img=new_img, geom=new_geom):
+
             raise EdgeEvent
 
         return new_img, new_geom
@@ -360,7 +360,7 @@ class ImageCleaner:
             new_geom = unrot_geom
 
         if self.cutflow.cut("edge event",
-                            img=new_img, geom=new_geom, rows=self.edge_width):
+                            img=new_img, geom=new_geom):
             raise EdgeEvent
 
         return new_img, new_geom
