@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from sys import exit
+from os.path import expandvars
 
 from collections import namedtuple
 
@@ -16,6 +17,8 @@ from ctapipe.io.hessio import hessio_event_source
 
 from ctapipe.utils import linalg
 from ctapipe.utils.CutFlow import CutFlow
+
+from ctapipe.coordinates.coordinate_transformations import alt_to_theta, az_to_phi
 
 from ctapipe.image.hillas import HillasParameterizationError, \
     hillas_parameters_4 as hillas_parameters
@@ -47,11 +50,11 @@ def main():
 
     parser = make_argparser()
     parser.add_argument('--classifier', type=str,
-                        default='data/classifier_pickle/classifier'
-                                '_{mode}_{cam_id}_{classifier}.pkl')
+                        default=expandvars("$CTA_SOFT/tino_cta/data/classifier_pickle/"
+                                           "classifier_{mode}_{cam_id}_{classifier}.pkl"))
     parser.add_argument('--regressor', type=str,
-                        default='data/classifier_pickle/regressor'
-                                '_{mode}_{cam_id}_{regressor}.pkl')
+                        default=expandvars("$CTA_SOFT/tino_cta/data/classifier_pickle/"
+                                           "regressor_{mode}_{cam_id}_{regressor}.pkl"))
     parser.add_argument('-o', '--outfile', type=str, default="",
                         help="location to write the classified events to.")
     parser.add_argument('--wave_dir', type=str, default=None,
@@ -107,7 +110,7 @@ def main():
 
     # wrapper for the scikit-learn classifier
     classifier = EventClassifier.load(
-                    args.classifier.format(**{
+                        args.classifier.format(**{
                             "mode": args.mode,
                             "wave_args": "mixed",
                             "classifier": 'RandomForestClassifier',
@@ -180,15 +183,16 @@ def main():
         ErrEstPos = tb.Float32Col(dflt=np.nan, pos=12)
         ErrEstDir = tb.Float32Col(dflt=np.nan, pos=13)
         gammaness = tb.Float32Col(dflt=np.nan, pos=14)
+        success = tb.BoolCol(dflt=False, pos=15)
 
     channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
     reco_outfile = tb.open_file(
-            mode="w",
-            # if no outfile name is given (i.e. don't to write the event list to disk),
-            # need specify two "driver" arguments
-            **({"filename": args.outfile} if args.outfile else
-               {"filename": "no_outfile.h5",
-                "driver": "H5FD_CORE", "driver_core_backing_store": False}))
+        mode="w",
+        # if no outfile name is given (i.e. don't to write the event list to disk),
+        # need specify two "driver" arguments
+        **({"filename": args.outfile} if args.outfile else
+           {"filename": "no_outfile.h5",
+            "driver": "H5FD_CORE", "driver_core_backing_store": False}))
 
     reco_table = reco_outfile.create_table("/", "reco_events", RecoEvent)
     reco_event = reco_table.row
@@ -267,29 +271,31 @@ def main():
                     reg_features_evt[cam_id] = [reg_features_tel]
                     cls_features_evt[cam_id] = [cls_features_tel]
 
-            # save basic event infos
-            reco_event["MC_Energy"] = event.mc.energy.to(energy_unit).value
-            reco_event["Event_ID"] = event.r1.event_id
-            reco_event["Run_ID"] = event.r1.run_id
-
             if cls_features_evt and reg_features_evt:
 
                 predict_energ = regressor.predict_by_event([reg_features_evt])["mean"][0]
                 predict_proba = classifier.predict_proba_by_event([cls_features_evt])
                 gammaness = predict_proba[0, 0]
 
-                # the MC direction of origin of the simulated particle
-                shower = event.mc
-                shower_core = np.array([shower.core_x / u.m, shower.core_y / u.m]) * u.m
-                shower_org = linalg.set_phi_theta(shower.az + 90 * u.deg,
-                                                  90. * u.deg - shower.alt)
+                try:
+                    # the MC direction of origin of the simulated particle
+                    shower = event.mc
+                    shower_core = np.array([shower.core_x / u.m,
+                                            shower.core_y / u.m]) * u.m
+                    shower_org = linalg.set_phi_theta(az_to_phi(shower.az),
+                                                      alt_to_theta(shower.alt))
 
-                # and how the reconstructed direction compares to that
-                xi = linalg.angle(dir_fit, shower_org)
+                    # and how the reconstructed direction compares to that
+                    xi = linalg.angle(dir_fit, shower_org)
+                    DeltaR = linalg.length(pos_fit[:2] - shower_core)
+                except Exception:
+                    # naked exception catch, because I'm not sure where
+                    # it would break in non-MC files
+                    xi = np.nan
+                    DeltaR = np.nan
+
                 phi, theta = linalg.get_phi_theta(dir_fit)
                 phi = (phi if phi > 0 else phi + 360 * u.deg)
-
-                DeltaR = linalg.length(pos_fit[:2] - shower_core)
 
                 # TODO: replace with actual array pointing direction
                 array_pointing = linalg.set_phi_theta(0 * u.deg, 20. * u.deg)
@@ -311,13 +317,25 @@ def main():
                 reco_event["ErrEstPos"] = err_est_pos / dist_unit
                 reco_event["ErrEstDir"] = err_est_dir / angle_unit
                 reco_event["gammaness"] = gammaness
-                reco_event.append()
-                reco_table.flush()
+                reco_event["success"] = True
+            else:
+                reco_event["success"] = False
+
+            # save basic event infos
+            reco_event["MC_Energy"] = event.mc.energy.to(energy_unit).value
+            reco_event["Event_ID"] = event.r1.event_id
+            reco_event["Run_ID"] = event.r1.run_id
+
+            reco_table.flush()
+            reco_event.append()
 
             if signal_handler.stop:
                 break
         if signal_handler.stop:
             break
+
+    # make sure everything gets written out nicely
+    reco_table.flush()
 
     try:
         print()
