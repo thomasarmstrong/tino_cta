@@ -97,7 +97,7 @@ def get_edge_pixels(camera, rows=1, n_neigh=None):
 
         # add more rows by joining `edge_pixels` with the sets of the neighbours of all
         # pixels in `edge_pixels`
-        for i in range(rows-1):
+        for i in range(rows - 1):
             for j in list(edge_pixels):
                 edge_pixels |= set(camera.neighbors[j])
 
@@ -128,9 +128,49 @@ def reject_edge_event(img, geom, rel_thresh=5., abs_thresh=None, rows=1):
     reject : bool
         whether or not any of the edge pixels has a signal higher than the threshold
     """
-    edge_thresh = abs_thresh or (np.max(img)/rel_thresh)
+    edge_thresh = abs_thresh or (np.max(img) / rel_thresh)
     edge_pixels = get_edge_pixels(geom, rows=rows)
     return (img[edge_pixels] > edge_thresh).any()
+
+
+def reject_event_radius(img, geom, rel_radius=.8, which="inner"):
+    """Rejects an image depending on the shower core's distance to the camera centre.
+
+    Parameters
+    ----------
+    img : ndarray
+        the camera image
+    geom : ctapipe CameraGeometry object
+        the camera geometry object
+    rel_radius : float 0 < x < 1, (default: 0.8)
+        fraction of the camera extension within which the shower core shall lie
+    which : string ["inner" | "outer"], (default: "inner")
+        sets the closest of furthest edge pixel as the radius of the camera image
+
+    Returns
+    -------
+    True if shower core is outside the allowed range (so: yes, reject)
+    False if shower core is within the allowed range (so: no, don't reject)
+
+    Note
+    ----
+    Assumes image centre is at geom.pix_x = geom.pix_y = 0.
+
+    """
+    edge_pixels = get_edge_pixels(geom, rows=1)
+    if which is "inner":
+        r_edge_squared = np.min((geom.pix_x**2 + geom.pix_y**2)[edge_pixels])
+    elif wich is "outer":
+        r_edge_squared = np.max((geom.pix_x**2 + geom.pix_y**2)[edge_pixels])
+    else:
+        raise KeyError("'which' can only be 'inner' or 'outer', got:",
+                       {which})
+
+    img_sum = np.sum(img)
+    cen_x = np.mean(img * geom.pix_x) / img_sum
+    cen_y = np.mean(img * geom.pix_y) / img_sum
+
+    return cen_x**2 + cen_y**2 > r_edge_squared * rel_radius**2
 
 
 class ImageCleaner:
@@ -173,10 +213,10 @@ class ImageCleaner:
             self.clean = self.clean_wave
             self.wavelet_cleaning = \
                 lambda *arg, **kwargs: WaveletTransform().clean_image(
-                                *arg, **kwargs,
-                                kill_isolated_pixels=island_cleaning,
-                                tmp_files_directory=tmp_files_directory,
-                                mrfilter_directory=mrfilter_directory)
+                    *arg, **kwargs,
+                    kill_isolated_pixels=island_cleaning,
+                    tmp_files_directory=tmp_files_directory,
+                    mrfilter_directory=mrfilter_directory)
             self.island_threshold = 1.5
 
             # command line parameters for the mr_filter call
@@ -250,8 +290,8 @@ class ImageCleaner:
                                         " for geometry {}".format(cam_geom.cam_id))
 
         cleaned_img = self.wavelet_cleaning(
-                array2d_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
-                noise_distribution=self.noise_model[cam_geom.cam_id])
+            array2d_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
+            noise_distribution=self.noise_model[cam_geom.cam_id])
 
         self.cutflow.count("wavelet cleaning")
 
@@ -265,11 +305,11 @@ class ImageCleaner:
 
     def clean_wave_hex(self, img, cam_geom):
         rot_geom, rot_img = convert_geometry_hex1d_to_rect2d(
-                                cam_geom, img, cam_geom.cam_id)
+            cam_geom, img, cam_geom.cam_id)
 
         cleaned_img = self.wavelet_cleaning(
-                rot_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
-                noise_distribution=self.noise_model[cam_geom.cam_id])
+            rot_img, raw_option_string=self.wavelet_options[cam_geom.cam_id],
+            noise_distribution=self.noise_model[cam_geom.cam_id])
 
         self.cutflow.count("wavelet cleaning")
 
@@ -284,9 +324,9 @@ class ImageCleaner:
 
     def clean_tail(self, img, cam_geom):
         mask = tailcuts_clean(
-                cam_geom, img,
-                picture_thresh=self.tail_thresholds[cam_geom.cam_id][1],
-                boundary_thresh=self.tail_thresholds[cam_geom.cam_id][0])
+            cam_geom, img,
+            picture_thresh=self.tail_thresholds[cam_geom.cam_id][1],
+            boundary_thresh=self.tail_thresholds[cam_geom.cam_id][0])
         if self.dilate:
             dilate(cam_geom, mask)
         img[~mask] = 0
@@ -307,7 +347,7 @@ class ImageCleaner:
         else:
             # turn into 2d to apply island cleaning
             rot_geom, rot_img = convert_geometry_hex1d_to_rect2d(
-                                    cam_geom, img, cam_geom.cam_id)
+                cam_geom, img, cam_geom.cam_id)
 
             # if set, remove all signal patches but the biggest one
             cleaned_img = self.island_cleaning(rot_img, self.hex_neighbours_1ring)
