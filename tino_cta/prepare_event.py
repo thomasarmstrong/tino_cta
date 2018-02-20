@@ -14,7 +14,7 @@ from ctapipe.utils.linalg import rotation_matrix_2d
 from tino_cta.ImageCleaning import ImageCleaner, EdgeEvent
 from ctapipe.utils.CutFlow import CutFlow
 from ctapipe.coordinates.coordinate_transformations import (
-            az_to_phi, alt_to_theta, transform_pixel_position)
+    az_to_phi, alt_to_theta, transform_pixel_position)
 
 PreparedEvent = namedtuple("PreparedEvent",
                            ["event", "hillas_dict", "n_tels",
@@ -66,19 +66,19 @@ class EventPreparer():
         self.image_cutflow = image_cutflow or CutFlow("ImageCutFlow")
 
         self.event_cutflow.set_cuts(OrderedDict([
-                    ("noCuts", None),
-                    ("min2Tels trig", lambda x: x < min_ntel),
-                    ("min2Tels reco", lambda x: x < min_ntel),
-                    ("position nan", lambda x: np.isnan(x.value).any()),
-                    ("direction nan", lambda x: np.isnan(x.value).any())
-                ]))
+            ("noCuts", None),
+            ("min2Tels trig", lambda x: x < min_ntel),
+            ("min2Tels reco", lambda x: x < min_ntel),
+            ("position nan", lambda x: np.isnan(x.value).any()),
+            ("direction nan", lambda x: np.isnan(x.value).any())
+        ]))
 
         self.image_cutflow.set_cuts(OrderedDict([
-                    ("noCuts", None),
-                    ("min pixel", lambda s: np.count_nonzero(s) < min_pixel),
-                    ("min charge", lambda x: x < min_charge),
-                    ("poor moments", lambda m: m.width <= 0 or m.length <= 0)
-                ]))
+            ("noCuts", None),
+            ("min pixel", lambda s: np.count_nonzero(s) < min_pixel),
+            ("min charge", lambda x: x < min_charge),
+            ("poor moments", lambda m: m.width <= 0 or m.length <= 0)
+        ]))
 
     @classmethod
     def pick_gain_channel(cls, pmt_signal, cam_id):
@@ -89,8 +89,8 @@ class EventPreparer():
 
         if pmt_signal.shape[0] > 1:
             pmt_signal = np.squeeze(pmt_signal)
-            pick = (cls.pe_thresh[cam_id]
-                    < pmt_signal).any(axis=0) != np_true_false
+            pick = (cls.pe_thresh[cam_id] <
+                    pmt_signal).any(axis=0) != np_true_false
             pmt_signal = pmt_signal.T[pick.T]
         else:
             pmt_signal = np.squeeze(pmt_signal)
@@ -126,7 +126,7 @@ class EventPreparer():
                 if tel_id not in tel_phi:
                     tel_phi[tel_id] = az_to_phi(event.mc.tel[tel_id].azimuth_raw * u.rad)
                     tel_theta[tel_id] = \
-                        alt_to_theta(event.mc.tel[tel_id].altitude_raw*u.rad)
+                        alt_to_theta(event.mc.tel[tel_id].altitude_raw * u.rad)
 
                     # the orientation of the camera (i.e. the pixel positions) needs to
                     # be corrected
@@ -240,13 +240,13 @@ class EventPreparer():
                     warnings.simplefilter("ignore")
                     # telescope loop done, now do the core fit
                     self.shower_reco.get_great_circles(
-                            hillas_dict, event.inst.subarray, tel_phi, tel_theta)
+                        hillas_dict, event.inst.subarray, tel_phi, tel_theta)
                     pos_fit, err_est_pos = self.shower_reco.fit_core_crosses()
                     dir_fit, err_est_dir = self.shower_reco.fit_origin_crosses()
                     h_max = self.shower_reco.fit_h_max(
-                            hillas_dict, event.inst.subarray, tel_phi, tel_theta)
+                        hillas_dict, event.inst.subarray, tel_phi, tel_theta)
             except Exception as e:
-                print(e)
+                print("exception in reconstruction:", e)
                 if return_stub:
                     yield stub(event)
                 else:
