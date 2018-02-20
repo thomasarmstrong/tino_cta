@@ -61,7 +61,7 @@ def make_argparser():
                         help="give a specific list of files to run on")
     parser.add_argument('--cam_ids', type=str,
                         default=["LSTCam", "NectarCam", "DigiCam"], nargs='*',
-                        help="give a specific list of files to run on")
+                        help="give the specific list of camera types to run on")
     parser.add_argument('--plots_dir', type=str, default="plots/",
                         help="path to store plots")
     parser.add_argument('--dilate', default=False, action='store_true',
