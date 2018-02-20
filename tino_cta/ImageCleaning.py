@@ -157,6 +157,7 @@ def reject_event_radius(img, geom, rel_radius=.8, which="inner"):
     Assumes image centre is at geom.pix_x = geom.pix_y = 0.
 
     """
+
     edge_pixels = get_edge_pixels(geom, rows=1)
     if which is "inner":
         r_edge_squared = np.min((geom.pix_x**2 + geom.pix_y**2)[edge_pixels])
@@ -166,8 +167,11 @@ def reject_event_radius(img, geom, rel_radius=.8, which="inner"):
         raise KeyError("'which' can only be 'inner' or 'outer', got:",
                        {which})
 
-    cen_x = np.average(geom.pix_x, weights=img)
-    cen_y = np.average(geom.pix_y, weights=img)
+    try:
+        cen_x = np.average(geom.pix_x, weights=img)
+        cen_y = np.average(geom.pix_y, weights=img)
+    except ZeroDivisionError:
+        cen_x, cen_y = 0, 0
 
     return cen_x**2 + cen_y**2 > r_edge_squared * rel_radius**2
 
