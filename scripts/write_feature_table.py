@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from helper_functions import *
+from tino_cta.helper_functions import *
 from astropy import units as u
 
 from sys import exit, path
@@ -68,6 +68,8 @@ if __name__ == "__main__":
     if not filenamelist:
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
+    else:
+        print("found {} files".format(len(filenamelist)))
 
     # keeping track of events and where they were rejected
     Eventcutflow = CutFlow("EventCutFlow")
@@ -133,7 +135,7 @@ if __name__ == "__main__":
 
     allowed_tels = set(prod3b_tel_ids("L+N+D"))
     for i, filename in enumerate(filenamelist[:50][:args.last]):
-        # print(f"file: {i} filename = {filename}")
+        print("file: {} filename = {}".format(i, filename))
 
         source = hessio_event_source(filename,
                                      allowed_tels=allowed_tels,

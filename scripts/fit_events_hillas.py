@@ -29,8 +29,8 @@ from ctapipe.io.hessio import hessio_event_source
 from ctapipe.utils import linalg
 from ctapipe.utils.CutFlow import CutFlow
 
-from ctapipe.image.hillas import HillasParameterizationError, \
-                                 hillas_parameters_4 as hillas_parameters
+from ctapipe.image.hillas import (HillasParameterizationError,
+                                  hillas_parameters_4 as hillas_parameters)
 
 from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
@@ -38,11 +38,9 @@ from ctapipe.reco.shower_max import ShowerMaxEstimator
 
 from ctapipe.coordinates.coordinate_transformations import az_to_phi, alt_to_theta
 
-from modules.ImageCleaning import ImageCleaner
-
-from modules.prepare_event import EventPreparer
-
-from helper_functions import *
+from tino_cta.ImageCleaning import ImageCleaner
+from tino_cta.prepare_event import EventPreparer
+from tino_cta.helper_functions import *
 
 
 def main():
@@ -55,12 +53,12 @@ def main():
     parser = make_argparser()
     parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
     parser.add_argument('-o', '--out_file', type=str, default="rec_events")
-    parser.add_argument('--plot_c',  action='store_true',
+    parser.add_argument('--plot_c', action='store_true',
                         help="plot camera-wise displays")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('--proton',  action='store_true',
+    group.add_argument('--proton', action='store_true',
                        help="do protons instead of gammas")
-    group.add_argument('--electron',  action='store_true',
+    group.add_argument('--electron', action='store_true',
                        help="do electrons instead of gammas")
 
     args = parser.parse_args()
@@ -153,7 +151,7 @@ def main():
     allowed_tels = None
     # allowed_tels = prod3b_tel_ids("L+F+D")
     for i, filename in enumerate(filenamelist[:args.last]):
-        print(f"file: {i} filename = {filename}")
+        print("file: {i} filename = {filename}".format(i=i, filename=filename))
 
         source = hessio_event_source(filename,
                                      allowed_tels=allowed_tels,
@@ -168,21 +166,21 @@ def main():
 
             org_alt = u.Quantity(shower.alt).to(u.deg)
             org_az = u.Quantity(shower.az).to(u.deg)
-            if org_az > 180*u.deg:
-                org_az -= 360*u.deg
+            if org_az > 180 * u.deg:
+                org_az -= 360 * u.deg
 
             org_the = alt_to_theta(org_alt)
             org_phi = az_to_phi(org_az)
-            if org_phi > 180*u.deg:
-                org_phi -= 360*u.deg
-            if org_phi < -180*u.deg:
-                org_phi += 360*u.deg
+            if org_phi > 180 * u.deg:
+                org_phi -= 360 * u.deg
+            if org_phi < -180 * u.deg:
+                org_phi += 360 * u.deg
 
             shower_org = linalg.set_phi_theta(org_phi, org_the)
             shower_core = convert_astropy_array([shower.core_x, shower.core_y])
 
             xi = linalg.angle(dir_fit, shower_org).to(angle_unit)
-            diff = linalg.length(pos_fit[:2]-shower_core)
+            diff = linalg.length(pos_fit[:2] - shower_core)
 
             # print some performance
             print()
@@ -222,7 +220,7 @@ def main():
                 ax = fig.gca(projection='3d')
                 for c in shower_reco.circles.values():
                     points = [c.pos + t * c.a * u.km for t in np.linspace(0, 15, 3)]
-                    ax.plot(*np.array(points).T, linewidth=np.sqrt(c.weight)/10)
+                    ax.plot(*np.array(points).T, linewidth=np.sqrt(c.weight) / 10)
                     ax.scatter(*c.pos[:, None].value, s=np.sqrt(c.weight))
                 plt.xlabel("x")
                 plt.ylabel("y")
