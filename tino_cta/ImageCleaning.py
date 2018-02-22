@@ -10,10 +10,15 @@ from ctapipe.image.geometry_converter import (convert_geometry_hex1d_to_rect2d,
                                               astri_to_2d_array, array_2d_to_astri,
                                               chec_to_2d_array, array_2d_to_chec)
 
-from datapipe.denoising.wavelets_mrfilter import WaveletTransform
-from datapipe.denoising import cdf
-from datapipe.denoising.inverse_transform_sampling import \
-    EmpiricalDistribution as EmpDist
+try:
+    from datapipe.denoising.wavelets_mrfilter import WaveletTransform
+    from datapipe.denoising import cdf
+    from datapipe.denoising.inverse_transform_sampling import \
+        EmpiricalDistribution as EmpDist
+except ImportError:
+    print("Jeremie's 'datapipe' package could not be imported")
+    print("wavelet cleaning will not work;"
+          " better use the '--tail' command line argument")
 
 
 class UnknownMode(ValueError):
