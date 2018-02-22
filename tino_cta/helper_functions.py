@@ -80,7 +80,8 @@ def make_argparser():
                         const=1, default=None,
                         help="only consider first file per type")
     parser.add_argument('--raw', type=str, default=None,
-                        help="raw option string for wavelet filtering")
+                        help="raw option string for wavelet filtering;"
+                             " overwrites camera-specific defaults")
 
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument('--wave', dest="mode", action='store_const',
