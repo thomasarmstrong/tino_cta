@@ -1,5 +1,6 @@
 # the makefile rsyncs to CC Lyon... don't put it in the repository...
 Makefile
+!scripts/Makefile
 
 *.kdev4
 *.fits
