@@ -115,18 +115,8 @@ if __name__ == "__main__":
         MC_Energy = tb.FloatCol(dflt=1, pos=14)
 
     feature_outfile = tb.open_file(args.outfile, mode="w")
-    feature_table_lst = feature_outfile.create_table("/", "feature_events_lst",
-                                                     EventFeatures)
-    feature_table_nec = feature_outfile.create_table("/", "feature_events_nec",
-                                                     EventFeatures)
-    feature_table_dig = feature_outfile.create_table("/", "feature_events_dig",
-                                                     EventFeatures)
-    feature_table = {"LSTCam": feature_table_lst,
-                     "NectarCam": feature_table_nec,
-                     "DigiCam": feature_table_dig}
-    feature_events = {"LSTCam": feature_table_lst.row,
-                      "NectarCam": feature_table_nec.row,
-                      "DigiCam": feature_table_dig.row}
+    feature_table = {}
+    feature_events = {}
 
     pe_thersh = 100
     n_faint_img = []
@@ -149,6 +139,12 @@ if __name__ == "__main__":
             n_faint = 0
             for tel_id in hillas_dict.keys():
                 cam_id = event.inst.subarray.tel[tel_id].camera.cam_id
+
+                if cam_id not in feature_events:
+                    feature_table[cam_id] = feature_outfile.create_table(
+                        '/', '_'.join(["feature_events", cam_id]), EventFeatures)
+                    feature_events[cam_id] = feature_table[cam_id].row
+
                 moments = hillas_dict[tel_id]
                 tel_pos = np.array(event.inst.tel_pos[tel_id][:2]) * u.m
                 impact_dist = linalg.length(tel_pos - pos_fit)
