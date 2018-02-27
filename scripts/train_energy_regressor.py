@@ -19,10 +19,9 @@ from ctapipe.reco.energy_regressor import *
 from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
 
-from modules.prepare_event import EventPreparer
-from modules.ImageCleaning import ImageCleaner
-
-from helper_functions import *
+from tino_cta.prepare_event import EventPreparer
+from tino_cta.ImageCleaning import ImageCleaner
+from tino_cta.helper_functions import *
 
 # your favourite units here
 energy_unit = u.TeV
@@ -31,16 +30,16 @@ dist_unit = u.m
 
 # for which cam_id to generate a models
 cam_id_list = [
-        # 'GATE',
-        # 'HESSII',
-        'NectarCam',
-        'LSTCam',
-        'DigiCam',
-        # 'SST-1m',
-        # 'FlashCam',
-        # 'ASTRICam',
-        # 'SCTCam',
-        ]
+    # 'GATE',
+    # 'HESSII',
+    'NectarCam',
+    'LSTCam',
+    'DigiCam',
+    # 'SST-1m',
+    # 'FlashCam',
+    # 'ASTRICam',
+    # 'SCTCam',
+]
 
 
 EnergyFeatures = namedtuple(
@@ -70,23 +69,19 @@ parser.add_argument('--check', action='store_true',
                     help="run a self check on the classification")
 args = parser.parse_args()
 
+# feature_file_gammas = tb.open_file(f"data/features_{args.mode}_gamma.h5", mode="r")
+feature_file = \
+    tb.open_file(expandvars("$CTA_SOFT/tino_cta/data/prod3b/paranal_LND_edge/") +
+                 "features_{}_gamma.h5".format(args.mode), mode="r")
 
-feature_file_gammas = tb.open_file(f"data/features_{args.mode}_gamma.h5", mode="r")
-
-feature_file = feature_file_gammas
-features = {"LSTCam": [[row[name] for name in EnergyFeatures._fields] for row in
-                       feature_file.root.feature_events_lst],
-            "DigiCam": [[row[name] for name in EnergyFeatures._fields] for row in
-                        feature_file.root.feature_events_dig],
-            "NectarCam": [[row[name] for name in EnergyFeatures._fields] for row in
-                          feature_file.root.feature_events_nec]}
-
-energies = {"LSTCam": np.array([row["MC_Energy"] for row in
-                                feature_file.root.feature_events_lst]) * energy_unit,
-            "DigiCam": np.array([row["MC_Energy"] for row in
-                                 feature_file.root.feature_events_dig]) * energy_unit,
-            "NectarCam": np.array([row["MC_Energy"] for row in
-                                   feature_file.root.feature_events_nec]) * energy_unit}
+features = {}
+energies = {}
+for this_table in feature_file.root:
+    table_name = this_table.name.split('_')[-1]
+    features[table_name] = [[row[name] for name in EnergyFeatures._fields]
+                            for row in this_table]
+    energies[table_name] = np.array([row["MC_Energy"]
+                                     for row in this_table]) * energy_unit
 
 # use default random forest regressor
 reg_kwargs = {'n_estimators': 40, 'max_depth': None, 'min_samples_split': 2,
@@ -135,10 +130,9 @@ if args.check:
 
     energy_mc = []
     energy_rec = []
+    energy_rec_cam = []
 
-
-    filenamelist_gamma = sorted(glob("{}/gamma/*gz".format(args.indir)))
-    filenamelist_gamma = sorted(glob(expandvars("$CTA_DATA/Prod3b/Paranal/*simtel.gz")))
+    filenamelist_gamma = sorted(glob("{}/gamma/*gz".format(args.indir)))[:50]
 
     allowed_tels = prod3b_tel_ids("L+N+D")
     for filename in filenamelist_gamma[:5][:args.last]:
@@ -167,20 +161,20 @@ if args.check:
                 impact_dist = linalg.length(tel_pos - pos_fit)
 
                 reg_features_tel = EnergyFeatures(
-                    impact_dist=impact_dist / u.m,
+                    impact_dist=(impact_dist / u.m).si,
                     sum_signal_evt=tot_signal,
                     max_signal_cam=max_signals[tel_id],
                     sum_signal_cam=moments.size,
                     N_LST=n_tels["LST"],
                     N_MST=n_tels["MST"],
                     N_SST=n_tels["SST"],
-                    width=moments.width / u.m,
-                    length=moments.length / u.m,
+                    width=(moments.width / u.m).si,
+                    length=(moments.length / u.m).si,
                     skewness=moments.skewness,
                     kurtosis=moments.kurtosis,
-                    h_max=h_max / u.m,
-                    err_est_pos=err_est_pos / u.m,
-                    err_est_dir=err_est_dir / u.deg
+                    h_max=(h_max / u.m).si,
+                    err_est_pos=(err_est_pos / u.m).si,
+                    err_est_dir=(err_est_dir / u.deg).si
                 )
 
                 if np.isnan(reg_features_tel).any():
@@ -211,7 +205,7 @@ if args.check:
     e_bin_fine_edges = np.logspace(-2, 2.5, 100) * u.TeV
     e_bin_fine_centres = (e_bin_fine_edges[:-1] + e_bin_fine_edges[1:]) / 2
 
-
+    # function to find the binned percentiles of a 2D distribution
     def percentiles(values, bin_values, bin_edges, percentile):
         percentiles_binned = \
             np.squeeze(np.full((len(bin_edges) - 1, len(values.shape)), np.inf))
