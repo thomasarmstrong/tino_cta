@@ -163,8 +163,9 @@ class EventPreparer():
                 max_signals[tel_id] = np.max(pmt_signal)
 
                 # do the hillas reconstruction of the images
-                try:
-                    moments = self.hillas_parameters(new_geom, pmt_signal)
+                with np.errstate(invalid='raise', divide='raise'):
+                    try:
+                        moments = self.hillas_parameters(new_geom, pmt_signal)
 
                     # import matplotlib.pyplot as plt
                     # from mpl_toolkits.mplot3d import Axes3D
@@ -217,13 +218,11 @@ class EventPreparer():
                     # if width and/or length are zero (e.g. when there is only only one
                     # pixel or when all  pixel are exactly in one row), the
                     # parametrisation won't be very useful: skip
-                    if self.image_cutflow.cut("poor moments", moments):
-                        continue
+                        if self.image_cutflow.cut("poor moments", moments):
+                            continue
 
-                except hillas.HillasParameterizationError as e:
-                    print(e)
-                    print("ignoring this camera")
-                    continue
+                    except (FloatingPointError, hillas.HillasParameterizationError):
+                        continue
 
                 hillas_dict[tel_id] = moments
                 tot_signal += moments.size
