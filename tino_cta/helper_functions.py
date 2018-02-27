@@ -56,7 +56,7 @@ def make_argparser():
     parser.add_argument('-c', '--min_charge', type=int, default=0,
                         help="minimum charge per telescope after cleaning")
     parser.add_argument('-i', '--indir', type=str,
-                        default=expandvars("$HOME/Data/cta/Prod3b/Paranal"))
+                        default=expandvars("$CTA_DATA/Prod3b/Paranal"))
     parser.add_argument('-f', '--infile_list', type=str, default="", nargs='*',
                         help="give a specific list of files to run on")
     parser.add_argument('--cam_ids', type=str,

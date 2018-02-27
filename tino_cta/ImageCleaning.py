@@ -18,7 +18,7 @@ try:
 except ImportError:
     print("Jeremie's 'datapipe' package could not be imported")
     print("wavelet cleaning will not work;"
-          " better use the '--tail' command line argument")
+          " better use the '--tail' command line flag")
 
 
 class UnknownMode(ValueError):
