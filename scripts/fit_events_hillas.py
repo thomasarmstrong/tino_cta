@@ -12,7 +12,7 @@ from astropy import units as u
 
 try:
     import tables as tb
-except:
+except ImportError:
     # if pytables are not installed, build a class that mimicks the interface but
     # immediately throws an exception that we can catch. this way, we get still thrown
     # off by e.g. naming errors but not by a missing "reco_event"
@@ -51,8 +51,8 @@ def main():
     dist_unit = u.m
 
     parser = make_argparser()
-    parser.add_argument('--events_dir', type=str, default="data/reconstructed_events")
-    parser.add_argument('-o', '--out_file', type=str, default="rec_events")
+    parser.add_argument('-o', '--outfile', type=str,
+                        help="if given, write output file with reconstruction results")
     parser.add_argument('--plot_c', action='store_true',
                         help="plot camera-wise displays")
     group = parser.add_mutually_exclusive_group()
@@ -69,15 +69,22 @@ def main():
             filenamelist += glob("{}/{}".format(args.indir, f))
     elif args.proton:
         filenamelist = glob("{}/proton/*gz".format(args.indir))
+        channel = "proton"
     elif args.electron:
         filenamelist = glob("{}/electron/*gz".format(args.indir))
-    else:
+        channel = "electron"
+    elif args.gamma:
         filenamelist = glob("{}/gamma/*gz".format(args.indir))
+        channel = "gamma"
+    else:
+        raise ValueError("don't know which input to use...")
     filenamelist.sort()
 
     if not filenamelist:
         print("no files found; check indir: {}".format(args.indir))
         exit(-1)
+    else:
+        print("found {} files".format(len(filenamelist)))
 
     tel_phi = {}
     tel_theta = {}
@@ -121,13 +128,8 @@ def main():
             ErrEstDir = tb.Float32Col(dflt=1, pos=6)
             h_max = tb.Float32Col(dflt=1, pos=7)
 
-        channel = "gamma" if "gamma" in " ".join(filenamelist) else "proton"
-        if args.out_file:
-            out_filename = args.out_file
-        else:
-            out_filename = "classified_events_{}_{}.h5".format(channel, args.mode)
         reco_outfile = tb.open_file(
-            "{}/{}".format(args.events_dir, out_filename), mode="w",
+            args.outfile, mode="w",
             # if we don't want to write the event list to disk, need to add more arguments
             **({} if args.store else {"driver": "H5FD_CORE",
                                       "driver_core_backing_store": False}))
