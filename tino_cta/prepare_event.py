@@ -163,6 +163,8 @@ class EventPreparer():
                 max_signals[tel_id] = np.max(pmt_signal)
 
                 # do the hillas reconstruction of the images
+                # QUESTION should this change in numpy behaviour be done here
+                # or within `hillas_parameters` itself?
                 with np.errstate(invalid='raise', divide='raise'):
                     try:
                         moments = self.hillas_parameters(new_geom, pmt_signal)
