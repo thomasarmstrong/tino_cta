@@ -16,12 +16,12 @@ except ImportError:
     # if pytables are not installed, build a class that mimicks the interface but
     # immediately throws an exception that we can catch. this way, we get still thrown
     # off by e.g. naming errors but not by a missing "reco_event"
-    class NoPyTError(Exception):
+    class NoPyTables(Exception):
         pass
 
     class RecoEvent(dict):
         def __setitem__(self, foo, bar):
-            raise NoPyTError
+            raise NoPyTables
     print("no pytables installed")
 
 from ctapipe.io.hessio import hessio_event_source
@@ -213,7 +213,7 @@ def main():
                 print("h_max (median) = {:4.3f} {}"
                       .format(np.percentile(reco_table.cols.h_max, 50), dist_unit))
 
-            except NoPyTError:
+            except NoPyTables:
                 pass
 
             if args.plot_c:
@@ -350,7 +350,7 @@ def main():
     plt.subplot(212)
     plt.violinplot([np.log10(a) for a in xi_vs_energy.values()],
                    [a for a in xi_vs_energy.keys()],
-                   points=60, widths=(Energy_edges[1]-Energy_edges[0])/1.5,
+                   points=60, widths=(Energy_edges[1] - Energy_edges[0]) / 1.5,
                    showextrema=False, showmedians=True)
     plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\xi$ / deg)")
@@ -376,7 +376,7 @@ def main():
     for en, diff in zip(reco_table.cols.EnMC, reco_table.cols.DeltaR):
 
         # get the bin number this event belongs into
-        sbin = np.digitize(np.log10(en), Energy_edges)-1
+        sbin = np.digitize(np.log10(en), Energy_edges) - 1
 
         # the central value of the bin is the key for the dictionary
         if Energy_centres[sbin] not in diff_vs_energy:
@@ -398,7 +398,7 @@ def main():
     plt.subplot(212)
     plt.violinplot([np.log10(a) for a in diff_vs_energy.values()],
                    [a for a in diff_vs_energy.keys()],
-                   points=60, widths=(Energy_edges[1]-Energy_edges[0])/1.5,
+                   points=60, widths=(Energy_edges[1] - Energy_edges[0]) / 1.5,
                    showextrema=False, showmedians=True)
     plt.xlabel(r"log(Energy / GeV)")
     plt.ylabel(r"log($\Delta R$ / m)")
