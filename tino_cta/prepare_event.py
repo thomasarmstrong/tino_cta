@@ -2,9 +2,11 @@ import numpy as np
 from astropy import units as u
 
 import warnings
+from traitlets.config import Config
 
 from collections import namedtuple, OrderedDict
 
+import ctapipe
 from ctapipe.calib import CameraCalibrator
 
 from ctapipe.image import hillas
@@ -15,6 +17,17 @@ from tino_cta.ImageCleaning import ImageCleaner, EdgeEvent
 from ctapipe.utils.CutFlow import CutFlow
 from ctapipe.coordinates.coordinate_transformations import (
     az_to_phi, alt_to_theta, transform_pixel_position)
+
+
+# monkey patch the camera calibrator to do NO integration correction
+def null_integration_correction_func(n_chan, pulse_shape, refstep, time_slice,
+                                     window_width, window_shift):
+    return np.ones(n_chan)
+
+
+# apply the path
+ctapipe.calib.camera.dl1.integration_correction = null_integration_correction_func
+
 
 PreparedEvent = namedtuple("PreparedEvent",
                            ["event", "hillas_dict", "n_tels",
@@ -55,7 +68,15 @@ class EventPreparer():
                  shower_reco=None, event_cutflow=None, image_cutflow=None,
                  # event/image cuts:
                  allowed_cam_ids=None, min_ntel=1, min_charge=0, min_pixel=2):
-        self.calib = calib or CameraCalibrator(None, None)
+
+        # configuration for the camera calibrator
+        # modifies the integration window to be more like in MARS
+        cfg = Config()
+        cfg["ChargeExtractorFactory"]["extractor"] = 'LocalPeakIntegrator'
+        cfg["ChargeExtractorFactory"]["window_width"] = 5
+        cfg["ChargeExtractorFactory"]["window_shift"] = 2
+
+        self.calib = calib or CameraCalibrator(config=cfg, tool=None)
         self.cleaner = cleaner or ImageCleaner(mode=None)
         self.hillas_parameters = hillas_parameters or hillas.hillas_parameters
         self.shower_reco = shower_reco or \
