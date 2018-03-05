@@ -7,7 +7,7 @@ MODE ?= wave
 features: features_gamma features_proton
 
 features_all:
-	make features
+	MODE=wave make features
 	MODE=tail make features
 
 
