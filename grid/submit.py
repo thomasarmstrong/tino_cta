@@ -3,6 +3,7 @@
 import os
 from os.path import basename, expandvars
 import sys
+import subprocess
 import glob
 import re
 import random
@@ -29,12 +30,21 @@ dirac = Dirac()
 
 # list of files on my GRID SE space
 # not submitting jobs where we already have the output
-while True:
-    try:
-        GRID_filelist = open('vo.cta.in2p3.fr-user-t-tmichael.lfns').read()
+batcmd = 'dirac-dms-user-lfns'
+result = subprocess.check_output(batcmd, shell=True)
+try:
+    GRID_filelist = open(result.split()[-1]).read()
+except IOError:
+    raise IOError("cannot read GRID filelist...")
+
+
+# also get the user name from `result`
+for i, token in enumerate(result.split('/')):
+    if token == 'user':
+        username = result.split('/')[i + 2].strip()
         break
-    except IOError:
-        os.system('dirac-dms-user-lfns')
+else:
+    raise ValueError("could not determine username...")
 
 
 #   ######  ######## ######## ######## ########  #### ##    ##  ######
@@ -106,14 +116,13 @@ output_path = "cta/prod3b/paranal_LND_edge/"
 # sets all the local files that are going to be uploaded with the job plus the pickled
 # classifier (if the file name starts with `LFN:`, it will be copied from the GRID itself)
 input_sandbox = [expandvars('$CTA_SOFT/tino_cta/tino_cta'),
-                 expandvars('$CTA_SOFT/tino_cta/helper_functions.py'),
                  expandvars('$CTA_SOFT/tino_cta/snippets/append_tables.py'),
 
                  # python wrapper for the mr_filter wavelet cleaning
                  expandvars('$CTA_SOFT/jeremie_cta/ctapipe-wavelet-cleaning/datapipe/'),
 
                  # script that is being run
-                 expandvars('$CTA_SOFT/tino_cta/' + execute), 'pilot.sh',
+                 expandvars('$CTA_SOFT/tino_cta/scripts/' + execute), 'pilot.sh',
 
                  # the executable for the wavelet cleaning
                  'LFN:/vo.cta.in2p3.fr/user/t/tmichael/cta/bin/mr_filter/v3_1/mr_filter'
@@ -157,7 +166,7 @@ for status in ["Waiting", "Running", "Checking"]:
         try:
             [running_ids.add(id) for id in dirac.selectJobs(
                 status=status, date=day,
-                owner="tmichael")['Value']]
+                owner=username)['Value']]
         except KeyError:
             pass
 
@@ -222,7 +231,7 @@ for i, filelist in enumerate([
         # if file already in GRID storage, skip
         # (you cannot overwrite it there, delete it and resubmit)
         # (assumes tail and wave will always be written out together)
-        if output_filename_wave in GRID_filelist:
+        if '/'.join([output_path, output_filename_wave]) in GRID_filelist:
             print("\n{} already on GRID SE\n".format(job_name))
             continue
 
@@ -304,7 +313,7 @@ for i, filelist in enumerate([
         # check if we should somehow stop doing what we are doing
         if "dry" in sys.argv:
             print("\nrunning dry -- not submitting")
-            break
+            exit()
 
         # this sends the job to the GRID and uploads all the
         # files into the input sandbox in the process
@@ -314,11 +323,8 @@ for i, filelist in enumerate([
         # break if this is only a test submission
         if "test" in sys.argv:
             print("test run -- only submitting one job")
-            break
+            exit()
 
-    # since there are two nested loops, need to break again
-    if "dry" in sys.argv or "test" in sys.argv:
-        break
 
 try:
     os.remove("datapipe.tar.gz")
