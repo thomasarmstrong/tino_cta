@@ -69,5 +69,10 @@ if __name__ == "__main__":
                 merge_list_of_pandas(glob.glob(filename),
                                      filename.replace("_*", ""))
     else:
-        merge_list_of_pytables(
-            glob.glob(f"{args.indir}{args.infiles_base}*.h5"), args.outfile)
+        # formatted strings don't work in python2 (which is the python on the GRID)
+        try:
+            input_template = f"{args.indir}{args.infiles_base}*.h5"
+        except SyntaxError:
+            input_template = "{}{}*.h5".format(args.indir, args.infiles_base)
+
+        merge_list_of_pytables(glob.glob(input_template), args.outfile)
