@@ -26,7 +26,7 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
 
-from helper_functions import *
+from tino_cta.helper_functions import *
 from tino_cta.ImageCleaning import ImageCleaner, EdgeEvent
 from tino_cta.prepare_event import EventPreparer
 
