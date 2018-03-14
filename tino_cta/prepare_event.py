@@ -25,7 +25,7 @@ def null_integration_correction_func(n_chan, pulse_shape, refstep, time_slice,
     return np.ones(n_chan)
 
 
-# apply the path
+# apply the patch
 ctapipe.calib.camera.dl1.integration_correction = null_integration_correction_func
 
 
