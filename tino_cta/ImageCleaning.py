@@ -11,14 +11,15 @@ from ctapipe.image.geometry_converter import (convert_geometry_hex1d_to_rect2d,
                                               chec_to_2d_array, array_2d_to_chec)
 
 try:
-    from datapipe.denoising.wavelets_mrfilter import WaveletTransform
-    from datapipe.denoising import cdf
-    from datapipe.denoising.inverse_transform_sampling import \
+    from pywicta.denoising.wavelets_mrfilter import WaveletTransform
+    from pywicta.denoising import cdf
+    from pywicta.denoising.inverse_transform_sampling import \
         EmpiricalDistribution as EmpDist
-except ImportError:
-    print("Jeremie's 'datapipe' package could not be imported")
+except ImportError as e:
+    print("Jeremie's 'pywicta' package could not be imported")
     print("wavelet cleaning will not work;"
           " better use the '--tail' command line flag")
+    print(e)
 
 
 class UnknownMode(ValueError):

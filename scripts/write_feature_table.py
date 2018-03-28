@@ -38,6 +38,13 @@ if __name__ == "__main__":
     parser = make_argparser()
     parser.add_argument('-o', '--outfile', type=str, required=True)
 
+    parser.add_argument('--wave_dir', type=str, default=None,
+                        help="directory where to find mr_filter. "
+                             "if not set look in $PATH")
+    parser.add_argument('--wave_temp_dir', type=str, default='/dev/shm/',
+                        help="directory where mr_filter to store the temporary fits"
+                             " files")
+
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--gamma', default=True, action='store_true',
                        help="do gammas (default)")
@@ -78,6 +85,7 @@ if __name__ == "__main__":
     # takes care of image cleaning
     cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
                            wavelet_options=args.raw,
+                           tmp_files_directory=args.wave_temp_dir,
                            skip_edge_events=True, island_cleaning=True)
 
     # the class that does the shower reconstruction

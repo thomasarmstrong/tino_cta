@@ -231,7 +231,7 @@ for i, filelist in enumerate([
         # if file already in GRID storage, skip
         # (you cannot overwrite it there, delete it and resubmit)
         # (assumes tail and wave will always be written out together)
-        if '/'.join([output_path, output_filename_wave]) in GRID_filelist:
+        if '/'.join([output_path.strip('/'), output_filename_wave]) in GRID_filelist:
             print("\n{} already on GRID SE\n".format(job_name))
             continue
 

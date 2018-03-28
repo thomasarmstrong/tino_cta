@@ -26,7 +26,7 @@ from ctapipe.image.hillas import HillasParameterizationError, \
 from ctapipe.reco.HillasReconstructor import \
     HillasReconstructor, TooFewTelescopes
 
-from helper_functions import *
+from tino_cta.helper_functions import *
 from tino_cta.ImageCleaning import ImageCleaner, EdgeEvent
 from tino_cta.prepare_event import EventPreparer
 
@@ -60,8 +60,9 @@ def main():
     parser.add_argument('--wave_dir', type=str, default=None,
                         help="directory where to find mr_filter. "
                              "if not set look in $PATH")
-    parser.add_argument('--wave_temp_dir', type=str, default='/tmp/', help="directory "
-                        "where mr_filter to store the temporary fits files")
+    parser.add_argument('--wave_temp_dir', type=str, default='/dev/shm/',
+                        help="directory where mr_filter to store the temporary fits "
+                             "files")
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--proton', action='store_true',
@@ -95,36 +96,37 @@ def main():
     # takes care of image cleaning
     cleaner = ImageCleaner(mode=args.mode, cutflow=Imagecutflow,
                            wavelet_options=args.raw,
+                           tmp_files_directory=args.wave_temp_dir,
                            skip_edge_events=False, island_cleaning=True)
 
     # the class that does the shower reconstruction
     shower_reco = HillasReconstructor()
 
     preper = EventPreparer(
-                cleaner=cleaner, hillas_parameters=hillas_parameters,
-                shower_reco=shower_reco,
-                event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
-                # event/image cuts:
-                allowed_cam_ids=[],
-                min_ntel=2, min_charge=args.min_charge, min_pixel=3)
+        cleaner=cleaner, hillas_parameters=hillas_parameters,
+        shower_reco=shower_reco,
+        event_cutflow=Eventcutflow, image_cutflow=Imagecutflow,
+        # event/image cuts:
+        allowed_cam_ids=[],
+        min_ntel=2, min_charge=args.min_charge, min_pixel=3)
 
     # wrapper for the scikit-learn classifier
     classifier = EventClassifier.load(
-                        args.classifier.format(**{
-                            "mode": args.mode,
-                            "wave_args": "mixed",
-                            "classifier": 'RandomForestClassifier',
-                            "cam_id": "{cam_id}"}),
-                    cam_id_list=args.cam_ids)
+        args.classifier.format(**{
+            "mode": args.mode,
+            "wave_args": "mixed",
+            "classifier": 'RandomForestClassifier',
+            "cam_id": "{cam_id}"}),
+        cam_id_list=args.cam_ids)
 
     # wrapper for the scikit-learn regressor
     regressor = EnergyRegressor.load(
-                    args.regressor.format(**{
-                            "mode": args.mode,
-                            "wave_args": "mixed",
-                            "regressor": "RandomForestRegressor",
-                            "cam_id": "{cam_id}"}),
-                    cam_id_list=args.cam_ids)
+        args.regressor.format(**{
+            "mode": args.mode,
+            "wave_args": "mixed",
+            "regressor": "RandomForestRegressor",
+            "cam_id": "{cam_id}"}),
+        cam_id_list=args.cam_ids)
 
     ClassifierFeatures = namedtuple(
         "ClassifierFeatures", (
